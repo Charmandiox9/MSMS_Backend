@@ -22,7 +22,7 @@ Todos los agentes de IA (incluyéndome) que trabajen en este proyecto deben adhe
 ## 3. Base de Datos (Prisma)
 - Todo acceso a la base de datos debe hacerse a través de Prisma Client (`PrismaService`).
 - No usar consultas SQL crudas (RAW SQL) a menos que sea estrictamente necesario por problemas de rendimiento o funcionalidades complejas no soportadas por Prisma.
-- **MIGRACIONES OBLIGATORIAS:** Siempre que modifiques el archivo `schema.prisma`, debes ejecutar el comando correspondiente para crear y aplicar la respectiva migración (`npx prisma migrate dev`). NUNCA dejes un esquema modificado sin migrar.
+- **MIGRACIONES OBLIGATORIAS:** Siempre que modifiques el archivo `schema.prisma`, debes ejecutar el comando correspondiente para crear y aplicar la respectiva migración, **asignándole un nombre descriptivo y acorde a los cambios realizados** (ejemplo: `npx prisma migrate dev --name agregar_tabla_usuarios`). NUNCA dejes un esquema modificado sin migrar ni uses nombres genéricos.
 
 ## 4. Estilo y Tipado
 - Usar **TypeScript Estricto**. Evitar el uso de `any` o `@ts-ignore` siempre que sea posible. Define interfaces o clases para todo.
