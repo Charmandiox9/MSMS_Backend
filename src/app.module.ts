@@ -10,6 +10,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AppResolver } from './app.resolver';
 import { PrismaModule } from './prisma/prisma.module';
 
 const devProviders =
@@ -21,10 +22,12 @@ const devProviders =
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env.development', '.env'],
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      path: '/api/graphql',
     }),
     PrismaModule,
     CacheModule.registerAsync({
@@ -50,6 +53,7 @@ const devProviders =
   controllers: [AppController],
   providers: [
     AppService,
+    AppResolver,
     ...devProviders,
   ],
 })
