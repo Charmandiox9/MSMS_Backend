@@ -10,8 +10,7 @@ services:
       POSTGRES_USER: ${DB_USER:-user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: ${DB_NAME:-msms_db}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    # No exponemos el puerto al host para no chocar con tu entorno de desarrollo local.
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -22,8 +21,6 @@ services:
       dockerfile: Dockerfile
     container_name: msms_api
     restart: unless-stopped
-    ports:
-      - "${API_PORT:-3000}:3000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - NODE_ENV=${NODE_ENV:-preproduction}
@@ -37,12 +34,10 @@ services:
       dockerfile: Dockerfile
     container_name: msms_frontend
     restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3001}:3001"
     environment:
       - NODE_ENV=${NODE_ENV:-preproduction}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api:3000/graphql}
-      - NEXT_PUBLIC_STORAGE_URL=${NEXT_PUBLIC_STORAGE_URL}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/graphql}
+      - NEXT_PUBLIC_STORAGE_URL=${NEXT_PUBLIC_STORAGE_URL:-/storage}
     depends_on:
       - api
 
@@ -51,8 +46,6 @@ services:
     image: redis:7-alpine
     container_name: msms_redis
     restart: always
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
 
@@ -65,28 +58,26 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
-    ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
 
-volumes:
-  db_data:
-  redis_data:
-  minio_data:
-
-  # Proxy Inverso: NGINX (Rate Limiting, Seguridad, Enrutamiento)
+  # Proxy Inverso: NGINX (Punto de entrada único)
   nginx:
     image: nginx:alpine
     container_name: msms_nginx
     restart: always
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      # Exponemos NGINX en el puerto 8080 del host para no chocar con nada en desarrollo
+      - "${NGINX_HTTP_PORT:-8080}:80"
+      - "${NGINX_HTTPS_PORT:-8443}:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - api
       - frontend
       - minio
+
+volumes:
+  db_data:
+  redis_data:
+  minio_data:
