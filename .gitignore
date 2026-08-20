@@ -34,10 +34,8 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # Environment variables
-.env
-.env.test
-.env.production
-.env.*.local
+.env*
+!.env.example
 
 # Prisma
 # Ya que generaste la db y schema
