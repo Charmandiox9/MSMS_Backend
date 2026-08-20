@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { CacheModule } from '@nestjs/cache-manager';
+import { redisStore } from 'cache-manager-redis-yet';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 import { AppController } from './app.controller';
@@ -25,6 +27,25 @@ const devProviders =
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
     }),
     PrismaModule,
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const cacheType = configService.get<string>('CACHE_TYPE');
+        if (cacheType === 'redis') {
+          return {
+            store: await redisStore({
+              url: configService.get<string>('REDIS_URL', 'redis://localhost:6379'),
+            }),
+            ttl: 60 * 1000,
+          };
+        }
+        return {
+          ttl: 60 * 1000,
+        };
+      },
+    }),
   ],
   controllers: [AppController],
   providers: [
