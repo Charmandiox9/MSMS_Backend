@@ -42,3 +42,7 @@ Todos los agentes de IA (incluyéndome) que trabajen en este proyecto deben adhe
 - **Tests Unitarios Obligatorios:** Antes de finalizar cualquier nueva funcionalidad, DEBES crear sus respectivos tests unitarios (ej. `*.spec.ts`).
 - **Verificación de Build:** Antes de hacer commit, DEBES comprobar que el proyecto compila correctamente ejecutando `npm run build`.
 - **Commits Obligatorios:** Al terminar de implementar una funcionalidad, hacer los tests y comprobar el build, DEBES realizar el respectivo `git commit` y pushear los cambios. Nunca dejes trabajo terminado sin commitear.
+
+## 8. Variables de Entorno y Seguridad
+- **Cero variables hardcodeadas:** NUNCA debes hardcodear credenciales, URLs de bases de datos, claves de API, URLs de Cloudflare R2/MinIO, o cualquier información sensible en el código.
+- Siempre usa `process.env.VARIABLE_NAME` (a través de `ConfigService` de NestJS) y declara las nuevas variables en el archivo `.env.example`.
