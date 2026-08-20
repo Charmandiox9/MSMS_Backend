@@ -42,10 +42,36 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - NODE_ENV=production
-      # - NEXT_PUBLIC_API_URL=http://localhost:3000/graphql # Ajustar según tu configuración
+      - NODE_ENV=preproduction
     depends_on:
       - api
 
+  # Caché: Redis (Pre-producción / Producción)
+  redis:
+    image: redis:7-alpine
+    container_name: msms_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Almacenamiento de objetos: MinIO (Pre-producción)
+  minio:
+    image: minio/minio
+    container_name: msms_minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
 volumes:
   db_data:
+  redis_data:
+  minio_data:
