@@ -32,5 +32,20 @@ services:
     depends_on:
       - db
 
+  # Servicio Frontend Next.js
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: msms_frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      # - NEXT_PUBLIC_API_URL=http://localhost:3000/graphql # Ajustar según tu configuración
+    depends_on:
+      - api
+
 volumes:
   db_data:
