@@ -8,6 +8,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { PrismaModule } from './prisma/prisma.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -23,6 +24,7 @@ const devProviders =
       driver: ApolloDriver,
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
     }),
+    PrismaModule,
   ],
   controllers: [AppController],
   providers: [
