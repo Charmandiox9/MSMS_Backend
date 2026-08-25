@@ -12,6 +12,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppResolver } from './app.resolver';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -49,6 +50,7 @@ const devProviders =
         };
       },
     }),
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [

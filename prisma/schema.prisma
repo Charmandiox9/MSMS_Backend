@@ -1,12 +1,39 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Role {
+  SYSTEM_ADMIN
+  FACULTY_ADMIN
+  STAFF
+  PROFESSOR
+  STUDENT
+  VEHICLE_MANAGER
+  LAB_MANAGER
+  TRACKING_MANAGER
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  avatarUrl     String?
+  
+  // Google OAuth specific
+  googleId      String?   @unique
+  
+  // Un usuario puede tener múltiples roles, por defecto asignamos STUDENT
+  roles         Role[]    @default([STUDENT])
+  
+  isActive      Boolean   @default(true)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
