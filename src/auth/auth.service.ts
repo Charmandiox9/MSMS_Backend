@@ -12,6 +12,7 @@ export class AuthService {
   async validateGoogleUser(googleUser: any) {
     let user = await this.prisma.user.findUnique({
       where: { email: googleUser.email },
+      include: { userRoles: { include: { role: true } } },
     });
 
     if (user) {
@@ -19,6 +20,7 @@ export class AuthService {
         user = await this.prisma.user.update({
           where: { email: googleUser.email },
           data: { googleId: googleUser.googleId, avatarUrl: googleUser.avatarUrl },
+          include: { userRoles: { include: { role: true } } },
         });
       }
     } else {
@@ -29,13 +31,21 @@ export class AuthService {
           googleId: googleUser.googleId,
           avatarUrl: googleUser.avatarUrl,
         },
+        include: { userRoles: { include: { role: true } } },
       });
     }
     return user;
   }
 
   generateJwtToken(user: any) {
-    const payload = { sub: user.id, email: user.email, roles: user.roles };
-    return this.jwtService.sign(payload);
+    return this.jwtService.sign(this.getSessionPayload(user));
+  }
+
+  getSessionPayload(user: any) {
+    return {
+      sub: user.id,
+      email: user.email,
+      roles: user.userRoles.map(({ role }: any) => role.code),
+    };
   }
 }
