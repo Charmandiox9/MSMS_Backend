@@ -36,11 +36,18 @@ const devProviders =
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
+        const isProduction = configService.get<string>('NODE_ENV') === 'production';
         const cacheType = configService.get<string>('CACHE_TYPE');
-        if (cacheType === 'redis') {
+        const redisUrl = configService.get<string>('REDIS_URL');
+
+        if (isProduction && !redisUrl) {
+          throw new Error('REDIS_URL es obligatoria cuando NODE_ENV=production');
+        }
+
+        if (isProduction || cacheType === 'redis') {
           return {
             store: await redisStore({
-              url: configService.get<string>('REDIS_URL', 'redis://localhost:6379'),
+              url: redisUrl ?? 'redis://localhost:6379',
             }),
             ttl: 60 * 1000,
           };
