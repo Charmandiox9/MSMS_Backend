@@ -58,6 +58,22 @@ describe('AuthService', () => {
     });
   });
 
+  it('includes the Google avatar when available', () => {
+    expect(
+      service.getSessionPayload({
+        id: 'user-id',
+        email: 'user@ucn.cl',
+        avatarUrl: 'https://example.com/avatar.png',
+        userRoles: [],
+      }),
+    ).toEqual({
+      sub: 'user-id',
+      email: 'user@ucn.cl',
+      roles: [],
+      avatarUrl: 'https://example.com/avatar.png',
+    });
+  });
+
   it('creates authenticated users without assigning an inferred role', async () => {
     const createdUser = {
       id: 'user-id',

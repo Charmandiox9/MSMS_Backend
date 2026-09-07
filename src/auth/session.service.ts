@@ -7,6 +7,7 @@ export type AuthSession = {
   sub: string;
   email: string;
   roles: string[];
+  avatarUrl?: string;
 };
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;

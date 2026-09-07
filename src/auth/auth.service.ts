@@ -46,6 +46,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       roles: user.userRoles.map(({ role }: any) => role.code),
+      ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
     };
   }
 }
