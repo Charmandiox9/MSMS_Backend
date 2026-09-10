@@ -1,24 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 
 describe('AuthService', () => {
   let service: AuthService;
-  const prismaService = {
-    user: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
+  let prisma: {
+    user: { findUnique: jest.Mock; update: jest.Mock; create: jest.Mock };
   };
   const jwtService = { sign: jest.fn() };
 
+  const googleUser = {
+    googleId: 'google-1',
+    email: 'test@ucn.cl',
+    name: 'Test User',
+    avatarUrl: 'https://example.com/avatar.png',
+  };
+
   beforeEach(async () => {
+    prisma = {
+      user: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+    };
+    jest.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        { provide: PrismaService, useValue: prismaService },
+        { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: jwtService },
       ],
     }).compile();
@@ -74,14 +87,62 @@ describe('AuthService', () => {
     });
   });
 
+  it('rechaza al usuario existente pero inactivo, sin actualizarlo', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: googleUser.email,
+      googleId: null,
+      isActive: false,
+    });
+
+    await expect(service.validateGoogleUser(googleUser)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('enlaza el googleId de un usuario activo existente que aún no lo tenía', async () => {
+    const existing = {
+      id: 'user-1',
+      email: googleUser.email,
+      googleId: null,
+      isActive: true,
+    };
+    prisma.user.findUnique.mockResolvedValue(existing);
+    prisma.user.update.mockResolvedValue({
+      ...existing,
+      googleId: googleUser.googleId,
+    });
+
+    const result = await service.validateGoogleUser(googleUser);
+
+    expect(prisma.user.update).toHaveBeenCalled();
+    expect(result.googleId).toBe(googleUser.googleId);
+  });
+
+  it('crea un usuario nuevo si no existe', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 'user-2',
+      ...googleUser,
+      isActive: true,
+      userRoles: [],
+    });
+
+    const result = await service.validateGoogleUser(googleUser);
+
+    expect(prisma.user.create).toHaveBeenCalled();
+    expect(result.email).toBe(googleUser.email);
+  });
+
   it('creates authenticated users without assigning an inferred role', async () => {
     const createdUser = {
       id: 'user-id',
       email: 'staff@ucn.cl',
       userRoles: [],
     };
-    prismaService.user.findUnique = jest.fn().mockResolvedValue(null);
-    prismaService.user.create = jest.fn().mockResolvedValue(createdUser);
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue(createdUser);
 
     await service.validateGoogleUser({
       email: 'staff@ucn.cl',
@@ -90,7 +151,7 @@ describe('AuthService', () => {
       avatarUrl: 'https://example.com/avatar.png',
     });
 
-    expect(prismaService.user.create).toHaveBeenCalledWith(
+    expect(prisma.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.not.objectContaining({ userRoles: expect.anything() }),
       }),

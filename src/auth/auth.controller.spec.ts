@@ -7,7 +7,10 @@ import { JwtService } from '@nestjs/jwt';
 
 describe('AuthController', () => {
   let controller: AuthController;
-  const authService = { generateJwtToken: jest.fn(), getSessionPayload: jest.fn() };
+  const authService = {
+    generateJwtToken: jest.fn(),
+    getSessionPayload: jest.fn(),
+  };
   const sessionService = { create: jest.fn(), delete: jest.fn() };
 
   beforeEach(async () => {

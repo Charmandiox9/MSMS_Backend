@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 
@@ -16,6 +16,10 @@ export class AuthService {
     });
 
     if (user) {
+      if (!user.isActive) {
+        throw new UnauthorizedException('Usuario inactivo');
+      }
+
       if (!user.googleId) {
         user = await this.prisma.user.update({
           where: { email: googleUser.email },

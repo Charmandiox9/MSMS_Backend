@@ -1,15 +1,33 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { AuthSession, SessionService } from '../session.service';
+import { getRequestFromContext } from '../../common/utils/execution-context.util';
 
-const getCookie = (request: Request, name: string): string | undefined =>
-  request.headers.cookie
+type RequestWithUser = Omit<Request, 'user'> & { user?: AuthSession };
+type CookieRequest = Omit<Request, 'user'>;
+
+const getCookie = (
+  request: CookieRequest,
+  name: string,
+): string | undefined => {
+  const parsedCookie: unknown = request.cookies?.[name];
+  if (typeof parsedCookie === 'string') {
+    return parsedCookie;
+  }
+
+  return request.headers.cookie
     ?.split(';')
     .map((cookie) => cookie.trim())
     .find((cookie) => cookie.startsWith(`${name}=`))
     ?.slice(name.length + 1);
+};
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
@@ -20,19 +38,24 @@ export class SessionAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & { user?: AuthSession }>();
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const request = getRequestFromContext(context) as RequestWithUser;
+    const isProduction =
+      this.configService.get<string>('NODE_ENV') === 'production';
 
     if (isProduction) {
       const id = getCookie(request, 'session');
       const session = id && (await this.sessionService.get(id));
-      if (!session) throw new UnauthorizedException('Sesión no válida o expirada');
+      if (!session) {
+        throw new UnauthorizedException('Sesión no válida o expirada');
+      }
       request.user = session;
       return true;
     }
 
     const token = getCookie(request, 'token');
-    if (!token) throw new UnauthorizedException('Token no encontrado');
+    if (!token) {
+      throw new UnauthorizedException('Token no encontrado');
+    }
     request.user = await this.jwtService.verifyAsync<AuthSession>(token);
     return true;
   }
