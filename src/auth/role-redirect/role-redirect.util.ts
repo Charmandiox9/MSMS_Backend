@@ -1,20 +1,17 @@
-const NO_ACCESS_ROUTE = process.env.NO_ACCESS_ROUTE || '/sin-acceso';
+const NO_ACCESS_ROUTE = process.env.NO_ACCESS_ROUTE || '/no-access';
 
-// Los códigos corresponden al catálogo RBAC persistido en Prisma. La primera
-// coincidencia define la ruta de entrada de un usuario con múltiples roles.
 const ROLE_REDIRECT_PRIORITY: { role: string; route: string }[] = [
-  { role: 'SYSTEM_ADMIN', route: '/admin' },
-  { role: 'ACADEMIC_SECRETARY', route: '/gestion' },
-  { role: 'ACADEMIC_PROCESS_ANALYST', route: '/reportes' },
-  { role: 'TEACHING_SUPPORT_COORDINATOR', route: '/gestion' },
-  // Compatibilidad con códigos de la versión enum anterior.
-  { role: 'FACULTY_ADMIN', route: '/admin' },
-  { role: 'STAFF', route: '/gestion' },
-  { role: 'VEHICLE_MANAGER', route: '/gestion' },
-  { role: 'LAB_MANAGER', route: '/gestion' },
-  { role: 'TRACKING_MANAGER', route: '/gestion' },
-  { role: 'PROFESSOR', route: '/profesor' },
-  { role: 'STUDENT', route: '/inicio' },
+  { role: 'SYSTEM_ADMIN', route: '/dashboard' },
+  { role: 'ACADEMIC_SECRETARY', route: '/dashboard' },
+  { role: 'ACADEMIC_PROCESS_ANALYST', route: '/dashboard' },
+  { role: 'TEACHING_SUPPORT_COORDINATOR', route: '/dashboard' },
+  { role: 'FACULTY_ADMIN', route: '/dashboard' },
+  { role: 'STAFF', route: '/dashboard' },
+  { role: 'VEHICLE_MANAGER', route: '/dashboard' },
+  { role: 'LAB_MANAGER', route: '/dashboard' },
+  { role: 'TRACKING_MANAGER', route: '/dashboard' },
+  { role: 'PROFESSOR', route: '/dashboard' },
+  { role: 'STUDENT', route: '/dashboard' },
 ];
 
 export function resolveRedirectRoute(roles: string[]): string {
