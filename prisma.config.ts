@@ -9,6 +9,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Prisma CLI debe usar la conexión directa de Neon para migraciones.
+    // El backend conserva DATABASE_URL (agrupada) en tiempo de ejecución.
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
