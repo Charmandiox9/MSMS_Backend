@@ -148,12 +148,22 @@ export class AcademicService {
           create: { name: row.name, email: row.email },
         });
         for (const nrc of row.nrcs) {
-          const assignment = await transaction.teachingAssignment.findFirst({ where: { semesterId: semester.id, nrc } });
-          if (!assignment) throw new BadRequestException(`El NRC ${nrc} no está cargado en el semestre activo`);
+          const assignment = await transaction.teachingAssignment.findFirst({
+            where: { semesterId: semester.id, nrc },
+            select: { courseId: true },
+          });
+          const schedule = assignment
+            ? null
+            : await transaction.courseSchedule.findFirst({
+                where: { semesterId: semester.id, nrc },
+                select: { courseId: true },
+              });
+          const courseId = assignment?.courseId ?? schedule?.courseId;
+          if (!courseId) throw new BadRequestException(`El NRC ${nrc} no está cargado en el semestre activo`);
           await transaction.teachingAssignment.upsert({
-            where: { semesterId_teacherId_courseId_nrc: { semesterId: semester.id, teacherId: teacher.id, courseId: assignment.courseId, nrc } },
+            where: { semesterId_teacherId_courseId_nrc: { semesterId: semester.id, teacherId: teacher.id, courseId, nrc } },
             update: {},
-            create: { semesterId: semester.id, teacherId: teacher.id, courseId: assignment.courseId, nrc, parallel: '' },
+            create: { semesterId: semester.id, teacherId: teacher.id, courseId, nrc, parallel: '' },
           });
           importedAssignments += 1;
         }
