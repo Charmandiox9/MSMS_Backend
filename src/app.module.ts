@@ -19,6 +19,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { StorageModule } from './storage/storage.module';
 import { JustificationsModule } from './justifications/justifications.module';
 import { AcademicModule } from './academic/academic.module';
+import { UsersModule } from './users/users.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -74,6 +76,8 @@ const devProviders =
     StorageModule,
     JustificationsModule,
     AcademicModule,
+    UsersModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
