@@ -13,6 +13,19 @@ export class AuthController {
     private sessionService: SessionService,
   ) {}
 
+  private getCookieOptions() {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const secure = frontendUrl.startsWith('https://');
+
+    return {
+      httpOnly: true,
+      secure,
+      sameSite: secure ? ('none' as const) : ('lax' as const),
+      path: '/',
+      maxAge: 3600000 * 24,
+    };
+  }
+
   @Public()
   @Get('google')
   @UseGuards(AuthGuard('google'))
@@ -32,13 +45,7 @@ export class AuthController {
       ? await this.sessionService.create(sessionPayload)
       : this.authService.generateJwtToken(user);
 
-    res.cookie(name, value, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 3600000 * 24, // 24 hours
-    });
+    res.cookie(name, value, this.getCookieOptions());
 
     // El backend calcula la ruta destino según el rol; el frontend solo la
     // lee y redirige. Los roles completos no van en la URL (quedan en el
@@ -68,12 +75,7 @@ export class AuthController {
       ?.slice('session='.length);
     if (isProduction && sessionId) await this.sessionService.delete(sessionId);
 
-    res.clearCookie(name, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-    });
+    res.clearCookie(name, this.getCookieOptions());
     res.status(204).send();
   }
 }
