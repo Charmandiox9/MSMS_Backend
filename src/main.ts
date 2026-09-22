@@ -1,6 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { ValidationError } from 'class-validator';
+
+function flattenValidationMessages(errors: ValidationError[]): string[] {
+  return errors.flatMap((error) => [
+    ...Object.values(error.constraints ?? {}),
+    ...flattenValidationMessages(error.children ?? []),
+  ]);
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -32,8 +40,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       exceptionFactory: (errors) => {
-        console.log(errors);
-        return new BadRequestException(errors);
+        return new BadRequestException(flattenValidationMessages(errors));
       },
     }),
   );

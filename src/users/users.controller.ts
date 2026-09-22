@@ -1,10 +1,14 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { IsUUID } from 'class-validator';
+import { IsString, Matches } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UsersService } from './users.service';
 
-class AssignRoleDto {
-  @IsUUID() roleId!: string;
+export class AssignRoleDto {
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i, {
+    message: 'roleId must be a UUID-formatted identifier',
+  })
+  roleId!: string;
 }
 
 @Controller('users')
