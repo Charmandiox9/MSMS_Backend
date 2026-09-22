@@ -63,7 +63,7 @@ export class JustificationsService {
   }
 
   async openInboxEntry(inboxId: string, userId: string) {
-    return this.prisma.$transaction(async (transaction) => {
+    const justification = await this.prisma.$transaction(async (transaction) => {
       const inbox = await transaction.justificationInbox.findUnique({ where: { id: inboxId } });
       if (!inbox) throw new NotFoundException('Entrada de formulario no encontrada');
 
@@ -97,6 +97,8 @@ export class JustificationsService {
 
       return justification;
     });
+
+    return { ...justification, teachers: await this.findTeachersForNrc(justification.nrc) };
   }
 
   async getEvidenceUrl(id: string) {
@@ -152,13 +154,7 @@ export class JustificationsService {
       return;
     }
 
-    const teachers = await this.prisma.teachingAssignment.findMany({
-      where: {
-        nrc: justification.nrc ?? undefined,
-        semester: { isActive: true },
-      },
-      include: { teacher: true },
-    });
+    const teachers = await this.findTeachersForNrc(justification.nrc);
 
     await Promise.all([
       this.notifications.send({
@@ -166,12 +162,22 @@ export class JustificationsService {
         subject: 'Tu justificación de inasistencia fue aprobada',
         text: `Tu justificación para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''} fue aprobada.`,
       }),
-      ...teachers.map(({ teacher }) => this.notifications.send({
+      ...teachers.map((teacher) => this.notifications.send({
         to: teacher.email,
         subject: 'Justificación de inasistencia aprobada',
         text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
       })),
     ]);
+  }
+
+  private findTeachersForNrc(nrc: string | null) {
+    if (!nrc) return Promise.resolve<{ name: string; email: string }[]>([]);
+
+    return this.prisma.teachingAssignment.findMany({
+      where: { nrc, semester: { isActive: true } },
+      distinct: ['teacherId'],
+      select: { teacher: { select: { name: true, email: true } } },
+    }).then((assignments) => assignments.map(({ teacher }) => teacher));
   }
 
   private parseDate(value: string): Date {
