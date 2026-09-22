@@ -47,6 +47,9 @@ export class JustificationsController {
   ) {
     const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
     if (!expected || secret?.trim() !== expected) {
+      console.warn(
+        `[FormsWebhook] inbox unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${secret?.trim().length ?? 0}`,
+      );
       throw new UnauthorizedException('Webhook no autorizado');
     }
     return this.service.receiveFormSubmission(body);

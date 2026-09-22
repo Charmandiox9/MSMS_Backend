@@ -35,6 +35,9 @@ export class StorageController {
   ) {
     const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
     if (!expected || secret?.trim() !== expected) {
+      console.warn(
+        `[FormsWebhook] storage unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${secret?.trim().length ?? 0}`,
+      );
       throw new UnauthorizedException('Webhook no autorizado');
     }
 
