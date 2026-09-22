@@ -9,7 +9,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -41,6 +41,7 @@ class FormSubmissionDto implements FormJustificationInput {
 class DecisionDto {
   @IsEnum(JustificationStatus) status!: JustificationStatus;
   @IsOptional() @IsString() @MaxLength(1000) rejectionReason?: string;
+  @IsOptional() @IsIn(['MEDICAL', 'FAMILY_DEATH', 'PERSONAL', 'ACADEMIC', 'OTHER']) reasonCategory?: string;
 }
 
 @Controller('justifications')
@@ -72,7 +73,7 @@ export class JustificationsController {
   }
 
   @Get()
-  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
   list(@Req() request: AuthenticatedRequest) {
     const status = request.query.status;
     return this.service.listJustifications(
@@ -91,7 +92,7 @@ export class JustificationsController {
   @Patch(':id/decision')
   @Roles('TEACHING_SUPPORT_COORDINATOR')
   decide(@Param('id') id: string, @Body() body: DecisionDto, @Req() request: AuthenticatedRequest) {
-    return this.service.decide(id, getAuthenticatedUserId(request), body.status, body.rejectionReason);
+    return this.service.decide(id, getAuthenticatedUserId(request), body.status, body.rejectionReason, body.reasonCategory);
   }
 
   @Get(':id/evidence-url')

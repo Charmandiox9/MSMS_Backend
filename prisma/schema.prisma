@@ -120,6 +120,7 @@ model JustificationInbox {
   subjectName        String
   subjectCode        String?
   nrc                String?
+  reasonCategory     String?
   /// Deprecated: retained for historical submissions.
   parallel           String?
   reason             String?
@@ -143,6 +144,7 @@ model Justification {
   subjectName         String
   subjectCode         String?
   nrc                 String?
+  reasonCategory      String?
   /// Deprecated: retained for historical submissions.
   parallel            String?
   reason              String?

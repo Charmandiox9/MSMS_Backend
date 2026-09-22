@@ -80,6 +80,7 @@ export class JustificationsService {
           subjectName: inbox.subjectName,
           subjectCode: inbox.subjectCode,
           nrc: inbox.nrc,
+          reasonCategory: inbox.reasonCategory,
           parallel: inbox.parallel,
           reason: inbox.reason,
           evidenceKey: inbox.evidenceKey,
@@ -104,7 +105,7 @@ export class JustificationsService {
     return this.storage.createPresignedDownload(justification.evidenceKey);
   }
 
-  async decide(id: string, userId: string, status: JustificationStatus, rejectionReason?: string) {
+  async decide(id: string, userId: string, status: JustificationStatus, rejectionReason?: string, reasonCategory?: string) {
     if (status !== JustificationStatus.ACCEPTED && status !== JustificationStatus.REJECTED) {
       throw new BadRequestException('La decisión debe ser ACCEPTED o REJECTED');
     }
@@ -121,7 +122,7 @@ export class JustificationsService {
     const updated = await this.prisma.$transaction(async (transaction) => {
       const result = await transaction.justification.update({
         where: { id },
-        data: { status, rejectionReason: status === JustificationStatus.REJECTED ? rejectionReason : null, decidedAt: new Date(), decidedById: userId },
+        data: { status, rejectionReason: status === JustificationStatus.REJECTED ? rejectionReason : null, reasonCategory, decidedAt: new Date(), decidedById: userId },
       });
       await transaction.justificationStatusHistory.create({
         data: { justificationId: id, fromStatus: justification.status, toStatus: status, note: rejectionReason, changedById: userId },
@@ -154,7 +155,6 @@ export class JustificationsService {
     const teachers = await this.prisma.teachingAssignment.findMany({
       where: {
         nrc: justification.nrc ?? undefined,
-        course: justification.subjectCode ? { code: justification.subjectCode } : { name: justification.subjectName },
         semester: { isActive: true },
       },
       include: { teacher: true },
