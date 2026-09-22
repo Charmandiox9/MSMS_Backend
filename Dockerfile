@@ -7,8 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Instalamos las dependencias
-RUN npm ci
+# Instalamos las dependencias dentro de Alpine para que npm resuelva también
+# los paquetes opcionales nativos de Linux usados por el contenedor.
+RUN npm install
 
 # Generamos el Prisma Client
 RUN npx prisma generate
