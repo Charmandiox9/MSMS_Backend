@@ -45,8 +45,8 @@ export class JustificationsController {
     @Headers('x-google-forms-secret') secret: string | undefined,
     @Body() body: FormSubmissionDto,
   ) {
-    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET;
-    if (!expected || secret !== expected) {
+    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
+    if (!expected || secret?.trim() !== expected) {
       throw new UnauthorizedException('Webhook no autorizado');
     }
     return this.service.receiveFormSubmission(body);

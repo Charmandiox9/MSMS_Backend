@@ -33,8 +33,8 @@ export class StorageController {
     @Headers('x-google-forms-secret') secret: string | undefined,
     @Body() dto: CreatePresignedUploadDto,
   ) {
-    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET;
-    if (!expected || secret !== expected) {
+    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
+    if (!expected || secret?.trim() !== expected) {
       throw new UnauthorizedException('Webhook no autorizado');
     }
 
