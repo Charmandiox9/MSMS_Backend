@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-preproduction}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/graphql}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api/graphql}
       - NEXT_PUBLIC_STORAGE_URL=${NEXT_PUBLIC_STORAGE_URL:-/storage}
     depends_on:
       - api
