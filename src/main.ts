@@ -11,6 +11,7 @@ async function bootstrap() {
     'http://localhost:3000',
     'http://localhost:80',
     'http://localhost',
+    'https://msmsfrontend-production.up.railway.app',
   ];
 
   app.enableCors({
