@@ -16,9 +16,9 @@ export interface FormJustificationInput {
   externalResponseId: string;
   studentEmail: string;
   absenceDate: string;
-  subjectName: string;
+  subjectName?: string;
   subjectCode?: string;
-  parallel?: string;
+  nrc: string;
   reason?: string;
   evidenceKey: string;
   evidenceContentType: string;
@@ -34,10 +34,17 @@ export class JustificationsService {
 
   async receiveFormSubmission(input: FormJustificationInput) {
     const absenceDate = this.parseDate(input.absenceDate);
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { nrc: input.nrc, semester: { isActive: true } },
+      include: { course: true },
+    });
+    const subjectName = assignment?.course.name ?? input.subjectName?.trim();
+    if (!subjectName) throw new BadRequestException('El NRC no corresponde a una asignatura activa');
+
     return this.prisma.justificationInbox.upsert({
       where: { externalResponseId: input.externalResponseId },
-      update: { ...input, absenceDate },
-      create: { ...input, absenceDate },
+      update: { ...input, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
+      create: { ...input, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
     });
   }
 
@@ -72,6 +79,7 @@ export class JustificationsService {
           absenceDate: inbox.absenceDate,
           subjectName: inbox.subjectName,
           subjectCode: inbox.subjectCode,
+          nrc: inbox.nrc,
           parallel: inbox.parallel,
           reason: inbox.reason,
           evidenceKey: inbox.evidenceKey,
@@ -130,6 +138,7 @@ export class JustificationsService {
     studentEmail: string;
     subjectName: string;
     subjectCode: string | null;
+    nrc: string | null;
     parallel: string | null;
     rejectionReason: string | null;
   }): Promise<void> {
@@ -144,8 +153,8 @@ export class JustificationsService {
 
     const teachers = await this.prisma.teachingAssignment.findMany({
       where: {
+        nrc: justification.nrc ?? undefined,
         course: justification.subjectCode ? { code: justification.subjectCode } : { name: justification.subjectName },
-        parallel: justification.parallel ?? undefined,
         semester: { isActive: true },
       },
       include: { teacher: true },
@@ -155,12 +164,12 @@ export class JustificationsService {
       this.notifications.send({
         to: justification.studentEmail,
         subject: 'Tu justificación de inasistencia fue aprobada',
-        text: `Tu justificación para ${justification.subjectName}${justification.parallel ? `, paralelo ${justification.parallel}` : ''} fue aprobada.`,
+        text: `Tu justificación para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''} fue aprobada.`,
       }),
       ...teachers.map(({ teacher }) => this.notifications.send({
         to: teacher.email,
         subject: 'Justificación de inasistencia aprobada',
-        text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.parallel ? `, paralelo ${justification.parallel}` : ''}.`,
+        text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
       })),
     ]);
   }

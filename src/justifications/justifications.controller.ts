@@ -30,9 +30,9 @@ class FormSubmissionDto implements FormJustificationInput {
   @IsString() @IsNotEmpty() @MaxLength(255) externalResponseId!: string;
   @IsEmail() studentEmail!: string;
   @IsString() @IsNotEmpty() absenceDate!: string;
-  @IsString() @IsNotEmpty() subjectName!: string;
+  @IsOptional() @IsString() @MaxLength(255) subjectName?: string;
   @IsOptional() @IsString() subjectCode?: string;
-  @IsOptional() @IsString() parallel?: string;
+  @IsString() @IsNotEmpty() @MaxLength(50) nrc!: string;
   @IsOptional() @IsString() @MaxLength(2000) reason?: string;
   @IsString() @IsNotEmpty() evidenceKey!: string;
   @IsString() @IsNotEmpty() evidenceContentType!: string;

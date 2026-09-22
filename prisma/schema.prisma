@@ -81,13 +81,15 @@ model TeachingAssignment {
   semesterId String
   teacherId  String
   courseId   String
+  nrc        String   @default("")
+  /// Deprecated: retained only for historical data. New imports use nrc.
   parallel   String   @default("")
   semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   teacher    Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
-  @@unique([semesterId, teacherId, courseId, parallel])
+  @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
 }
@@ -99,6 +101,8 @@ model JustificationInbox {
   absenceDate        DateTime
   subjectName        String
   subjectCode        String?
+  nrc                String?
+  /// Deprecated: retained for historical submissions.
   parallel           String?
   reason             String?
   evidenceKey        String
@@ -120,6 +124,8 @@ model Justification {
   absenceDate         DateTime
   subjectName         String
   subjectCode         String?
+  nrc                 String?
+  /// Deprecated: retained for historical submissions.
   parallel            String?
   reason              String?
   evidenceKey         String

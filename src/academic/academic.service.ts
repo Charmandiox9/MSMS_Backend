@@ -6,7 +6,7 @@ interface TeacherImportRow {
   teacherName: string;
   courseCode: string;
   courseName: string;
-  parallel?: string;
+  nrc: string;
   semesterName: string;
   startsOn: string;
   endsOn: string;
@@ -69,9 +69,9 @@ export class AcademicService {
           create: { code: row.courseCode, name: row.courseName },
         });
         await transaction.teachingAssignment.upsert({
-          where: { semesterId_teacherId_courseId_parallel: { semesterId: semester.id, teacherId: teacher.id, courseId: course.id, parallel: row.parallel ?? '' } },
-          update: {},
-          create: { semesterId: semester.id, teacherId: teacher.id, courseId: course.id, parallel: row.parallel ?? '' },
+          where: { semesterId_teacherId_courseId_nrc: { semesterId: semester.id, teacherId: teacher.id, courseId: course.id, nrc: row.nrc } },
+          update: { parallel: '' },
+          create: { semesterId: semester.id, teacherId: teacher.id, courseId: course.id, nrc: row.nrc, parallel: '' },
         });
       }
 
@@ -83,12 +83,12 @@ export class AcademicService {
     const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (lines.length < 2) return [];
     const headers = this.splitCsvLine(lines[0]).map((header) => header.trim());
-    const required = ['teacherEmail', 'teacherName', 'courseCode', 'courseName', 'semesterName', 'startsOn', 'endsOn'];
+    const required = ['teacherEmail', 'teacherName', 'courseCode', 'courseName', 'nrc', 'semesterName', 'startsOn', 'endsOn'];
     for (const key of required) if (!headers.includes(key)) throw new BadRequestException(`Falta la columna ${key}`);
     return lines.slice(1).map((line) => {
       const values = this.splitCsvLine(line);
       const row = Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ''])) as Partial<TeacherImportRow>;
-      if (!row.teacherEmail || !row.teacherName || !row.courseCode || !row.courseName || !row.semesterName) throw new BadRequestException('Hay una fila incompleta en el CSV');
+      if (!row.teacherEmail || !row.teacherName || !row.courseCode || !row.courseName || !row.nrc || !row.semesterName) throw new BadRequestException('Hay una fila incompleta en el CSV');
       return row as TeacherImportRow;
     });
   }
