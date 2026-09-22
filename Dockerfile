@@ -33,7 +33,6 @@ COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
 
-# El comando de inicio por defecto
-# Nota: Si necesitas aplicar migraciones en producción, 
-# considera usar 'npx prisma migrate deploy' en tu pipeline o entrypoint
-CMD ["npm", "run", "start:prod"]
+# Aplicamos las migraciones pendientes antes de iniciar NestJS.
+# Si una migración falla, el contenedor no arranca con un esquema inconsistente.
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
