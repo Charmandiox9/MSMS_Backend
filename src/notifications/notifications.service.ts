@@ -33,8 +33,17 @@ export class NotificationsService {
       body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text }),
     });
 
+    const responseBody = await response.json().catch(() => null) as { id?: string; message?: string } | null;
+
     if (!response.ok) {
+      this.logger.error(
+        `Notificación rechazada por Resend: destinatario=${message.to} status=${response.status} motivo=${responseBody?.message ?? 'desconocido'}`,
+      );
       throw new Error(`No se pudo enviar la notificación (${response.status})`);
     }
+
+    this.logger.log(
+      `Notificación enviada: destinatario=${message.to} resendId=${responseBody?.id ?? 'sin-id'}`,
+    );
   }
 }

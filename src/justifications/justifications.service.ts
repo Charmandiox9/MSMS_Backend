@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -26,6 +27,8 @@ export interface FormJustificationInput {
 
 @Injectable()
 export class JustificationsService {
+  private readonly logger = new Logger(JustificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -34,8 +37,9 @@ export class JustificationsService {
 
   async receiveFormSubmission(input: FormJustificationInput) {
     const absenceDate = this.parseDate(input.absenceDate);
+    const nrc = input.nrc.trim();
     const assignment = await this.prisma.teachingAssignment.findFirst({
-      where: { nrc: input.nrc, semester: { isActive: true } },
+      where: { nrc, semester: { isActive: true } },
       include: { course: true },
     });
     const subjectName = assignment?.course.name ?? input.subjectName?.trim();
@@ -43,8 +47,8 @@ export class JustificationsService {
 
     return this.prisma.justificationInbox.upsert({
       where: { externalResponseId: input.externalResponseId },
-      update: { ...input, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
-      create: { ...input, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
+      update: { ...input, nrc, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
+      create: { ...input, nrc, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
     });
   }
 
@@ -55,11 +59,16 @@ export class JustificationsService {
     });
   }
 
-  listJustifications(status?: JustificationStatus) {
-    return this.prisma.justification.findMany({
+  async listJustifications(status?: JustificationStatus) {
+    const justifications = await this.prisma.justification.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
     });
+
+    return Promise.all(justifications.map(async (justification) => ({
+      ...justification,
+      teachers: await this.findTeachersForNrc(justification.nrc),
+    })));
   }
 
   async openInboxEntry(inboxId: string, userId: string) {
@@ -132,19 +141,23 @@ export class JustificationsService {
       return result;
     });
 
-    await this.notifyDecision(updated);
-    return updated;
+    const teachers = await this.findTeachersForNrc(updated.nrc);
+    await this.notifyDecision(updated, teachers);
+    return { ...updated, teachers };
   }
 
-  private async notifyDecision(justification: {
-    status: JustificationStatus;
-    studentEmail: string;
-    subjectName: string;
-    subjectCode: string | null;
-    nrc: string | null;
-    parallel: string | null;
-    rejectionReason: string | null;
-  }): Promise<void> {
+  private async notifyDecision(
+    justification: {
+      status: JustificationStatus;
+      studentEmail: string;
+      subjectName: string;
+      subjectCode: string | null;
+      nrc: string | null;
+      parallel: string | null;
+      rejectionReason: string | null;
+    },
+    teachers: { name: string; email: string }[],
+  ): Promise<void> {
     if (justification.status === JustificationStatus.REJECTED) {
       await this.notifications.send({
         to: justification.studentEmail,
@@ -154,7 +167,13 @@ export class JustificationsService {
       return;
     }
 
-    const teachers = await this.findTeachersForNrc(justification.nrc);
+    if (teachers.length === 0) {
+      this.logger.warn(`Aprobación sin profesores destinatarios nrc=${justification.nrc ?? '<none>'}`);
+    } else {
+      this.logger.log(
+        `Destinatarios de aprobación nrc=${justification.nrc ?? '<none>'} teacherCount=${teachers.length} teacherEmails=${teachers.map((teacher) => teacher.email).join(',')}`,
+      );
+    }
 
     await Promise.all([
       this.notifications.send({
@@ -170,14 +189,27 @@ export class JustificationsService {
     ]);
   }
 
-  private findTeachersForNrc(nrc: string | null) {
-    if (!nrc) return Promise.resolve<{ name: string; email: string }[]>([]);
+  private async findTeachersForNrc(nrc: string | null) {
+    const normalizedNrc = nrc?.trim();
+    if (!normalizedNrc) return Promise.resolve<{ name: string; email: string }[]>([]);
 
-    return this.prisma.teachingAssignment.findMany({
-      where: { nrc, semester: { isActive: true } },
+    const activeAssignments = await this.prisma.teachingAssignment.findMany({
+      where: { nrc: normalizedNrc, semester: { isActive: true } },
       distinct: ['teacherId'],
       select: { teacher: { select: { name: true, email: true } } },
-    }).then((assignments) => assignments.map(({ teacher }) => teacher));
+    });
+    if (activeAssignments.length > 0) {
+      return activeAssignments.map(({ teacher }) => teacher);
+    }
+
+    // Keep historical justifications routable if the active semester changes
+    // between intake and the decision.
+    const historicalAssignments = await this.prisma.teachingAssignment.findMany({
+      where: { nrc: normalizedNrc },
+      distinct: ['teacherId'],
+      select: { teacher: { select: { name: true, email: true } } },
+    });
+    return historicalAssignments.map(({ teacher }) => teacher);
   }
 
   private parseDate(value: string): Date {
