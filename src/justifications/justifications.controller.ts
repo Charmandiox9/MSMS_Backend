@@ -42,13 +42,15 @@ export class JustificationsController {
   @Public()
   @Post('inbox')
   receiveFormSubmission(
-    @Headers('x-google-forms-secret') secret: string | undefined,
+    @Headers('x-marsys-forms-secret') secret: string | undefined,
+    @Headers('x-google-forms-secret') legacySecret: string | undefined,
     @Body() body: FormSubmissionDto,
   ) {
     const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
-    if (!expected || secret?.trim() !== expected) {
+    const receivedSecret = (secret ?? legacySecret)?.trim();
+    if (!expected || receivedSecret !== expected) {
       console.warn(
-        `[FormsWebhook] inbox unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${secret?.trim().length ?? 0}`,
+        `[FormsWebhook] inbox unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${receivedSecret?.length ?? 0}`,
       );
       throw new UnauthorizedException('Webhook no autorizado');
     }
