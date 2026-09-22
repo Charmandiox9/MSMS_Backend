@@ -48,6 +48,7 @@ model AcademicSemester {
   endsOn      DateTime
   isActive    Boolean  @default(false)
   assignments TeachingAssignment[]
+  courseSchedules CourseSchedule[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -70,6 +71,7 @@ model Course {
   code         String
   name         String
   assignments  TeachingAssignment[]
+  schedules    CourseSchedule[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -92,6 +94,22 @@ model TeachingAssignment {
   @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
+}
+
+model CourseSchedule {
+  id         String           @id @default(uuid())
+  semesterId String
+  courseId   String
+  nrc        String
+  day        String
+  block      String
+  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@unique([semesterId, nrc, day, block])
+  @@index([semesterId])
+  @@index([nrc])
 }
 
 model JustificationInbox {
