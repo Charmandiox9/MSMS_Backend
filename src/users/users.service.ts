@@ -1,5 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Cache } from 'cache-manager';
 import { WhitelistService } from '../auth/whitelist/whitelist.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -8,6 +10,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly whitelist: WhitelistService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   async list(page: number, pageSize: number, search: string, roleCode: string) {
@@ -116,6 +119,68 @@ export class UsersService {
       if (targetIsActiveAdmin && remainingAdmins <= 1) throw new BadRequestException('No se puede revocar el último rol de administrador activo');
     }
     await this.prisma.userRole.deleteMany({ where: { userId, roleId } });
+    return { success: true };
+  }
+
+  async setActive(userId: string, isActive: boolean, actorId: string) {
+    if (!isActive && userId === actorId) {
+      throw new BadRequestException('No puedes desactivar tu propia cuenta');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isActive: true, userRoles: { select: { role: { select: { code: true } } } } },
+    });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (user.isActive && !isActive && user.userRoles.some(({ role }) => role.code === 'SYSTEM_ADMIN')) {
+      const activeAdmins = await this.prisma.userRole.count({
+        where: {
+          role: { code: 'SYSTEM_ADMIN' },
+          user: { isActive: true },
+        },
+      });
+      if (activeAdmins <= 1) throw new BadRequestException('No se puede desactivar el último administrador activo');
+    }
+
+    await this.prisma.user.update({ where: { id: userId }, data: { isActive } });
+    await this.cache.del(`user:${userId}`);
+    return { success: true, isActive };
+  }
+
+  async permanentlyDelete(userId: string, actorId: string) {
+    if (userId === actorId) {
+      throw new BadRequestException('No puedes eliminar tu propia cuenta');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isActive: true, userRoles: { select: { role: { select: { code: true } } } } },
+    });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (user.isActive && user.userRoles.some(({ role }) => role.code === 'SYSTEM_ADMIN')) {
+      const otherActiveAdmins = await this.prisma.userRole.count({
+        where: {
+          role: { code: 'SYSTEM_ADMIN' },
+          userId: { not: userId },
+          user: { isActive: true },
+        },
+      });
+      if (otherActiveAdmins === 0) throw new BadRequestException('No se puede eliminar el último administrador activo');
+    }
+
+    const [createdJustifications, decidedJustifications, historyEntries] = await Promise.all([
+      this.prisma.justification.count({ where: { createdById: userId } }),
+      this.prisma.justification.count({ where: { decidedById: userId } }),
+      this.prisma.justificationStatusHistory.count({ where: { changedById: userId } }),
+    ]);
+    if (createdJustifications + decidedJustifications + historyEntries > 0) {
+      throw new ConflictException('Esta cuenta tiene actividad en el historial académico. Desactívala para conservar la trazabilidad.');
+    }
+
+    await this.prisma.user.delete({ where: { id: userId } });
+    await this.cache.del(`user:${userId}`);
     return { success: true };
   }
 }

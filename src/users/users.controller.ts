@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsEmail, IsString, Matches } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsString, Matches } from 'class-validator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UsersService } from './users.service';
 
@@ -27,6 +28,11 @@ export class PreloadUserDto {
   roleIds!: string[];
 }
 
+class UserStatusDto {
+  @IsBoolean()
+  isActive!: boolean;
+}
+
 @Controller('users')
 @Roles('SYSTEM_ADMIN')
 export class UsersController {
@@ -51,4 +57,14 @@ export class UsersController {
 
   @Delete(':id/roles/:roleId')
   revoke(@Param('id') userId: string, @Param('roleId') roleId: string) { return this.users.revokeRole(userId, roleId); }
+
+  @Patch(':id/status')
+  setActive(@Param('id') userId: string, @Body() body: UserStatusDto, @CurrentUser() actor: { id: string }) {
+    return this.users.setActive(userId, body.isActive, actor.id);
+  }
+
+  @Delete(':id')
+  permanentlyDelete(@Param('id') userId: string, @CurrentUser() actor: { id: string }) {
+    return this.users.permanentlyDelete(userId, actor.id);
+  }
 }
