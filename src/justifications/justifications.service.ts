@@ -151,11 +151,18 @@ export class JustificationsService {
       include: { teacher: true },
     });
 
-    await Promise.all(teachers.map(({ teacher }) => this.notifications.send({
-      to: teacher.email,
-      subject: 'Justificación de inasistencia aprobada',
-      text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.parallel ? `, paralelo ${justification.parallel}` : ''}.`,
-    })));
+    await Promise.all([
+      this.notifications.send({
+        to: justification.studentEmail,
+        subject: 'Tu justificación de inasistencia fue aprobada',
+        text: `Tu justificación para ${justification.subjectName}${justification.parallel ? `, paralelo ${justification.parallel}` : ''} fue aprobada.`,
+      }),
+      ...teachers.map(({ teacher }) => this.notifications.send({
+        to: teacher.email,
+        subject: 'Justificación de inasistencia aprobada',
+        text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.parallel ? `, paralelo ${justification.parallel}` : ''}.`,
+      })),
+    ]);
   }
 
   private parseDate(value: string): Date {
