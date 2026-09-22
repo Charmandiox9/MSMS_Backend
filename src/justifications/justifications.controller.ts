@@ -16,7 +16,15 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JustificationStatus } from '@prisma/client';
 import { JustificationsService, type FormJustificationInput } from './justifications.service';
 
-type AuthenticatedRequest = Request & { user: { sub: string } };
+type AuthenticatedRequest = Request & {
+  user: { id?: string; sub?: string };
+};
+
+function getAuthenticatedUserId(request: AuthenticatedRequest): string {
+  const userId = request.user.sub ?? request.user.id;
+  if (!userId) throw new UnauthorizedException('Usuario autenticado inválido');
+  return userId;
+}
 
 class FormSubmissionDto implements FormJustificationInput {
   @IsString() @IsNotEmpty() @MaxLength(255) externalResponseId!: string;
@@ -77,13 +85,13 @@ export class JustificationsController {
   @Post('inbox/:id/open')
   @Roles('TEACHING_SUPPORT_COORDINATOR')
   open(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.service.openInboxEntry(id, request.user.sub);
+    return this.service.openInboxEntry(id, getAuthenticatedUserId(request));
   }
 
   @Patch(':id/decision')
   @Roles('TEACHING_SUPPORT_COORDINATOR')
   decide(@Param('id') id: string, @Body() body: DecisionDto, @Req() request: AuthenticatedRequest) {
-    return this.service.decide(id, request.user.sub, body.status, body.rejectionReason);
+    return this.service.decide(id, getAuthenticatedUserId(request), body.status, body.rejectionReason);
   }
 
   @Get(':id/evidence-url')
