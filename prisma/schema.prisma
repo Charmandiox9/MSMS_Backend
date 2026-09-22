@@ -188,6 +188,7 @@ model Role {
   description String?
   isSystem    Boolean          @default(false)
   userRoles   UserRole[]
+  preloads    PreloadedUserRole[]
   permissions RolePermission[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -212,6 +213,25 @@ model UserRole {
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
+}
+
+model PreloadedUser {
+  id        String               @id @default(uuid())
+  email     String               @unique
+  createdAt DateTime             @default(now())
+  roles     PreloadedUserRole[]
+}
+
+model PreloadedUserRole {
+  preloadedUserId String
+  roleId          String
+  assignedAt      DateTime      @default(now())
+
+  preloadedUser PreloadedUser @relation(fields: [preloadedUserId], references: [id], onDelete: Cascade)
+  role          Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([preloadedUserId, roleId])
+  @@index([roleId])
 }
 
 model RolePermission {

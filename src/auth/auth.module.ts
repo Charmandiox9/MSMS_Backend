@@ -33,6 +33,6 @@ import { SessionAuthGuard } from './guards/session-auth.guard';
     SessionService,
     SessionAuthGuard,
   ],
-  exports: [AuthService, SessionAuthGuard],
+  exports: [AuthService, SessionAuthGuard, WhitelistService],
 })
 export class AuthModule {}

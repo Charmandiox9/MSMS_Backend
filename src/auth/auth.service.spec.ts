@@ -8,6 +8,11 @@ describe('AuthService', () => {
   let service: AuthService;
   let prisma: {
     user: { findUnique: jest.Mock; update: jest.Mock; create: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let transaction: {
+    user: { create: jest.Mock };
+    preloadedUser: { findUnique: jest.Mock; delete: jest.Mock };
   };
   const jwtService = { sign: jest.fn() };
 
@@ -19,13 +24,21 @@ describe('AuthService', () => {
   };
 
   beforeEach(async () => {
+    transaction = {
+      user: { create: jest.fn() },
+      preloadedUser: { findUnique: jest.fn(), delete: jest.fn() },
+    };
     prisma = {
       user: {
         findUnique: jest.fn(),
         update: jest.fn(),
         create: jest.fn(),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(
+      (callback: (transactionClient: typeof transaction) => Promise<unknown>) => callback(transaction),
+    );
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -122,7 +135,8 @@ describe('AuthService', () => {
 
   it('crea un usuario nuevo si no existe', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
-    prisma.user.create.mockResolvedValue({
+    transaction.preloadedUser.findUnique.mockResolvedValue(null);
+    transaction.user.create.mockResolvedValue({
       id: 'user-2',
       ...googleUser,
       isActive: true,
@@ -131,8 +145,39 @@ describe('AuthService', () => {
 
     const result = await service.validateGoogleUser(googleUser);
 
-    expect(prisma.user.create).toHaveBeenCalled();
+    expect(transaction.user.create).toHaveBeenCalled();
     expect(result.email).toBe(googleUser.email);
+  });
+
+  it('applies and consumes a preloaded email roles on first login', async () => {
+    const preloadedUser = {
+      id: 'preload-1',
+      roles: [{ roleId: 'role-1' }, { roleId: 'role-2' }],
+    };
+    prisma.user.findUnique.mockResolvedValue(null);
+    transaction.preloadedUser.findUnique.mockResolvedValue(preloadedUser);
+    transaction.user.create.mockResolvedValue({
+      id: 'user-2',
+      ...googleUser,
+      isActive: true,
+      userRoles: [
+        { role: { code: 'SYSTEM_ADMIN' } },
+        { role: { code: 'ACADEMIC_SECRETARY' } },
+      ],
+    });
+
+    const result = await service.validateGoogleUser({ ...googleUser, email: '  TEST@UCN.CL ' });
+
+    expect(transaction.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          email: 'test@ucn.cl',
+          userRoles: { create: [{ roleId: 'role-1' }, { roleId: 'role-2' }] },
+        }),
+      }),
+    );
+    expect(transaction.preloadedUser.delete).toHaveBeenCalledWith({ where: { id: 'preload-1' } });
+    expect(result.userRoles).toHaveLength(2);
   });
 
   it('creates authenticated users without assigning an inferred role', async () => {
@@ -142,7 +187,8 @@ describe('AuthService', () => {
       userRoles: [],
     };
     prisma.user.findUnique.mockResolvedValue(null);
-    prisma.user.create.mockResolvedValue(createdUser);
+    transaction.preloadedUser.findUnique.mockResolvedValue(null);
+    transaction.user.create.mockResolvedValue(createdUser);
 
     await service.validateGoogleUser({
       email: 'staff@ucn.cl',
@@ -151,7 +197,7 @@ describe('AuthService', () => {
       avatarUrl: 'https://example.com/avatar.png',
     });
 
-    expect(prisma.user.create).toHaveBeenCalledWith(
+    expect(transaction.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.not.objectContaining({ userRoles: expect.anything() }),
       }),
