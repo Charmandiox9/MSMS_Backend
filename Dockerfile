@@ -6,6 +6,7 @@ WORKDIR /app
 # Copiamos los archivos de dependencias y la carpeta prisma
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 
 # Instalamos las dependencias dentro de Alpine para que npm resuelva también
 # los paquetes opcionales nativos de Linux usados por el contenedor.
@@ -30,6 +31,7 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 3000
 
