@@ -25,6 +25,8 @@ export interface FormJustificationInput {
   evidenceContentType: string;
 }
 
+const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
 @Injectable()
 export class JustificationsService {
   private readonly logger = new Logger(JustificationsService.name);
@@ -52,11 +54,18 @@ export class JustificationsService {
     });
   }
 
-  listInbox() {
-    return this.prisma.justificationInbox.findMany({
+  async listInbox() {
+    const entries = await this.prisma.justificationInbox.findMany({
       where: { status: JustificationInboxStatus.UNREAD },
       orderBy: { createdAt: 'asc' },
     });
+
+    return Promise.all(
+      entries.map(async (entry) => ({
+        ...entry,
+        blocks: await this.findScheduleBlocksForNrcAndDate(entry.nrc, entry.absenceDate),
+      })),
+    );
   }
 
   async listJustifications(status?: JustificationStatus) {
@@ -68,6 +77,7 @@ export class JustificationsService {
     return Promise.all(justifications.map(async (justification) => ({
       ...justification,
       teachers: await this.findTeachersForNrc(justification.nrc),
+      blocks: await this.findScheduleBlocksForNrcAndDate(justification.nrc, justification.absenceDate),
     })));
   }
 
@@ -107,7 +117,11 @@ export class JustificationsService {
       return justification;
     });
 
-    return { ...justification, teachers: await this.findTeachersForNrc(justification.nrc) };
+    return {
+      ...justification,
+      teachers: await this.findTeachersForNrc(justification.nrc),
+      blocks: await this.findScheduleBlocksForNrcAndDate(justification.nrc, justification.absenceDate),
+    };
   }
 
   async getEvidenceUrl(id: string) {
@@ -142,8 +156,9 @@ export class JustificationsService {
     });
 
     const teachers = await this.findTeachersForNrc(updated.nrc);
+    const blocks = await this.findScheduleBlocksForNrcAndDate(updated.nrc, updated.absenceDate);
     await this.notifyDecision(updated, teachers);
-    return { ...updated, teachers };
+    return { ...updated, teachers, blocks };
   }
 
   private async notifyDecision(
@@ -210,6 +225,52 @@ export class JustificationsService {
       select: { teacher: { select: { name: true, email: true } } },
     });
     return historicalAssignments.map(({ teacher }) => teacher);
+  }
+
+  private async findScheduleBlocksForNrcAndDate(
+    nrc: string | null | undefined,
+    absenceDate: Date | string | null | undefined,
+  ): Promise<string[]> {
+    const normalizedNrc = nrc?.trim();
+    if (!normalizedNrc || !absenceDate) return [];
+
+    try {
+      const dateObj = absenceDate instanceof Date ? absenceDate : new Date(absenceDate);
+      if (Number.isNaN(dateObj.getTime())) return [];
+
+      const isoString = dateObj.toISOString();
+      const [y, m, d] = isoString.slice(0, 10).split('-').map(Number);
+      const noonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+      const dayName = WEEKDAYS[noonUtc.getUTCDay()];
+      if (!dayName || dayName === 'Domingo') return [];
+
+      const activeSchedules = await this.prisma.courseSchedule.findMany({
+        where: {
+          nrc: normalizedNrc,
+          day: dayName,
+          semester: { isActive: true },
+        },
+        orderBy: { block: 'asc' },
+        select: { block: true },
+      });
+
+      if (activeSchedules && activeSchedules.length > 0) {
+        return activeSchedules.map((s) => s.block);
+      }
+
+      const historicalSchedules = await this.prisma.courseSchedule.findMany({
+        where: {
+          nrc: normalizedNrc,
+          day: dayName,
+        },
+        orderBy: { block: 'asc' },
+        select: { block: true },
+      });
+
+      return historicalSchedules ? historicalSchedules.map((s) => s.block) : [];
+    } catch {
+      return [];
+    }
   }
 
   private parseDate(value: string): Date {

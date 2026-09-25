@@ -1,6 +1,11 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
@@ -84,12 +89,51 @@ export class StorageService {
       );
     }
 
-    const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
+    const resolvedKey = await this.resolveExistingKey(key);
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: resolvedKey,
+    });
     const downloadUrl = await getSignedUrl(this.client, command, {
       expiresIn: this.presignedUrlExpiresIn,
     });
 
     return { downloadUrl, expiresIn: this.presignedUrlExpiresIn };
+  }
+
+  private async resolveExistingKey(key: string): Promise<string> {
+    if (!this.client || !this.bucketName) return key;
+
+    const normalized = key.startsWith('/') ? key.slice(1) : key;
+
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucketName, Key: normalized }),
+      );
+      return normalized;
+    } catch {
+      if (!normalized.startsWith(`${this.bucketName}/`)) {
+        const prefixedKey = `${this.bucketName}/${normalized}`;
+        try {
+          await this.client.send(
+            new HeadObjectCommand({ Bucket: this.bucketName, Key: prefixedKey }),
+          );
+          return prefixedKey;
+        } catch {
+          return normalized;
+        }
+      } else {
+        const strippedKey = normalized.replace(new RegExp(`^${this.bucketName}/`), '');
+        try {
+          await this.client.send(
+            new HeadObjectCommand({ Bucket: this.bucketName, Key: strippedKey }),
+          );
+          return strippedKey;
+        } catch {
+          return normalized;
+        }
+      }
+    }
   }
 
   private buildObjectKey(fileName: string): string {

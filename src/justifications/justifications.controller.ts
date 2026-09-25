@@ -96,7 +96,7 @@ export class JustificationsController {
   }
 
   @Get(':id/evidence-url')
-  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
   evidenceUrl(@Param('id') id: string) {
     return this.service.getEvidenceUrl(id);
   }
