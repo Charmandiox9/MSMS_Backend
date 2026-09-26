@@ -9,7 +9,12 @@ describe('PrismaService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PrismaService,
-        { provide: ConfigService, useValue: { get: () => undefined } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue('postgresql://localhost/test'),
+          },
+        },
       ],
     }).compile();
 

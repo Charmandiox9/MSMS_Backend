@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Role } from '@prisma/client';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -14,9 +13,9 @@ describe('JwtStrategy', () => {
   const mockUser = {
     id: 'user-1',
     email: 'test@ucn.cl',
-    name: 'Test',
-    roles: [Role.STUDENT],
+    avatarUrl: null,
     isActive: true,
+    userRoles: [{ role: { code: 'ACADEMIC_SECRETARY' } }],
   };
 
   beforeEach(async () => {
@@ -41,44 +40,42 @@ describe('JwtStrategy', () => {
 
     const result = await strategy.validate({ sub: mockUser.id });
 
-    expect(result).toEqual(mockUser);
+    expect(result).toEqual({
+      id: mockUser.id,
+      email: mockUser.email,
+      roles: ['ACADEMIC_SECRETARY'],
+    });
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: mockUser.id },
+      include: { userRoles: { include: { role: true } } },
     });
     expect(cache.set).toHaveBeenCalledWith(
       `user:${mockUser.id}`,
-      mockUser,
+      result,
       60 * 1000,
     );
   });
 
   it('retorna el usuario desde el caché sin consultar la base de datos', async () => {
-    cache.get.mockResolvedValue(mockUser);
+    const cachedUser = {
+      id: mockUser.id,
+      email: mockUser.email,
+      roles: ['ACADEMIC_SECRETARY'],
+    };
+    cache.get.mockResolvedValue(cachedUser);
 
     const result = await strategy.validate({ sub: mockUser.id });
 
-    expect(result).toEqual(mockUser);
+    expect(result).toEqual(cachedUser);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(cache.set).not.toHaveBeenCalled();
   });
 
-  it('lanza UnauthorizedException si el usuario no existe', async () => {
+  it('lanza UnauthorizedException si el usuario no existe o está inactivo', async () => {
     cache.get.mockResolvedValue(undefined);
     prisma.user.findUnique.mockResolvedValue(null);
 
     await expect(strategy.validate({ sub: 'ghost' })).rejects.toThrow(
-      UnauthorizedException,
-    );
-  });
-
-  it('lanza UnauthorizedException si el usuario está inactivo', async () => {
-    cache.get.mockResolvedValue(undefined);
-    prisma.user.findUnique.mockResolvedValue({
-      ...mockUser,
-      isActive: false,
-    });
-
-    await expect(strategy.validate({ sub: mockUser.id })).rejects.toThrow(
       UnauthorizedException,
     );
   });

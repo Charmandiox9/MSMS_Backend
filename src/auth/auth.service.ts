@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 
@@ -12,13 +12,19 @@ export class AuthService {
   async validateGoogleUser(googleUser: any) {
     let user = await this.prisma.user.findUnique({
       where: { email: googleUser.email },
+      include: { userRoles: { include: { role: true } } },
     });
 
     if (user) {
+      if (!user.isActive) {
+        throw new UnauthorizedException('Usuario inactivo');
+      }
+
       if (!user.googleId) {
         user = await this.prisma.user.update({
           where: { email: googleUser.email },
           data: { googleId: googleUser.googleId, avatarUrl: googleUser.avatarUrl },
+          include: { userRoles: { include: { role: true } } },
         });
       }
     } else {
@@ -29,13 +35,22 @@ export class AuthService {
           googleId: googleUser.googleId,
           avatarUrl: googleUser.avatarUrl,
         },
+        include: { userRoles: { include: { role: true } } },
       });
     }
     return user;
   }
 
   generateJwtToken(user: any) {
-    const payload = { sub: user.id, email: user.email, roles: user.roles };
-    return this.jwtService.sign(payload);
+    return this.jwtService.sign(this.getSessionPayload(user));
+  }
+
+  getSessionPayload(user: any) {
+    return {
+      sub: user.id,
+      email: user.email,
+      roles: user.userRoles.map(({ role }: any) => role.code),
+      ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
+    };
   }
 }

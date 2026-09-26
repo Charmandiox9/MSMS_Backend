@@ -5,10 +5,16 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role, User } from '@prisma/client';
+import type { Request } from 'express';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { getRequestFromContext } from '../../common/utils/execution-context.util';
+
+type RequestWithRoles = Omit<Request, 'user'> & {
+  user?: { roles?: string[] };
+};
+
+const SYSTEM_ADMIN_ROLE = 'SYSTEM_ADMIN';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -24,26 +30,23 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
 
-    const user: User | undefined = getRequestFromContext(context).user;
+    const request = getRequestFromContext(context) as RequestWithRoles;
+    const userRoles = request.user?.roles ?? [];
 
-    if (user?.roles.includes(Role.SYSTEM_ADMIN)) {
+    if (userRoles.includes(SYSTEM_ADMIN_ROLE)) {
       return true;
     }
 
-    const hasRequiredRole = user?.roles.some((role) =>
-      requiredRoles.includes(role),
-    );
-
-    if (!hasRequiredRole) {
+    if (!userRoles.some((role) => requiredRoles.includes(role))) {
       throw new ForbiddenException(
         'No tienes el rol necesario para acceder a este recurso',
       );
