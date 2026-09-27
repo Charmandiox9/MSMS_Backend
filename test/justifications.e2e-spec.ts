@@ -247,4 +247,63 @@ describe('Flujo de justificaciones (e2e)', () => {
       'El NRC no corresponde a una asignatura activa',
     );
   });
+
+  describe('decisiones sobre una nueva entrada', () => {
+    async function openNewJustification(responseId: string): Promise<string> {
+      const inbox = await http()
+        .post('/api/justifications/inbox')
+        .set('x-marsys-forms-secret', FORMS_SECRET)
+        .send({ ...submission, externalResponseId: responseId })
+        .expect(201);
+      const opened = await http()
+        .post(`/api/justifications/inbox/${inbox.body.id}/open`)
+        .set('Cookie', asCoordinator())
+        .expect(201);
+      return opened.body.id as string;
+    }
+
+    beforeEach(() => {
+      ctx.notifications.send.mockReset();
+      ctx.notifications.send.mockResolvedValue(undefined);
+    });
+
+    it('dos decisiones simultáneas: una se aplica y la otra recibe 400', async () => {
+      const id = await openNewJustification('form-response-concurrent');
+
+      const responses = await Promise.all([
+        http()
+          .patch(`/api/justifications/${id}/decision`)
+          .set('Cookie', asCoordinator())
+          .send({ status: 'ACCEPTED' }),
+        http()
+          .patch(`/api/justifications/${id}/decision`)
+          .set('Cookie', asCoordinator())
+          .send({ status: 'REJECTED', rejectionReason: 'Fuera de plazo' }),
+      ]);
+
+      expect(responses.map(({ status }) => status).sort()).toEqual([200, 400]);
+      const rejected = responses.find(({ status }) => status === 400);
+      expect(rejected?.body.message).toBe('La justificación ya fue resuelta');
+      const decisions = ctx.prisma.tables.history.filter(
+        (entry) => entry.justificationId === id && entry.toStatus !== 'PENDING',
+      );
+      expect(decisions).toHaveLength(1);
+    });
+
+    it('responde 200 con la decisión guardada aunque falle el envío de correos', async () => {
+      const id = await openNewJustification('form-response-mail-down');
+      ctx.notifications.send.mockRejectedValue(
+        new Error('No se pudo enviar la notificación (500)'),
+      );
+
+      const response = await http()
+        .patch(`/api/justifications/${id}/decision`)
+        .set('Cookie', asCoordinator())
+        .send({ status: 'ACCEPTED' })
+        .expect(200);
+
+      expect(response.body.status).toBe('ACCEPTED');
+      expect(ctx.prisma.tables.justifications.get(id)?.status).toBe('ACCEPTED');
+    });
+  });
 });

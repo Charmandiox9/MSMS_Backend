@@ -8,16 +8,16 @@ Informe de la tarea **"Pruebas Unitarias, E2E, Estrés"**: pruebas funcionales, 
 
 ## Resumen
 
-| Nivel     | Comando               | Suites            | Tests | Resultado                                                                                                                            |
-| --------- | --------------------- | ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Unitarias | `npm test`            | 26 (23 ✅ · 3 ❌) | 186   | **177 pasan · 9 fallan**                                                                                                             |
-| E2E       | `npm run test:e2e`    | 4 (4 ✅)          | 235   | **235 pasan · 0 fallan**                                                                                                             |
-| Estrés    | `npm run test:stress` | 10 escenarios     | —     | **Backend real: 8/9 dentro de los umbrales** (falla `justifications-list`; el de escritura se omitió) · Validación en memoria: 10/10 |
-| Build     | `npm run build`       | —                 | —     | ✅ Compila                                                                                                                           |
+> **Actualización del 27/09/2026 (rol developer):** se corrigieron los problemas que detectaron los tests y se optimizó `GET /justifications`. El detalle está en [Problemas encontrados y corrección](#problemas-encontrados-y-corrección).
 
-Antes de esta tarea había 17 suites unitarias con 70 tests y 1 test E2E. Los 9 tests unitarios que fallan son intencionales: comprueban comportamientos que hoy son incorrectos (sección [Tests que fallan](#tests-que-fallan-9)). Van a pasar cuando se corrija el código.
+| Nivel     | Comando               | Suites        | Tests | Resultado                                                                                                                                                                                                                 |
+| --------- | --------------------- | ------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unitarias | `npm test`            | 26 (26 ✅)    | 195   | **195 pasan · 0 fallan**                                                                                                                                                                                                  |
+| E2E       | `npm run test:e2e`    | 4 (4 ✅)      | 237   | **237 pasan · 0 fallan**                                                                                                                                                                                                  |
+| Estrés    | `npm run test:stress` | 10 escenarios | —     | **Backend real: 8/9 dentro de los umbrales.** `justifications-list` pasó de 2 a 11 req/s y su p99 de 4,8 s a 1,6 s; sigue sobre el umbral por la latencia de red hacia la BD ([ver Estrés](#después-de-las-correcciones)) |
+| Build     | `npm run build`       | —             | —     | ✅ Compila                                                                                                                                                                                                                |
 
-> ⚠️ Jenkins corre `npm run test`. Si estos tests se integran sin corregir los problemas, el pipeline queda en rojo.
+Antes de esta tarea había 17 suites unitarias con 70 tests y 1 test E2E. En la primera entrega (rol QA) 9 tests unitarios fallaban a propósito porque comprobaban comportamientos incorrectos; después de las correcciones pasan todos.
 
 ## Cómo ejecutar
 
@@ -69,63 +69,70 @@ npm run test:stress      # estrés, contra un backend ya levantado (ver sección
   - El `app.e2e-spec.ts` original se conectaba a la base de datos real; ahora usa este arnés.
 - **Estrés** (`test/stress/`): `run.ts` es el runner, `scenarios.ts` define los escenarios y `autocannon.d.ts` tiene tipos mínimos, porque autocannon no publica los suyos.
 
-## Tests que fallan (9)
+## Problemas encontrados y corrección
 
-### 1. Auto-desactivación y auto-eliminación en producción (2 tests)
+Los 9 tests que fallaban en la entrega de QA (26/09/2026) detectaron 4 problemas. Además se corrigieron dos hallazgos que no tenían test que fallara: la revalidación de sesiones y el N+1 que encontró la prueba de estrés. Estado actual: ✅ todos corregidos y cubiertos por tests.
 
-`src/users/users.controller.spec.ts` › _UsersController con el usuario autenticado de cada entorno_
+### 1. Auto-desactivación y auto-eliminación en producción ✅
 
-- ❌ impide desactivar la propia cuenta en producción (sesión)
-- ❌ impide eliminar la propia cuenta en producción (sesión)
+- **Problema (2 tests):** en producción, `SessionAuthGuard` dejaba en `request.user` la sesión `{ sub, email, roles }`, sin `id`. `UsersController` usa `actor.id`, que quedaba `undefined`, así que un administrador podía desactivarse o eliminarse a sí mismo.
+- **Corrección:** `SessionAuthGuard` agrega `id` (igual a `sub`) al usuario del request, con la misma forma que entrega `JwtStrategy` en desarrollo. Es un cambio que solo suma: `GET /auth/session` devuelve además el campo `id`. `@CurrentUser()` quedó tipado como `CurrentUserPayload` (antes decía ser un `User` de Prisma, lo que era incorrecto).
+- **Tests:** en `users.controller.spec.ts` el actor de producción ahora se obtiene ejecutando el `SessionAuthGuard` real; `session-auth.guard.spec.ts` verifica la forma del usuario.
 
-En producción, `SessionAuthGuard` deja en `request.user` la sesión `{ sub, email, roles }`, sin `id`. `UsersController` usa `actor.id`, que queda `undefined`. Por eso el chequeo "no puedes desactivarte ni eliminarte a ti mismo" no se aplica. En desarrollo (JWT, `{ id, ... }`) sí funciona: los casos equivalentes pasan.
+### 2. Decisiones simultáneas ✅
 
-```
-Received promise resolved instead of rejected
-Resolved to value: {"isActive": false, "success": true}
-Resolved to value: {"success": true}
-```
+- **Problema (1 test):** `decide()` verificaba el estado `PENDING` fuera de la transacción. Dos decisiones simultáneas se aplicaban ambas: la segunda sobrescribía a la primera y el estudiante recibía dos correos contradictorios.
+- **Corrección:** dentro de la transacción se usa `updateMany({ where: { id, status: PENDING } })`. Si no actualiza ninguna fila, otra decisión ganó y se responde 400 "La justificación ya fue resuelta", sin historial ni correos. La base de datos garantiza que solo una decisión se aplica.
+- **Tests:** unitario de concurrencia (base en memoria que respeta el filtro por estado), unitario "no aplica la decisión si otra la resolvió entre la validación y la escritura" y E2E "dos decisiones simultáneas: una se aplica y la otra recibe 400".
 
-### 2. Decisiones simultáneas (1 test)
+### 3. Falla de correo después de guardar la decisión ✅
 
-`src/justifications/justifications.service.spec.ts` › _JustificationsService decisiones concurrentes_
+- **Problema (1 test):** si Resend fallaba, la API respondía error aunque la decisión ya estaba guardada, y un correo fallido cortaba los demás envíos.
+- **Corrección:** los envíos se hacen con `Promise.allSettled`. Cada fallo se registra en el log con su destinatario, los demás correos se envían igual y la API responde 200 con la decisión guardada.
+- **Tests:** unitarios "devuelve la decisión guardada aunque falle el envío de correos" y "si falla un correo, igual envía los demás"; E2E "responde 200 con la decisión guardada aunque falle el envío de correos".
 
-- ❌ solo una de dos decisiones simultáneas sobre la misma justificación se aplica
+### 4. Permisos del seed que no llegaban a los endpoints ✅
 
-`decide()` verifica que el estado sea `PENDING` fuera de la transacción. Si dos coordinadores deciden al mismo tiempo, ambas decisiones pasan el chequeo y se aplican: la segunda sobrescribe a la primera y el estudiante recibe dos correos contradictorios. El test usa una base en memoria que respeta el filtro por estado, igual que PostgreSQL.
+- **Problema (5 tests):** roles con permisos en la matriz RBAC sembrada recibían 403 en los endpoints correspondientes.
+- **Corrección:** se abrieron **solo lecturas**, siguiendo el criterio de mínimo privilegio. Ningún rol perdió acceso.
 
-```
-Expected length: 1
-Received length: 2
-→ ACCEPTED (coordinator-1) y luego REJECTED "Fuera de plazo" (coordinator-2), ambas "fulfilled"
-```
+| Endpoint                                               | Antes                    | Ahora                        | Permiso del seed          |
+| ------------------------------------------------------ | ------------------------ | ---------------------------- | ------------------------- |
+| `GET /justifications`                                  | secretaría, coordinación | **+ analista**               | `JUSTIFICATIONS_VIEW`     |
+| `GET /academic/teachers`, `GET /academic/teachers/:id` | secretaría               | **+ analista, coordinación** | `ACADEMIC_RECORDS_VIEW`   |
+| `GET /academic/courses`                                | secretaría               | **+ analista, coordinación** | `ACADEMIC_RECORDS_VIEW`   |
+| `GET /academic/semesters`                              | secretaría               | **+ analista, coordinación** | `ACADEMIC_RECORDS_VIEW`   |
+| `GET /justifications/:id/evidence-url`                 | secretaría, coordinación | **sin cambios**              | —                         |
+| Importaciones CSV y activar semestre                   | secretaría               | sin cambios                  | `ACADEMIC_RECORDS_MANAGE` |
 
-### 3. Falla de correo después de guardar la decisión (1 test)
+> **Decisión a confirmar con el equipo:** las evidencias (certificados médicos y otros documentos personales) siguen restringidas a secretaría y coordinación, aunque el analista tenga `JUSTIFICATIONS_VIEW`. El analista hace reportes consolidados y no necesita descargar documentos personales. El test "las evidencias solo las descargan secretaría y coordinación" fija esta regla.
 
-`src/justifications/justifications.service.spec.ts` › _JustificationsService flujo completo › decide_
+- **Tests:** la matriz por endpoint, la coherencia con el seed y la matriz E2E por rol se actualizaron.
 
-- ❌ devuelve la decisión guardada aunque falle el envío de correos
+### 5. Sesiones de producción sin revalidar `isActive` ✅
 
-La decisión se guarda (commit) y después se envían los correos. Si Resend falla, la API responde con error aunque la decisión ya quedó registrada, y el cliente puede creer que no se guardó.
+- **Problema:** una sesión de producción (Redis, 24 h) no se revalidaba contra la base de datos, así que un usuario desactivado conservaba el acceso hasta que expirara la sesión.
+- **Corrección:** se extrajo `ActiveUserService` a partir de la lógica de `JwtStrategy`: usuario activo con sus roles, cacheado 60 s en la clave `user:<id>`, que `UsersService` invalida al activar, desactivar o eliminar la cuenta. `JwtStrategy` y `SessionAuthGuard` usan el mismo servicio. Una cuenta desactivada pierde el acceso de inmediato (o, como máximo, en 60 s si el caché no se invalidó).
+- **Tests:** `session-auth.guard.spec.ts` ("rechaza una sesión vigente de una cuenta desactivada" y el caso equivalente con JWT); `jwt.strategy.spec.ts` ejercita el servicio real (caché, base de datos y usuario inactivo).
 
-```
-Received promise rejected instead of resolved
-Rejected to value: [Error: No se pudo enviar la notificación (500)]
-```
+### 6. `GET /justifications` con consultas N+1 ✅
 
-### 4. Permisos del seed que no llegan al endpoint (5 tests)
+- **Problema (hallazgo de estrés):** por cada justificación se hacían consultas de profesores y bloques, con reintentos sobre el histórico, así que el costo crecía linealmente con el número de filas.
+- **Corrección:** `withTeachersAndBlocks` resuelve todas las filas con **una consulta de profesores y una de horarios**, con el filtro `nrc IN (...)`. Cada consulta incluye `semester.isActive` y en memoria se prefiere el semestre activo; si no hay, se usa el histórico (misma regla que antes). La bandeja usa la misma consulta de horarios. **La respuesta tiene la misma forma que antes**: el frontend no requiere cambios.
+- **Tests:** unitarios de "listados en lote" (número fijo de consultas con 4 filas, preferencia del semestre activo, profesores sin duplicar, bandeja en una consulta y sin consultas cuando no hay filas).
 
-`src/auth/route-permissions.spec.ts` › _Coherencia entre la matriz RBAC sembrada y los endpoints_
+### Cambios de código
 
-| Test                                                                                               | Roles con el permiso que reciben 403                       |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| ❌ todo rol con `JUSTIFICATIONS_VIEW` puede usar `JustificationsController.list`                   | `ACADEMIC_PROCESS_ANALYST`                                 |
-| ❌ todo rol con `JUSTIFICATIONS_VIEW` puede usar `JustificationsController.evidenceUrl`            | `ACADEMIC_PROCESS_ANALYST`                                 |
-| ❌ todo rol con `ACADEMIC_RECORDS_VIEW` puede usar `AcademicController.listTeachers`               | `ACADEMIC_PROCESS_ANALYST`, `TEACHING_SUPPORT_COORDINATOR` |
-| ❌ todo rol con `ACADEMIC_RECORDS_VIEW` puede usar `AcademicCoursesController.listCourseSchedules` | `ACADEMIC_PROCESS_ANALYST`, `TEACHING_SUPPORT_COORDINATOR` |
-| ❌ todo rol con `ACADEMIC_RECORDS_VIEW` puede usar `AcademicSemestersController.listSemesters`     | `ACADEMIC_PROCESS_ANALYST`, `TEACHING_SUPPORT_COORDINATOR` |
-
-Los guards solo revisan códigos de rol (`@Roles`); la tabla de permisos no se usa en tiempo de ejecución. La relación entre endpoint y permiso de estos tests es una interpretación: por ejemplo, que `GET /academic/teachers` corresponde a `ACADEMIC_RECORDS_VIEW` ("Consultar docentes, asignaturas…"). El equipo debe confirmar si el seed o los `@Roles` son la fuente de verdad.
+| Archivo                                           | Cambio                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `src/auth/active-user.service.ts`                 | Nuevo: usuario activo con caché de 60 s, compartido por JWT y sesión.                 |
+| `src/auth/strategies/jwt.strategy.ts`             | Delega en `ActiveUserService`. `JwtAuthenticatedUser` se mantiene como alias.         |
+| `src/auth/guards/session-auth.guard.ts`           | Revalida `isActive` y agrega `id` al usuario del request.                             |
+| `src/auth/decorators/current-user.decorator.ts`   | Tipo correcto (`CurrentUserPayload`).                                                 |
+| `src/auth/auth.module.ts`                         | Registra `ActiveUserService`.                                                         |
+| `src/justifications/justifications.service.ts`    | Decisión condicionada al estado, notificaciones con `allSettled` y consultas en lote. |
+| `src/justifications/justifications.controller.ts` | `GET /justifications` + analista.                                                     |
+| `src/academic/academic.controller.ts`             | GET de lectura + analista y coordinación.                                             |
 
 ## Estrés
 
@@ -173,9 +180,9 @@ npm run test:stress
 
 Los registros que crea `forms-inbox-write` quedan en la bandeja como no leídos, con `studentEmail = stress-test@alumnos.ucn.cl`, y se pueden identificar por el prefijo `stress-` para limpiarlos.
 
-### Resultados contra el backend real
+### Resultados contra el backend real (antes de las correcciones)
 
-Corrida del 26/09/2026 contra el backend compilado (`node dist/main.js`, `NODE_ENV=development`) en `localhost:3001`, conectado a la **base de datos de desarrollo (Neon PostgreSQL, AWS us-east-1)**.
+Primera corrida, del 26/09/2026, contra el backend compilado (`node dist/main.js`, `NODE_ENV=development`) en `localhost:3001`, conectado a la **base de datos de desarrollo (Neon PostgreSQL, AWS us-east-1)**.
 
 - **Carga:** 10 conexiones durante 10 s por escenario. Es más baja que el default para no saturar la BD compartida.
 - **Solo lectura:** no se activó `STRESS_ALLOW_WRITES`, así que `forms-inbox-write` se omitió y no se creó ningún registro.
@@ -205,13 +212,45 @@ Latencia secuencial (una solicitud a la vez, 5 repeticiones):
 | `GET /justifications?status=PENDING` | 0               | 148–150 ms                                       |
 | `GET /justifications/inbox`          | 0               | 144–149 ms                                       |
 
-#### Hallazgo: `GET /justifications` no escala
+#### Hallazgo: `GET /justifications` no escalaba (corregido)
 
 - **Con solo 9 justificaciones**, una solicitud aislada ya tarda alrededor de 1 s. Con 10 usuarios concurrentes sube a 3,6 s (p50) y el endpoint atiende 2 req/s. En el servidor, cada solicitud tardó entre 3.363 y 3.983 ms.
 - **Causa:** por cada justificación se hacen consultas adicionales: profesores del NRC y bloques de horario, y cada una se repite sobre el histórico si el semestre activo no tiene resultados. Cada consulta cuesta unos 148 ms de ida y vuelta a Neon. Con concurrencia, las consultas se encolan en el pool de conexiones.
 - **Cómo crece:** el costo aumenta linealmente con el número de justificaciones, y el endpoint no pagina, así que devuelve todas. Con el volumen de un semestre real el tiempo de respuesta crecería de forma proporcional.
 - **Por qué los otros listados se ven bien:** `justifications-pending` e `inbox-list` pasan porque en esta BD devuelven 0 filas; su latencia es la de una sola consulta. Tienen el mismo patrón de consultas por fila (`inbox-list` busca bloques por cada entrada), así que se comportarían igual con datos.
 - **El resto está sano:** los escenarios sin base de datos (autenticación, rechazo de webhook y firma de URLs) sostienen entre 2.000 y 12.000 req/s con p99 ≤ 10 ms. El JWT no consulta la BD en cada solicitud porque `JwtStrategy` cachea el usuario 60 s.
+
+### Después de las correcciones
+
+Misma corrida (27/09/2026): backend compilado en `localhost:3001` contra la BD de desarrollo en Neon, 10 conexiones, 10 s por escenario, solo lectura y el mismo volumen de datos (9 justificaciones).
+
+**`GET /justifications`, antes y después:**
+
+| Medición                                             | Original             | Consultas en lote | Una consulta por tipo (final) |
+| ---------------------------------------------------- | -------------------- | ----------------- | ----------------------------- |
+| Latencia secuencial (sin contar la primera, en frío) | 957–1.019 ms         | 676–684 ms        | **432–442 ms**                |
+| req/s con 10 conexiones                              | 2                    | 9                 | **11**                        |
+| p50 / p99 con 10 conexiones                          | 3.651 / 4.828 ms     | 950 / 1.901 ms    | **798 / 1.646 ms**            |
+| Consultas por solicitud                              | 1 + hasta 4 por fila | fijas (hasta 5)   | **fijas (3)**                 |
+
+**Corrida completa final:**
+
+| Escenario                 | req/s  | p50    | p99      | máx      | Status      | Resultado             |
+| ------------------------- | ------ | ------ | -------- | -------- | ----------- | --------------------- |
+| `health`                  | 10.689 | 0 ms   | 2 ms     | 7 ms     | 200×106.877 | ✅                    |
+| `auth-rejection`          | 10.882 | 0 ms   | 1 ms     | 9 ms     | 401×119.699 | ✅                    |
+| `session`                 | 6.075  | 1 ms   | 5 ms     | 8 ms     | 200×66.813  | ✅                    |
+| `justifications-list`     | 11     | 798 ms | 1.646 ms | 1.723 ms | 200×110     | ❌ p99 > 1000 ms      |
+| `justifications-pending`  | 71     | 135 ms | 389 ms   | 495 ms   | 200×708     | ✅                    |
+| `inbox-list`              | 71     | 135 ms | 517 ms   | 569 ms   | 200×776     | ✅                    |
+| `presigned-upload`        | 2.026  | 4 ms   | 10 ms    | 34 ms    | 201×22.284  | ✅                    |
+| `forms-presigned-upload`  | 2.667  | 3 ms   | 6 ms     | 21 ms    | 201×29.337  | ✅                    |
+| `forms-webhook-rejection` | 6.575  | 1 ms   | 4 ms     | 14 ms    | 401×72.321  | ✅                    |
+| `forms-inbox-write`       | —      | —      | —        | —        | —           | ○ omitido (escritura) |
+
+**Resultado: 8/9.** Sin errores, timeouts ni status inesperados, y el log del backend no registró errores.
+
+**Por qué `justifications-list` sigue sobre el umbral:** el N+1 está resuelto (el número de consultas ya no depende de las filas). Lo que queda es la latencia de red: cada consulta desde la máquina de prueba (Chile) a Neon (AWS us-east-1) cuesta unos 145 ms, que es lo que tarda `GET /justifications?status=PENDING`, que hace una sola consulta. Con 10 conexiones concurrentes compitiendo por el pool de conexiones de la BD, eso pone un techo cercano a 14 req/s sin importar el código. Con el backend desplegado junto a la base de datos, la latencia por consulta baja a pocos milisegundos. **Pendiente:** repetir la corrida en pre-producción, con backend y BD en la misma región y un volumen de datos representativo.
 
 ### Validación del runner (base en memoria)
 
@@ -253,13 +292,13 @@ Observaciones de la validación:
 - **ESLint no analiza ningún spec del repo:** `tsconfig.json` excluye `**/*spec.ts` y `test/`, y el _project service_ de typescript-eslint los rechaza. Pasa también con los specs existentes. Los archivos nuevos se formatearon con Prettier (`.prettierrc` del proyecto); los specs existentes ampliados no se reformatearon, para no reescribir código de otros.
 - **Estrés:** la corrida real fue solo de lectura, con 10 conexiones, y contra la BD de desarrollo con pocos datos (9 justificaciones). Faltan dos cosas: el escenario de escritura (`forms-inbox-write`), que requiere `STRESS_ALLOW_WRITES=true` y limpiar después los registros `stress-*`, y una corrida en pre-producción con un volumen de datos representativo.
 - **Producción en E2E:** los tests E2E corren con autenticación JWT (modo no productivo). El modo producción (sesión en Redis) se cubre con tests unitarios de `SessionAuthGuard` y `SessionService`.
-- **Sesiones en producción:** una sesión ya creada no se revalida contra `isActive`, así que un usuario desactivado conserva el acceso hasta que expira (24 h). No se agregó un test porque depende de cómo se decida resolverlo (consultar la BD, invalidar sesiones, etc.).
+- **Sesiones en producción:** resuelto (ver problema 5).
 
 ## Detalle completo de tests
 
-Estado de cada test tal como lo reporta Jest. _Origen_ indica si el archivo es nuevo, si existía y se amplió, o si existía sin cambios.
+Estado de cada test tal como lo reporta Jest. _Origen_ indica si el archivo es nuevo, si existía y se amplió o ajustó, o si existía sin cambios.
 
-### Unitarias (`npm test`) — 186 tests
+### Unitarias (`npm test`) — 195 tests
 
 #### `src/academic/academic.controller.spec.ts`
 
@@ -313,7 +352,7 @@ Existente, sin cambios · ✅ 1 pasan · ❌ 0 fallan
 
 #### `src/auth/auth.controller.spec.ts`
 
-Existente, sin cambios · ✅ 2 pasan · ❌ 0 fallan
+Existente, ampliado o ajustado · ✅ 2 pasan · ❌ 0 fallan
 
 |     | Test                                                   |
 | --- | ------------------------------------------------------ |
@@ -360,15 +399,17 @@ Existente, sin cambios · ✅ 6 pasan · ❌ 0 fallan
 
 #### `src/auth/guards/session-auth.guard.spec.ts`
 
-Nuevo · ✅ 7 pasan · ❌ 0 fallan
+Nuevo · ✅ 9 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                  |
 | --- | ----------------------------------------------------------------------------------------------------- |
 | ✅  | SessionAuthGuard › producción › adjunta la sesión almacenada al request usando la cookie session      |
 | ✅  | SessionAuthGuard › producción › lee la cookie desde el header cuando cookie-parser no está disponible |
 | ✅  | SessionAuthGuard › producción › rechaza cuando no hay cookie o la sesión expiró                       |
+| ✅  | SessionAuthGuard › producción › rechaza una sesión vigente de una cuenta desactivada                  |
 | ✅  | SessionAuthGuard › producción › no acepta un JWT de desarrollo como sesión                            |
 | ✅  | SessionAuthGuard › desarrollo › verifica el JWT de la cookie token                                    |
+| ✅  | SessionAuthGuard › desarrollo › rechaza un JWT válido de una cuenta desactivada                       |
 | ✅  | SessionAuthGuard › desarrollo › rechaza cuando no hay token                                           |
 | ✅  | SessionAuthGuard › desarrollo › propaga el error de un JWT inválido                                   |
 
@@ -384,22 +425,22 @@ Existente, sin cambios · ✅ 3 pasan · ❌ 0 fallan
 
 #### `src/auth/route-permissions.spec.ts`
 
-Nuevo · ✅ 7 pasan · ❌ 5 fallan
+Nuevo · ✅ 12 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                                                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | ✅  | Matriz de permisos por endpoint › cada endpoint declara exactamente el acceso esperado                                                                 |
 | ✅  | Matriz de permisos por endpoint › los endpoints públicos que reciben datos externos validan un secreto de webhook                                      |
-| ❌  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con JUSTIFICATIONS_VIEW puede usar JustificationsController.list                   |
-| ❌  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con JUSTIFICATIONS_VIEW puede usar JustificationsController.evidenceUrl            |
+| ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con JUSTIFICATIONS_VIEW puede usar JustificationsController.list                   |
 | ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con JUSTIFICATIONS_CREATE puede usar JustificationsController.listInbox            |
 | ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con JUSTIFICATIONS_CREATE puede usar JustificationsController.open                 |
-| ❌  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicController.listTeachers               |
-| ❌  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicCoursesController.listCourseSchedules |
-| ❌  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicSemestersController.listSemesters     |
+| ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicController.listTeachers               |
+| ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicCoursesController.listCourseSchedules |
+| ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_VIEW puede usar AcademicSemestersController.listSemesters     |
 | ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ACADEMIC_RECORDS_MANAGE puede usar AcademicController.importCsv                |
 | ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con USERS_MANAGE puede usar UsersController.list                                   |
 | ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › todo rol con ROLES_MANAGE puede usar UsersController.assign                                 |
+| ✅  | Coherencia entre la matriz RBAC sembrada y los endpoints › las evidencias solo las descargan secretaría y coordinación                                 |
 
 #### `src/auth/session.service.spec.ts`
 
@@ -423,7 +464,7 @@ Existente, sin cambios · ✅ 4 pasan · ❌ 0 fallan
 
 #### `src/auth/strategies/jwt.strategy.spec.ts`
 
-Existente, sin cambios · ✅ 3 pasan · ❌ 0 fallan
+Existente, ampliado o ajustado · ✅ 3 pasan · ❌ 0 fallan
 
 |     | Test                                                                                 |
 | --- | ------------------------------------------------------------------------------------ |
@@ -490,7 +531,7 @@ Existente, sin cambios · ✅ 9 pasan · ❌ 0 fallan
 
 #### `src/justifications/justifications.service.spec.ts`
 
-Existente, ampliado · ✅ 27 pasan · ❌ 2 fallan
+Existente, ampliado o ajustado · ✅ 36 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                                                             |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -510,19 +551,26 @@ Existente, ampliado · ✅ 27 pasan · ❌ 2 fallan
 | ✅  | JustificationsService flujo completo › openInboxEntry › devuelve la justificación existente si la entrada ya fue abierta                         |
 | ✅  | JustificationsService flujo completo › openInboxEntry › rechaza entradas inexistentes                                                            |
 | ✅  | JustificationsService flujo completo › decide › rechaza justificaciones inexistentes o ya resueltas                                              |
+| ✅  | JustificationsService flujo completo › decide › no aplica la decisión si otra la resolvió entre la validación y la escritura                     |
 | ✅  | JustificationsService flujo completo › decide › rechaza con motivo, guarda historial y notifica solo al estudiante                               |
 | ✅  | JustificationsService flujo completo › decide › rechaza un motivo de rechazo compuesto solo por espacios                                         |
 | ✅  | JustificationsService flujo completo › decide › no guarda motivo de rechazo al aprobar                                                           |
 | ✅  | JustificationsService flujo completo › decide › usa profesores históricos del NRC si no hay asignación en el semestre activo                     |
+| ✅  | JustificationsService flujo completo › decide › prefiere a los profesores del semestre activo sobre los históricos                               |
 | ✅  | JustificationsService flujo completo › decide › aprueba aunque no haya profesores asociados, notificando al estudiante                           |
-| ❌  | JustificationsService flujo completo › decide › devuelve la decisión guardada aunque falle el envío de correos                                   |
+| ✅  | JustificationsService flujo completo › decide › devuelve la decisión guardada aunque falle el envío de correos                                   |
+| ✅  | JustificationsService flujo completo › decide › si falla un correo, igual envía los demás                                                        |
+| ✅  | JustificationsService flujo completo › listados en lote › usa un número fijo de consultas y asigna profesores y bloques a cada fila              |
+| ✅  | JustificationsService flujo completo › listados en lote › no repite un profesor asignado varias veces al mismo NRC                               |
+| ✅  | JustificationsService flujo completo › listados en lote › la bandeja carga los bloques de todas las entradas en una consulta                     |
+| ✅  | JustificationsService flujo completo › listados en lote › sin filas no consulta profesores ni horarios                                           |
 | ✅  | JustificationsService flujo completo › bloques de horario › consulta el día de la fecha UTC 2026-09-21T00:00:00Z (Lunes)                         |
 | ✅  | JustificationsService flujo completo › bloques de horario › consulta el día de la fecha UTC 2026-09-23T00:00:00Z (Miércoles)                     |
 | ✅  | JustificationsService flujo completo › bloques de horario › consulta el día de la fecha UTC 2026-09-26T23:59:59Z (Sábado)                        |
 | ✅  | JustificationsService flujo completo › bloques de horario › no busca bloques para un domingo                                                     |
 | ✅  | JustificationsService flujo completo › bloques de horario › usa el horario histórico si el semestre activo no tiene bloques                      |
 | ✅  | JustificationsService flujo completo › bloques de horario › devuelve una lista vacía si falla la consulta de horarios                            |
-| ❌  | JustificationsService decisiones concurrentes › solo una de dos decisiones simultáneas sobre la misma justificación se aplica                    |
+| ✅  | JustificationsService decisiones concurrentes › solo una de dos decisiones simultáneas sobre la misma justificación se aplica                    |
 
 #### `src/notifications/notifications.service.spec.ts`
 
@@ -570,7 +618,7 @@ Nuevo · ✅ 7 pasan · ❌ 0 fallan
 
 #### `src/storage/storage.service.spec.ts`
 
-Existente, ampliado · ✅ 15 pasan · ❌ 0 fallan
+Existente, ampliado o ajustado · ✅ 15 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                         |
 | --- | ------------------------------------------------------------------------------------------------------------ |
@@ -592,7 +640,7 @@ Existente, ampliado · ✅ 15 pasan · ❌ 0 fallan
 
 #### `src/users/users.controller.spec.ts`
 
-Existente, ampliado · ✅ 6 pasan · ❌ 2 fallan
+Existente, ampliado o ajustado · ✅ 8 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                                   |
 | --- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -601,13 +649,13 @@ Existente, ampliado · ✅ 6 pasan · ❌ 2 fallan
 | ✅  | PreloadUserDto › normalizes the email and accepts one or more seeded role identifiers                                  |
 | ✅  | PreloadUserDto › requires a valid email and at least one distinct role                                                 |
 | ✅  | UsersController con el usuario autenticado de cada entorno › impide desactivar la propia cuenta en desarrollo (JWT)    |
-| ❌  | UsersController con el usuario autenticado de cada entorno › impide desactivar la propia cuenta en producción (sesión) |
+| ✅  | UsersController con el usuario autenticado de cada entorno › impide desactivar la propia cuenta en producción (sesión) |
 | ✅  | UsersController con el usuario autenticado de cada entorno › impide eliminar la propia cuenta en desarrollo (JWT)      |
-| ❌  | UsersController con el usuario autenticado de cada entorno › impide eliminar la propia cuenta en producción (sesión)   |
+| ✅  | UsersController con el usuario autenticado de cada entorno › impide eliminar la propia cuenta en producción (sesión)   |
 
 #### `src/users/users.service.spec.ts`
 
-Existente, ampliado · ✅ 17 pasan · ❌ 0 fallan
+Existente, ampliado o ajustado · ✅ 17 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                             |
 | --- | ---------------------------------------------------------------------------------------------------------------- |
@@ -629,11 +677,11 @@ Existente, ampliado · ✅ 17 pasan · ❌ 0 fallan
 | ✅  | UsersService account administration › permanentlyDelete › conserva cuentas con actividad en justificaciones      |
 | ✅  | UsersService account administration › permanentlyDelete › elimina cuentas sin actividad e invalida el caché      |
 
-### E2E (`npm run test:e2e`) — 235 tests
+### E2E (`npm run test:e2e`) — 237 tests
 
 #### `test/app.e2e-spec.ts`
 
-Existente, ampliado · ✅ 1 pasan · ❌ 0 fallan
+Existente, ampliado o ajustado · ✅ 1 pasan · ❌ 0 fallan
 
 |     | Test                             |
 | --- | -------------------------------- |
@@ -641,7 +689,7 @@ Existente, ampliado · ✅ 1 pasan · ❌ 0 fallan
 
 #### `test/justifications.e2e-spec.ts`
 
-Nuevo · ✅ 17 pasan · ❌ 0 fallan
+Nuevo · ✅ 19 pasan · ❌ 0 fallan
 
 |     | Test                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -662,6 +710,8 @@ Nuevo · ✅ 17 pasan · ❌ 0 fallan
 | ✅  | Flujo de justificaciones (e2e) › filtra por estado e ignora estados desconocidos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ✅  | Flujo de justificaciones (e2e) › responde 404 al abrir una entrada inexistente                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ✅  | Flujo de justificaciones (e2e) › rechaza un NRC desconocido sin nombre de asignatura                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ✅  | Flujo de justificaciones (e2e) › decisiones sobre una nueva entrada › dos decisiones simultáneas: una se aplica y la otra recibe 400                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ✅  | Flujo de justificaciones (e2e) › decisiones sobre una nueva entrada › responde 200 con la decisión guardada aunque falle el envío de correos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 #### `test/permissions.e2e-spec.ts`
 

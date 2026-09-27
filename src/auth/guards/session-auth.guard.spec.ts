@@ -1,6 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { ActiveUserService } from '../active-user.service';
 import { SessionService } from '../session.service';
 import { SessionAuthGuard } from './session-auth.guard';
 
@@ -23,12 +24,23 @@ describe('SessionAuthGuard', () => {
     email: 'user@ucn.cl',
     roles: ['ACADEMIC_SECRETARY'],
   };
+  const requestUser = { ...session, id: 'user-1' };
   let jwtService: { verifyAsync: jest.Mock };
   let sessionService: { get: jest.Mock };
+  let activeUsers: { findActive: jest.Mock };
 
   beforeEach(() => {
     jwtService = { verifyAsync: jest.fn() };
     sessionService = { get: jest.fn() };
+    activeUsers = {
+      findActive: jest
+        .fn()
+        .mockResolvedValue({
+          id: 'user-1',
+          email: 'user@ucn.cl',
+          roles: ['ACADEMIC_SECRETARY'],
+        }),
+    };
   });
 
   function createGuard(nodeEnv: string) {
@@ -36,6 +48,7 @@ describe('SessionAuthGuard', () => {
       new ConfigService({ NODE_ENV: nodeEnv }),
       jwtService as unknown as JwtService,
       sessionService as unknown as SessionService,
+      activeUsers as unknown as ActiveUserService,
     );
   }
 
@@ -52,7 +65,8 @@ describe('SessionAuthGuard', () => {
       ).resolves.toBe(true);
 
       expect(sessionService.get).toHaveBeenCalledWith('session-id');
-      expect(request.user).toBe(session);
+      expect(activeUsers.findActive).toHaveBeenCalledWith('user-1');
+      expect(request.user).toEqual(requestUser);
     });
 
     it('lee la cookie desde el header cuando cookie-parser no está disponible', async () => {
@@ -80,6 +94,20 @@ describe('SessionAuthGuard', () => {
       ).rejects.toThrow('Sesión no válida o expirada');
     });
 
+    it('rechaza una sesión vigente de una cuenta desactivada', async () => {
+      sessionService.get.mockResolvedValue(session);
+      activeUsers.findActive.mockResolvedValue(null);
+      const request: TestRequest = {
+        cookies: { session: 'session-id' },
+        headers: {},
+      };
+
+      await expect(
+        createGuard('production').canActivate(createContext(request)),
+      ).rejects.toThrow('Usuario inválido o inactivo');
+      expect(request.user).toBeUndefined();
+    });
+
     it('no acepta un JWT de desarrollo como sesión', async () => {
       const request: TestRequest = { cookies: { token: 'jwt' }, headers: {} };
 
@@ -100,7 +128,18 @@ describe('SessionAuthGuard', () => {
       ).resolves.toBe(true);
 
       expect(jwtService.verifyAsync).toHaveBeenCalledWith('jwt');
-      expect(request.user).toBe(session);
+      expect(request.user).toEqual(requestUser);
+    });
+
+    it('rechaza un JWT válido de una cuenta desactivada', async () => {
+      jwtService.verifyAsync.mockResolvedValue(session);
+      activeUsers.findActive.mockResolvedValue(null);
+
+      await expect(
+        createGuard('development').canActivate(
+          createContext({ cookies: { token: 'jwt' }, headers: {} }),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('rechaza cuando no hay token', async () => {

@@ -10,6 +10,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SessionService } from './session.service';
 import { SessionAuthGuard } from './guards/session-auth.guard';
+import { ActiveUserService } from './active-user.service';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SessionAuthGuard } from './guards/session-auth.guard';
     WhitelistService,
     SessionService,
     SessionAuthGuard,
+    ActiveUserService,
   ],
   exports: [AuthService, SessionAuthGuard, WhitelistService],
 })

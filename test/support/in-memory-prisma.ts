@@ -31,6 +31,14 @@ function pick<T extends Row>(row: T): T {
   return { ...row };
 }
 
+/** Igualdad o filtro `{ in: [...] }`, como en Prisma. */
+function matchesValue(value: string, filter: unknown): boolean {
+  if (filter && typeof filter === 'object' && 'in' in filter) {
+    return (filter as { in: string[] }).in.includes(value);
+  }
+  return value === filter;
+}
+
 function matchesSemester(activeSemester: boolean, where: Where): boolean {
   const semester = where.semester as { isActive?: boolean } | undefined;
   return (
@@ -107,19 +115,21 @@ export function createInMemoryPrisma() {
             : null,
         );
       },
-      findMany: ({ where }: { where: Where }) => {
-        const seen = new Set<string>();
-        const teachers = assignments
-          .filter(
-            (a) =>
-              a.nrc === where.nrc && matchesSemester(a.activeSemester, where),
-          )
-          .filter((a) => !seen.has(a.teacher.id) && seen.add(a.teacher.id))
-          .map((a) => ({
-            teacher: { name: a.teacher.name, email: a.teacher.email },
-          }));
-        return Promise.resolve(teachers);
-      },
+      findMany: ({ where }: { where: Where }) =>
+        Promise.resolve(
+          assignments
+            .filter(
+              (a) =>
+                matchesValue(a.nrc, where.nrc) &&
+                matchesSemester(a.activeSemester, where),
+            )
+            .map((a) => ({
+              nrc: a.nrc,
+              teacherId: a.teacher.id,
+              teacher: { name: a.teacher.name, email: a.teacher.email },
+              semester: { isActive: a.activeSemester },
+            })),
+        ),
     },
 
     courseSchedule: {
@@ -128,13 +138,17 @@ export function createInMemoryPrisma() {
           schedules
             .filter(
               (s) =>
-                s.nrc === where.nrc &&
-                s.day === where.day &&
+                matchesValue(s.nrc, where.nrc) &&
+                matchesValue(s.day, where.day) &&
                 matchesSemester(s.activeSemester, where),
             )
-            .map((s) => s.block)
-            .sort()
-            .map((block) => ({ block })),
+            .sort((a, b) => a.block.localeCompare(b.block))
+            .map(({ nrc, day, block, activeSemester }) => ({
+              nrc,
+              day,
+              block,
+              semester: { isActive: activeSemester },
+            })),
         ),
     },
 
@@ -230,6 +244,27 @@ export function createInMemoryPrisma() {
         };
         justifications.set(where.id, row);
         return Promise.resolve(pick(row));
+      },
+      updateMany: ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: string };
+        data: Row;
+      }) => {
+        const row = justifications.get(where.id);
+        if (
+          !row ||
+          (where.status !== undefined && row.status !== where.status)
+        ) {
+          return Promise.resolve({ count: 0 });
+        }
+        justifications.set(where.id, {
+          ...row,
+          ...data,
+          updatedAt: new Date(),
+        });
+        return Promise.resolve({ count: 1 });
       },
     },
 

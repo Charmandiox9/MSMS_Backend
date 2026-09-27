@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { ActiveUserService } from './active-user.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -21,6 +22,7 @@ describe('AuthController', () => {
         { provide: SessionService, useValue: sessionService },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        { provide: ActiveUserService, useValue: { findActive: jest.fn() } },
       ],
     }).compile();
 

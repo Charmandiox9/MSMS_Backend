@@ -65,6 +65,11 @@ function routeMatrix(): Record<string, Access> {
 
 const SECRETARY = ['ACADEMIC_SECRETARY'];
 const COORDINATOR = ['TEACHING_SUPPORT_COORDINATOR'];
+const ACADEMIC_READERS = [
+  'ACADEMIC_PROCESS_ANALYST',
+  'ACADEMIC_SECRETARY',
+  'TEACHING_SUPPORT_COORDINATOR',
+];
 
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
@@ -85,13 +90,13 @@ describe('Matriz de permisos por endpoint', () => {
       'UsersController.setActive': ['SYSTEM_ADMIN'],
       'UsersController.permanentlyDelete': ['SYSTEM_ADMIN'],
 
-      'AcademicController.listTeachers': SECRETARY,
-      'AcademicController.getTeacher': SECRETARY,
+      'AcademicController.listTeachers': ACADEMIC_READERS,
+      'AcademicController.getTeacher': ACADEMIC_READERS,
       'AcademicController.importCsv': SECRETARY,
       'AcademicController.importRoster': SECRETARY,
-      'AcademicCoursesController.listCourseSchedules': SECRETARY,
+      'AcademicCoursesController.listCourseSchedules': ACADEMIC_READERS,
       'AcademicCoursesController.importCourseSchedules': SECRETARY,
-      'AcademicSemestersController.listSemesters': SECRETARY,
+      'AcademicSemestersController.listSemesters': ACADEMIC_READERS,
       'AcademicSemestersController.activateSemester': SECRETARY,
 
       'DashboardController.systemAdmin': ['SYSTEM_ADMIN'],
@@ -104,6 +109,7 @@ describe('Matriz de permisos por endpoint', () => {
       'JustificationsController.receiveFormSubmission': 'PUBLIC',
       'JustificationsController.listInbox': COORDINATOR,
       'JustificationsController.list': [
+        'ACADEMIC_PROCESS_ANALYST',
         'ACADEMIC_SECRETARY',
         'TEACHING_SUPPORT_COORDINATOR',
       ],
@@ -158,7 +164,6 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
 
   it.each([
     ['JUSTIFICATIONS_VIEW', 'JustificationsController.list'],
-    ['JUSTIFICATIONS_VIEW', 'JustificationsController.evidenceUrl'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.listInbox'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
@@ -173,5 +178,17 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     expect(
       rolesWith(permission).filter((role) => !allowed.includes(role)),
     ).toEqual([]);
+  });
+
+  // Decisión de mínimo privilegio: JUSTIFICATIONS_VIEW permite consultar las
+  // justificaciones, pero las evidencias (certificados médicos y otros
+  // documentos personales) solo las ven quienes gestionan el proceso.
+  it('las evidencias solo las descargan secretaría y coordinación', () => {
+    expect(rolesAllowed('JustificationsController.evidenceUrl').sort()).toEqual(
+      ['ACADEMIC_SECRETARY', 'SYSTEM_ADMIN', 'TEACHING_SUPPORT_COORDINATOR'],
+    );
+    expect(rolesWith('JUSTIFICATIONS_VIEW')).toContain(
+      'ACADEMIC_PROCESS_ANALYST',
+    );
   });
 });

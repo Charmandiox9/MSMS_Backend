@@ -39,11 +39,15 @@ const routes: Route[] = [
   },
   { method: 'delete', path: `/api/users/${UUID}`, allowed: [] },
 
-  { method: 'get', path: '/api/academic/teachers', allowed: ['secretary'] },
+  {
+    method: 'get',
+    path: '/api/academic/teachers',
+    allowed: ['secretary', 'analyst', 'coordinator'],
+  },
   {
     method: 'get',
     path: `/api/academic/teachers/${UUID}`,
-    allowed: ['secretary'],
+    allowed: ['secretary', 'analyst', 'coordinator'],
   },
   {
     method: 'post',
@@ -57,14 +61,22 @@ const routes: Route[] = [
     body: { csv: 'x' },
     allowed: ['secretary'],
   },
-  { method: 'get', path: '/api/academic/courses', allowed: ['secretary'] },
+  {
+    method: 'get',
+    path: '/api/academic/courses',
+    allowed: ['secretary', 'analyst', 'coordinator'],
+  },
   {
     method: 'post',
     path: '/api/academic/courses/import-csv',
     body: { csv: 'x' },
     allowed: ['secretary'],
   },
-  { method: 'get', path: '/api/academic/semesters', allowed: ['secretary'] },
+  {
+    method: 'get',
+    path: '/api/academic/semesters',
+    allowed: ['secretary', 'analyst', 'coordinator'],
+  },
   {
     method: 'post',
     path: '/api/academic/semesters/activate',
@@ -97,7 +109,7 @@ const routes: Route[] = [
   {
     method: 'get',
     path: '/api/justifications',
-    allowed: ['secretary', 'coordinator'],
+    allowed: ['secretary', 'analyst', 'coordinator'],
   },
   {
     method: 'post',

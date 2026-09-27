@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ActiveUserService } from '../active-user.service';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -25,6 +26,7 @@ describe('JwtStrategy', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         JwtStrategy,
+        ActiveUserService,
         { provide: ConfigService, useValue: { get: () => 'secret' } },
         { provide: PrismaService, useValue: prisma },
         { provide: CACHE_MANAGER, useValue: cache },

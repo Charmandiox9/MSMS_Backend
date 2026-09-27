@@ -10,7 +10,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationMessage, NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
 
 export interface FormJustificationInput {
@@ -26,6 +26,9 @@ export interface FormJustificationInput {
 }
 
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+type TeacherContact = { name: string; email: string };
+type ScheduleSource = { nrc: string | null; absenceDate: Date };
 
 @Injectable()
 export class JustificationsService {
@@ -60,12 +63,8 @@ export class JustificationsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return Promise.all(
-      entries.map(async (entry) => ({
-        ...entry,
-        blocks: await this.findScheduleBlocksForNrcAndDate(entry.nrc, entry.absenceDate),
-      })),
-    );
+    const blocks = await this.findScheduleBlocks(entries);
+    return entries.map((entry) => ({ ...entry, blocks: blocks(entry) }));
   }
 
   async listJustifications(status?: JustificationStatus) {
@@ -74,11 +73,7 @@ export class JustificationsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return Promise.all(justifications.map(async (justification) => ({
-      ...justification,
-      teachers: await this.findTeachersForNrc(justification.nrc),
-      blocks: await this.findScheduleBlocksForNrcAndDate(justification.nrc, justification.absenceDate),
-    })));
+    return this.withTeachersAndBlocks(justifications);
   }
 
   async openInboxEntry(inboxId: string, userId: string) {
@@ -117,11 +112,8 @@ export class JustificationsService {
       return justification;
     });
 
-    return {
-      ...justification,
-      teachers: await this.findTeachersForNrc(justification.nrc),
-      blocks: await this.findScheduleBlocksForNrcAndDate(justification.nrc, justification.absenceDate),
-    };
+    const [withContext] = await this.withTeachersAndBlocks([justification]);
+    return withContext;
   }
 
   async getEvidenceUrl(id: string) {
@@ -145,20 +137,21 @@ export class JustificationsService {
     }
 
     const updated = await this.prisma.$transaction(async (transaction) => {
-      const result = await transaction.justification.update({
-        where: { id },
+      // El filtro por estado hace que solo una decisión concurrente se aplique.
+      const { count } = await transaction.justification.updateMany({
+        where: { id, status: JustificationStatus.PENDING },
         data: { status, rejectionReason: status === JustificationStatus.REJECTED ? rejectionReason : null, reasonCategory, decidedAt: new Date(), decidedById: userId },
       });
+      if (count === 0) throw new BadRequestException('La justificación ya fue resuelta');
       await transaction.justificationStatusHistory.create({
-        data: { justificationId: id, fromStatus: justification.status, toStatus: status, note: rejectionReason, changedById: userId },
+        data: { justificationId: id, fromStatus: JustificationStatus.PENDING, toStatus: status, note: rejectionReason, changedById: userId },
       });
-      return result;
+      return transaction.justification.findUniqueOrThrow({ where: { id } });
     });
 
-    const teachers = await this.findTeachersForNrc(updated.nrc);
-    const blocks = await this.findScheduleBlocksForNrcAndDate(updated.nrc, updated.absenceDate);
-    await this.notifyDecision(updated, teachers);
-    return { ...updated, teachers, blocks };
+    const [withContext] = await this.withTeachersAndBlocks([updated]);
+    await this.notifyDecision(updated, withContext.teachers);
+    return withContext;
   }
 
   private async notifyDecision(
@@ -171,14 +164,14 @@ export class JustificationsService {
       parallel: string | null;
       rejectionReason: string | null;
     },
-    teachers: { name: string; email: string }[],
+    teachers: TeacherContact[],
   ): Promise<void> {
     if (justification.status === JustificationStatus.REJECTED) {
-      await this.notifications.send({
+      await this.sendAll([{
         to: justification.studentEmail,
         subject: 'Resultado de tu justificación de inasistencia',
         text: `Tu justificación para ${justification.subjectName} fue rechazada.${justification.rejectionReason ? ` Motivo: ${justification.rejectionReason}` : ''}`,
-      });
+      }]);
       return;
     }
 
@@ -190,13 +183,13 @@ export class JustificationsService {
       );
     }
 
-    await Promise.all([
-      this.notifications.send({
+    await this.sendAll([
+      {
         to: justification.studentEmail,
         subject: 'Tu justificación de inasistencia fue aprobada',
         text: `Tu justificación para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''} fue aprobada.`,
-      }),
-      ...teachers.map((teacher) => this.notifications.send({
+      },
+      ...teachers.map((teacher) => ({
         to: teacher.email,
         subject: 'Justificación de inasistencia aprobada',
         text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
@@ -204,73 +197,97 @@ export class JustificationsService {
     ]);
   }
 
-  private async findTeachersForNrc(nrc: string | null) {
-    const normalizedNrc = nrc?.trim();
-    if (!normalizedNrc) return Promise.resolve<{ name: string; email: string }[]>([]);
-
-    const activeAssignments = await this.prisma.teachingAssignment.findMany({
-      where: { nrc: normalizedNrc, semester: { isActive: true } },
-      distinct: ['teacherId'],
-      select: { teacher: { select: { name: true, email: true } } },
+  // La decisión ya está guardada: un correo fallido se registra, pero no
+  // convierte la respuesta en error ni impide los demás envíos.
+  private async sendAll(messages: NotificationMessage[]): Promise<void> {
+    const results = await Promise.allSettled(messages.map((message) => this.notifications.send(message)));
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        this.logger.error(`No se pudo notificar la decisión a ${messages[index].to}: ${reason}`);
+      }
     });
-    if (activeAssignments.length > 0) {
-      return activeAssignments.map(({ teacher }) => teacher);
-    }
-
-    // Keep historical justifications routable if the active semester changes
-    // between intake and the decision.
-    const historicalAssignments = await this.prisma.teachingAssignment.findMany({
-      where: { nrc: normalizedNrc },
-      distinct: ['teacherId'],
-      select: { teacher: { select: { name: true, email: true } } },
-    });
-    return historicalAssignments.map(({ teacher }) => teacher);
   }
 
-  private async findScheduleBlocksForNrcAndDate(
-    nrc: string | null | undefined,
-    absenceDate: Date | string | null | undefined,
-  ): Promise<string[]> {
-    const normalizedNrc = nrc?.trim();
-    if (!normalizedNrc || !absenceDate) return [];
+  private async withTeachersAndBlocks<T extends ScheduleSource>(rows: T[]) {
+    const [teachers, blocks] = await Promise.all([
+      this.findTeachers(rows.map(({ nrc }) => nrc)),
+      this.findScheduleBlocks(rows),
+    ]);
+    return rows.map((row) => ({ ...row, teachers: teachers(row.nrc), blocks: blocks(row) }));
+  }
+
+  /** Profesores por NRC en una sola consulta, sin importar cuántas filas haya. */
+  private async findTeachers(nrcs: (string | null)[]): Promise<(nrc: string | null) => TeacherContact[]> {
+    const normalized = [...new Set(nrcs.map((nrc) => nrc?.trim()).filter((nrc): nrc is string => !!nrc))];
+    if (normalized.length === 0) return () => [];
+
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: { nrc: { in: normalized } },
+      select: {
+        nrc: true,
+        teacherId: true,
+        teacher: { select: { name: true, email: true } },
+        semester: { select: { isActive: true } },
+      },
+    });
+
+    const byNrc = new Map<string, TeacherContact[]>();
+    for (const nrc of normalized) {
+      const forNrc = assignments.filter((assignment) => assignment.nrc === nrc);
+      // Keep historical justifications routable if the active semester changes
+      // between intake and the decision.
+      const active = forNrc.filter(({ semester }) => semester.isActive);
+      const teachers = new Map<string, TeacherContact>();
+      for (const { teacherId, teacher } of active.length > 0 ? active : forNrc) teachers.set(teacherId, teacher);
+      byNrc.set(nrc, [...teachers.values()]);
+    }
+    return (nrc) => byNrc.get(nrc?.trim() ?? '') ?? [];
+  }
+
+  /** Bloques del día de la inasistencia por NRC en una sola consulta; usa el histórico si el semestre activo no tiene. */
+  private async findScheduleBlocks(rows: ScheduleSource[]): Promise<(row: ScheduleSource) => string[]> {
+    const keyOf = ({ nrc, absenceDate }: ScheduleSource) => {
+      const normalizedNrc = nrc?.trim();
+      const day = this.weekdayOf(absenceDate);
+      return normalizedNrc && day ? `${normalizedNrc}|${day}` : undefined;
+    };
+    const byKey = new Map<string, string[]>();
+    const lookup = (row: ScheduleSource) => byKey.get(keyOf(row) ?? '') ?? [];
+
+    const keys = [...new Set(rows.map(keyOf).filter((key): key is string => !!key))];
+    if (keys.length === 0) return lookup;
 
     try {
-      const dateObj = absenceDate instanceof Date ? absenceDate : new Date(absenceDate);
-      if (Number.isNaN(dateObj.getTime())) return [];
-
-      const isoString = dateObj.toISOString();
-      const [y, m, d] = isoString.slice(0, 10).split('-').map(Number);
-      const noonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-      const dayName = WEEKDAYS[noonUtc.getUTCDay()];
-      if (!dayName || dayName === 'Domingo') return [];
-
-      const activeSchedules = await this.prisma.courseSchedule.findMany({
+      const schedules = await this.prisma.courseSchedule.findMany({
         where: {
-          nrc: normalizedNrc,
-          day: dayName,
-          semester: { isActive: true },
+          nrc: { in: [...new Set(keys.map((key) => key.split('|')[0]))] },
+          day: { in: [...new Set(keys.map((key) => key.split('|')[1]))] },
         },
         orderBy: { block: 'asc' },
-        select: { block: true },
+        select: { nrc: true, day: true, block: true, semester: { select: { isActive: true } } },
       });
-
-      if (activeSchedules && activeSchedules.length > 0) {
-        return activeSchedules.map((s) => s.block);
+      for (const key of keys) {
+        const forKey = schedules.filter(({ nrc, day }) => `${nrc}|${day}` === key);
+        const active = forKey.filter(({ semester }) => semester.isActive);
+        byKey.set(key, (active.length > 0 ? active : forKey).map(({ block }) => block));
       }
-
-      const historicalSchedules = await this.prisma.courseSchedule.findMany({
-        where: {
-          nrc: normalizedNrc,
-          day: dayName,
-        },
-        orderBy: { block: 'asc' },
-        select: { block: true },
-      });
-
-      return historicalSchedules ? historicalSchedules.map((s) => s.block) : [];
-    } catch {
-      return [];
+    } catch (error) {
+      this.logger.warn(`No se pudieron cargar los bloques de horario: ${error instanceof Error ? error.message : String(error)}`);
+      byKey.clear();
     }
+    return lookup;
+  }
+
+  /** Día de la semana de la fecha (UTC); `undefined` para domingo o fechas inválidas. */
+  private weekdayOf(absenceDate: Date | string | null | undefined): string | undefined {
+    if (!absenceDate) return undefined;
+    const dateObj = absenceDate instanceof Date ? absenceDate : new Date(absenceDate);
+    if (Number.isNaN(dateObj.getTime())) return undefined;
+
+    const [y, m, d] = dateObj.toISOString().slice(0, 10).split('-').map(Number);
+    const dayName = WEEKDAYS[new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()];
+    return dayName === 'Domingo' ? undefined : dayName;
   }
 
   private parseDate(value: string): Date {
