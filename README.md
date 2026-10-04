@@ -71,3 +71,6 @@ También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Lo
 - `src/justifications`: justificaciones y recepción de formularios.
 - `src/dashboard`: datos agregados para los paneles.
 - `prisma/schema.prisma` y `prisma/migrations`: modelo de datos e historial de cambios.
+
+El modelo de profesores, estudiantes ayudantes y ayudantías, sus reglas de
+integridad y sus pruebas SQL se documentan en [la guía académica](docs/academic/assistantships.md).

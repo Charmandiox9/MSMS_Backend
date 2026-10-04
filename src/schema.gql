@@ -2,6 +2,116 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type AssistantshipScheduleView {
+  weekday: Int!
+  startsAtMinute: Int!
+  endsAtMinute: Int!
+  location: String
+}
+
+type AssistantshipView {
+  id: ID!
+  assistantName: String!
+  assistantEmail: String!
+  studentCode: String
+  courseName: String!
+  courseCode: String!
+  nrc: String!
+  teacherName: String!
+  semesterId: ID!
+  semesterName: String!
+  approvedOn: String!
+  startsOn: String!
+  endsOn: String
+  weeklyHours: Float
+  state: AssistantshipState!
+  schedules: [AssistantshipScheduleView!]!
+}
+
+enum AssistantshipState {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+}
+
+type AssistantshipPage {
+  items: [AssistantshipView!]!
+  total: Int!
+  assistants: Int!
+  semesters: Int!
+  page: Int!
+  totalPages: Int!
+}
+
+type AssistantshipSemesterOption {
+  id: ID!
+  name: String!
+  startsOn: String!
+  endsOn: String!
+  isActive: Boolean!
+}
+
+type AssistantshipTeacherOption {
+  id: ID!
+  name: String!
+}
+
+type AssistantshipBlockOption {
+  code: String!
+  startsAtMinute: Int!
+  endsAtMinute: Int!
+}
+
+type AssistantshipOptions {
+  blocks: [AssistantshipBlockOption!]!
+  semesters: [AssistantshipSemesterOption!]!
+  teachers: [AssistantshipTeacherOption!]!
+}
+
+type AssistantshipAssignmentOption {
+  id: ID!
+  courseName: String!
+  courseCode: String!
+  nrc: String!
+  teacherName: String!
+}
+
 type Query {
   hello: String!
+  assistantships(filters: AssistantshipFilters): AssistantshipPage!
+  assistantshipOptions: AssistantshipOptions!
+  assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
+}
+
+input AssistantshipFilters {
+  semesterId: ID
+  teacherId: ID
+  state: AssistantshipState
+  search: String
+  page: Int! = 1
+  pageSize: Int! = 20
+}
+
+type Mutation {
+  registerAssistantship(input: RegisterAssistantshipInput!): AssistantshipView!
+}
+
+input RegisterAssistantshipInput {
+  teachingAssignmentId: ID!
+  assistantName: String!
+  assistantEmail: String!
+  studentCode: String
+  approvedOn: String!
+  startsOn: String!
+  endsOn: String!
+  approvalConfirmed: Boolean!
+  weeklyHours: Float
+  schedules: [AssistantshipScheduleInput!]
+}
+
+input AssistantshipScheduleInput {
+  weekday: Int!
+  startsAtMinute: Int!
+  endsAtMinute: Int!
+  location: String
 }

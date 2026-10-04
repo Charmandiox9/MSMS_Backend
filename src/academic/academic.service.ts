@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { academicScheduleBlocks } from './schedule-blocks';
 
 interface TeacherImportRow {
   teacherEmail: string;
@@ -28,7 +29,7 @@ const DAYS = new Map([
   ['viernes', 'Viernes'],
   ['sabado', 'Sábado'],
 ]);
-const BLOCKS = new Set(['A', 'B', 'C', 'C2', 'D', 'E', 'F', 'G', 'H']);
+const BLOCKS = new Set(academicScheduleBlocks.map((block) => block.code));
 
 @Injectable()
 export class AcademicService {
