@@ -91,6 +91,12 @@ ayudantías en esta versión.
 
 ## Migración y verificación
 
+El formulario utiliza los bloques institucionales A–H, incluido C2, definidos en
+`src/academic/schedule-blocks.ts`. `assistantshipOptions.blocks` entrega sus códigos
+y horas en minutos; el selector muestra ese horario y guarda el intervalo completo.
+La importación de horarios de asignaturas utiliza el mismo catálogo de códigos.
+Los horarios históricos conservan sus horas registradas aunque el catálogo cambie.
+
 La migración `20261004000000_add_teaching_assistants_and_assistantships` es aditiva;
 conserva docentes y cargas existentes. Ejecutar `prisma generate` después de aplicarla.
 

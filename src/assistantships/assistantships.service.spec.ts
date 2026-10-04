@@ -99,6 +99,33 @@ describe('AssistantshipsService', () => {
   });
   afterEach(() => jest.useRealTimers());
 
+  it('returns the institutional blocks and their predefined times with form options', async () => {
+    prisma.academicSemester.findMany.mockResolvedValue([]);
+    prisma.teacher.findMany.mockResolvedValue([]);
+    const options = await service.options();
+    expect(options.blocks.map((block) => block.code)).toEqual([
+      'A',
+      'B',
+      'C',
+      'C2',
+      'D',
+      'E',
+      'F',
+      'G',
+      'H',
+    ]);
+    expect(options.blocks[0]).toEqual({
+      code: 'A',
+      startsAtMinute: 490,
+      endsAtMinute: 580,
+    });
+    expect(options.blocks[8]).toEqual({
+      code: 'H',
+      startsAtMinute: 1290,
+      endsAtMinute: 1380,
+    });
+  });
+
   it('registers the student, their course approval and the assistantship atomically', async () => {
     const result = await service.register(validInput());
     expect(result).toMatchObject({

@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { academicScheduleBlocks } from '../academic/schedule-blocks';
 import {
   AssistantshipFilters,
   AssistantshipState,
@@ -181,6 +182,7 @@ export class AssistantshipsService {
         endsOn: isoDate(semester.endsOn),
       })),
       teachers,
+      blocks: academicScheduleBlocks,
     };
   }
 

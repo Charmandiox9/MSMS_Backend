@@ -168,7 +168,16 @@ export class AssistantshipTeacherOption {
 }
 
 @ObjectType()
+export class AssistantshipBlockOption {
+  @Field() code!: string;
+  @Field(() => Int) startsAtMinute!: number;
+  @Field(() => Int) endsAtMinute!: number;
+}
+
+@ObjectType()
 export class AssistantshipOptions {
+  @Field(() => [AssistantshipBlockOption])
+  blocks!: AssistantshipBlockOption[];
   @Field(() => [AssistantshipSemesterOption])
   semesters!: AssistantshipSemesterOption[];
   @Field(() => [AssistantshipTeacherOption])

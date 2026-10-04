@@ -56,7 +56,14 @@ type AssistantshipTeacherOption {
   name: String!
 }
 
+type AssistantshipBlockOption {
+  code: String!
+  startsAtMinute: Int!
+  endsAtMinute: Int!
+}
+
 type AssistantshipOptions {
+  blocks: [AssistantshipBlockOption!]!
   semesters: [AssistantshipSemesterOption!]!
   teachers: [AssistantshipTeacherOption!]!
 }
