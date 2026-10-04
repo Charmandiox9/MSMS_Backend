@@ -13,6 +13,7 @@ import {
 } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
 import { academicScheduleBlocks } from '../academic/schedule-blocks';
+import { decisionEmail, DecisionEmailDetails } from './decision-email';
 
 export interface FormJustificationInput {
   externalResponseId: string;
@@ -240,26 +241,16 @@ export class JustificationsService {
   }
 
   private async notifyDecision(
-    justification: {
-      status: JustificationStatus;
-      studentEmail: string;
-      subjectName: string;
-      subjectCode: string | null;
-      nrc: string | null;
-      parallel: string | null;
-      rejectionReason: string | null;
-      absenceDate?: Date;
-    },
+    justification: DecisionEmailDetails,
     teachers: TeacherContact[],
     assistants: TeacherContact[],
   ): Promise<void> {
     if (justification.status === JustificationStatus.REJECTED) {
       await this.sendAll([
-        {
-          to: justification.studentEmail,
-          subject: 'Resultado de tu justificación de inasistencia',
-          text: `Tu justificación para ${justification.subjectName} fue rechazada.${justification.rejectionReason ? ` Motivo: ${justification.rejectionReason}` : ''}`,
-        },
+        decisionEmail(justification, {
+          email: justification.studentEmail,
+          role: 'student',
+        }),
       ]);
       return;
     }
@@ -275,17 +266,22 @@ export class JustificationsService {
     }
 
     await this.sendAll([
-      {
-        to: justification.studentEmail,
-        subject: 'Tu justificación de inasistencia fue aprobada',
-        text: `Tu justificación para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''} fue aprobada.`,
-      },
+      decisionEmail(justification, {
+        email: justification.studentEmail,
+        role: 'student',
+      }),
       ...[
         ...new Map(
-          [...teachers, ...assistants].map((contact) => [
-            contact.email.toLowerCase(),
-            contact,
-          ]),
+          [
+            ...assistants.map((contact) => ({
+              ...contact,
+              role: 'assistant' as const,
+            })),
+            ...teachers.map((contact) => ({
+              ...contact,
+              role: 'teacher' as const,
+            })),
+          ].map((contact) => [contact.email.toLowerCase(), contact]),
         ).values(),
       ]
         .filter(
@@ -293,11 +289,7 @@ export class JustificationsService {
             contact.email.toLowerCase() !==
             justification.studentEmail.toLowerCase(),
         )
-        .map((teacher) => ({
-          to: teacher.email,
-          subject: 'Justificación de inasistencia aprobada',
-          text: `Se aprobó la justificación de inasistencia de ${justification.studentEmail}${justification.absenceDate ? ` del ${justification.absenceDate.toISOString().slice(0, 10)}` : ''} para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
-        })),
+        .map((recipient) => decisionEmail(justification, recipient)),
     ]);
   }
 

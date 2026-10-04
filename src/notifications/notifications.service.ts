@@ -5,6 +5,7 @@ export interface NotificationMessage {
   to: string;
   subject: string;
   text: string;
+  html?: string;
 }
 
 @Injectable()
@@ -30,10 +31,19 @@ export class NotificationsService {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text }),
+      body: JSON.stringify({
+        from,
+        to: [message.to],
+        subject: message.subject,
+        text: message.text,
+        ...(message.html ? { html: message.html } : {}),
+      }),
     });
 
-    const responseBody = await response.json().catch(() => null) as { id?: string; message?: string } | null;
+    const responseBody = (await response.json().catch(() => null)) as {
+      id?: string;
+      message?: string;
+    } | null;
 
     if (!response.ok) {
       this.logger.error(
