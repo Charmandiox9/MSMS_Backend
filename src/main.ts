@@ -1,7 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { GqlExceptionFilter } from './common/filters/gql-exception.filter';
+import { ValidationError } from 'class-validator';
+
+function flattenValidationMessages(errors: ValidationError[]): string[] {
+  return errors.flatMap((error) => [
+    ...Object.values(error.constraints ?? {}),
+    ...flattenValidationMessages(error.children ?? []),
+  ]);
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,10 +19,18 @@ async function bootstrap() {
     'http://localhost:3000',
     'http://localhost:80',
     'http://localhost',
+    'https://msmsfrontend-production.up.railway.app',
   ];
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origen CORS no permitido'), false);
+    },
     credentials: true,
   });
 
@@ -25,13 +40,10 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       exceptionFactory: (errors) => {
-        console.log(errors);
-        return new BadRequestException(errors);
+        return new BadRequestException(flattenValidationMessages(errors));
       },
     }),
   );
-
-  app.useGlobalFilters(new GqlExceptionFilter());
 
   await app.listen(process.env.PORT ?? 3001);
 

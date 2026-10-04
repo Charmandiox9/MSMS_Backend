@@ -6,9 +6,11 @@ WORKDIR /app
 # Copiamos los archivos de dependencias y la carpeta prisma
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 
-# Instalamos las dependencias
-RUN npm ci
+# Instalamos las dependencias dentro de Alpine para que npm resuelva también
+# los paquetes opcionales nativos de Linux usados por el contenedor.
+RUN npm install
 
 # Generamos el Prisma Client
 RUN npx prisma generate
@@ -29,10 +31,10 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 3000
 
-# El comando de inicio por defecto
-# Nota: Si necesitas aplicar migraciones en producción, 
-# considera usar 'npx prisma migrate deploy' en tu pipeline o entrypoint
-CMD ["npm", "run", "start:prod"]
+# Aplicamos las migraciones pendientes antes de iniciar NestJS.
+# Si una migración falla, el contenedor no arranca con un esquema inconsistente.
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]

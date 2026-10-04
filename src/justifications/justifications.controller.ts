@@ -1,0 +1,103 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { IsEmail, IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import type { Request } from 'express';
+import { Public } from '../auth/decorators/public.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { JustificationStatus } from '@prisma/client';
+import { JustificationsService, type FormJustificationInput } from './justifications.service';
+
+type AuthenticatedRequest = Request & {
+  user: { id?: string; sub?: string };
+};
+
+function getAuthenticatedUserId(request: AuthenticatedRequest): string {
+  const userId = request.user.sub ?? request.user.id;
+  if (!userId) throw new UnauthorizedException('Usuario autenticado inválido');
+  return userId;
+}
+
+class FormSubmissionDto implements FormJustificationInput {
+  @IsString() @IsNotEmpty() @MaxLength(255) externalResponseId!: string;
+  @IsEmail() studentEmail!: string;
+  @IsString() @IsNotEmpty() absenceDate!: string;
+  @IsOptional() @IsString() @MaxLength(255) subjectName?: string;
+  @IsOptional() @IsString() subjectCode?: string;
+  @IsString() @IsNotEmpty() @MaxLength(50) nrc!: string;
+  @IsOptional() @IsString() @MaxLength(2000) reason?: string;
+  @IsString() @IsNotEmpty() evidenceKey!: string;
+  @IsString() @IsNotEmpty() evidenceContentType!: string;
+}
+
+class DecisionDto {
+  @IsEnum(JustificationStatus) status!: JustificationStatus;
+  @IsOptional() @IsString() @MaxLength(1000) rejectionReason?: string;
+  @IsOptional() @IsIn(['MEDICAL', 'FAMILY_DEATH', 'PERSONAL', 'ACADEMIC', 'OTHER']) reasonCategory?: string;
+}
+
+@Controller('justifications')
+export class JustificationsController {
+  constructor(private readonly service: JustificationsService) {}
+
+  @Public()
+  @Post('inbox')
+  receiveFormSubmission(
+    @Headers('x-marsys-forms-secret') secret: string | undefined,
+    @Headers('x-google-forms-secret') legacySecret: string | undefined,
+    @Body() body: FormSubmissionDto,
+  ) {
+    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
+    const receivedSecret = (secret ?? legacySecret)?.trim();
+    if (!expected || receivedSecret !== expected) {
+      console.warn(
+        `[FormsWebhook] inbox unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${receivedSecret?.length ?? 0}`,
+      );
+      throw new UnauthorizedException('Webhook no autorizado');
+    }
+    return this.service.receiveFormSubmission(body);
+  }
+
+  @Get('inbox')
+  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  listInbox() {
+    return this.service.listInbox();
+  }
+
+  @Get()
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
+  list(@Req() request: AuthenticatedRequest) {
+    const status = request.query.status;
+    return this.service.listJustifications(
+      typeof status === 'string' && Object.values(JustificationStatus).includes(status as JustificationStatus)
+        ? (status as JustificationStatus)
+        : undefined,
+    );
+  }
+
+  @Post('inbox/:id/open')
+  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  open(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.service.openInboxEntry(id, getAuthenticatedUserId(request));
+  }
+
+  @Patch(':id/decision')
+  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  decide(@Param('id') id: string, @Body() body: DecisionDto, @Req() request: AuthenticatedRequest) {
+    return this.service.decide(id, getAuthenticatedUserId(request), body.status, body.rejectionReason, body.reasonCategory);
+  }
+
+  @Get(':id/evidence-url')
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
+  evidenceUrl(@Param('id') id: string) {
+    return this.service.getEvidenceUrl(id);
+  }
+}

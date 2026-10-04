@@ -2,6 +2,7 @@ import { ExecutionContext, Injectable } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SessionAuthGuard } from './session-auth.guard';
 import { getRequestFromContext } from '../../common/utils/execution-context.util';
@@ -33,7 +34,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
-  getRequest(context: ExecutionContext) {
+  getRequest(context: ExecutionContext): Request {
     return getRequestFromContext(context);
   }
 }

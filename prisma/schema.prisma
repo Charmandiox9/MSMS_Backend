@@ -20,11 +20,165 @@ model User {
   
   // Los roles y permisos son configurables y se asignan mediante relaciones RBAC.
   userRoles     UserRole[]
+  createdJustifications Justification[] @relation("JustificationCreatedBy")
+  decidedJustifications Justification[] @relation("JustificationDecidedBy")
+  justificationHistory JustificationStatusHistory[]
   
   isActive      Boolean    @default(true)
   
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+enum JustificationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum JustificationInboxStatus {
+  UNREAD
+  READ
+}
+
+model AcademicSemester {
+  id          String   @id @default(uuid())
+  name        String
+  startsOn    DateTime
+  endsOn      DateTime
+  isActive    Boolean  @default(false)
+  assignments TeachingAssignment[]
+  courseSchedules CourseSchedule[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@unique([name])
+}
+
+model Teacher {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  employeeCode String?  @unique
+  assignments  TeachingAssignment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Course {
+  id           String   @id @default(uuid())
+  code         String
+  name         String
+  assignments  TeachingAssignment[]
+  schedules    CourseSchedule[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([code, name])
+}
+
+model TeachingAssignment {
+  id         String   @id @default(uuid())
+  semesterId String
+  teacherId  String
+  courseId   String
+  nrc        String   @default("")
+  /// Deprecated: retained only for historical data. New imports use nrc.
+  parallel   String   @default("")
+  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  teacher    Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([semesterId, teacherId, courseId, nrc])
+  @@index([semesterId])
+  @@index([teacherId])
+}
+
+model CourseSchedule {
+  id         String           @id @default(uuid())
+  semesterId String
+  courseId   String
+  nrc        String
+  day        String
+  block      String
+  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@unique([semesterId, nrc, day, block])
+  @@index([semesterId])
+  @@index([nrc])
+}
+
+model JustificationInbox {
+  id                 String                    @id @default(uuid())
+  externalResponseId String                    @unique
+  studentEmail       String
+  absenceDate        DateTime
+  subjectName        String
+  subjectCode        String?
+  nrc                String?
+  reasonCategory     String?
+  /// Deprecated: retained for historical submissions.
+  parallel           String?
+  reason             String?
+  evidenceKey        String
+  evidenceContentType String
+  status             JustificationInboxStatus  @default(UNREAD)
+  readAt             DateTime?
+  justificationId    String?                   @unique
+  justification      Justification?            @relation(fields: [justificationId], references: [id])
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model Justification {
+  id                  String                 @id @default(uuid())
+  sourceResponseId    String                 @unique
+  studentEmail        String
+  absenceDate         DateTime
+  subjectName         String
+  subjectCode         String?
+  nrc                 String?
+  reasonCategory      String?
+  /// Deprecated: retained for historical submissions.
+  parallel            String?
+  reason              String?
+  evidenceKey         String
+  evidenceContentType String
+  status              JustificationStatus    @default(PENDING)
+  rejectionReason     String?
+  openedAt            DateTime               @default(now())
+  decidedAt           DateTime?
+  createdById         String
+  decidedById         String?
+  createdBy           User                   @relation("JustificationCreatedBy", fields: [createdById], references: [id])
+  decidedBy           User?                  @relation("JustificationDecidedBy", fields: [decidedById], references: [id])
+  inboxEntry          JustificationInbox?
+  history             JustificationStatusHistory[]
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([status, createdAt])
+  @@index([studentEmail])
+}
+
+model JustificationStatusHistory {
+  id              String              @id @default(uuid())
+  justificationId String
+  fromStatus      JustificationStatus?
+  toStatus        JustificationStatus
+  note            String?
+  changedById     String
+  justification   Justification       @relation(fields: [justificationId], references: [id], onDelete: Cascade)
+  changedBy       User                @relation(fields: [changedById], references: [id])
+  createdAt       DateTime            @default(now())
+
+  @@index([justificationId, createdAt])
 }
 
 model Role {
@@ -34,6 +188,7 @@ model Role {
   description String?
   isSystem    Boolean          @default(false)
   userRoles   UserRole[]
+  preloads    PreloadedUserRole[]
   permissions RolePermission[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -58,6 +213,25 @@ model UserRole {
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
+}
+
+model PreloadedUser {
+  id        String               @id @default(uuid())
+  email     String               @unique
+  createdAt DateTime             @default(now())
+  roles     PreloadedUserRole[]
+}
+
+model PreloadedUserRole {
+  preloadedUserId String
+  roleId          String
+  assignedAt      DateTime      @default(now())
+
+  preloadedUser PreloadedUser @relation(fields: [preloadedUserId], references: [id], onDelete: Cascade)
+  role          Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([preloadedUserId, roleId])
+  @@index([roleId])
 }
 
 model RolePermission {

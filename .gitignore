@@ -26,12 +26,11 @@ lerna-debug.log*
 .settings/
 *.sublime-workspace
 
+# TypeScript build info
+*.tsbuildinfo
+
 # IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
 
 # Environment variables
 .env*

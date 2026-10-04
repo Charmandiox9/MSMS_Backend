@@ -16,6 +16,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { StorageModule } from './storage/storage.module';
+import { JustificationsModule } from './justifications/justifications.module';
+import { AcademicModule } from './academic/academic.module';
+import { UsersModule } from './users/users.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -68,6 +73,11 @@ const devProviders =
       },
     }),
     AuthModule,
+    StorageModule,
+    JustificationsModule,
+    AcademicModule,
+    UsersModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
