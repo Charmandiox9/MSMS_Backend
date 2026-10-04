@@ -52,9 +52,42 @@ antes de usarlos para registrar aprobaciones históricas.
   un historial de contratos o reingresos.
 
 Los `CHECK` se definen en la migración SQL porque Prisma no los representa en su
-esquema. Este cambio implementa persistencia; las futuras operaciones de gestión
-deben validar perfiles activos, períodos dentro del semestre y conflictos de
-horario, aplicar permisos y traducir los errores de integridad a excepciones NestJS.
+esquema. El módulo `src/assistantships` valida perfiles activos, períodos dentro del
+semestre y conflictos de horario, comprueba permisos y traduce los errores de
+integridad a excepciones NestJS.
+
+## Gestión mediante GraphQL
+
+Todas las operaciones requieren autenticación y el permiso persistido
+`TEACHING_ASSISTANTS_MANAGE`, incluso las consultas y los datos del formulario.
+Se usa GraphQL para devolver el registro junto con el estudiante, profesor,
+asignatura, semestre y horarios en una consulta tipada, consumida con Apollo.
+
+- `assistantships(filters)`: consulta paginada con búsqueda por estudiante,
+  correo, código estudiantil, asignatura, profesor o NRC; filtros por semestre,
+  profesor y estado. Los totales reflejan los filtros. La página solicitada se
+  ajusta si excede el número de páginas disponible.
+- `assistantshipOptions`: semestres y profesores para los filtros.
+- `assistantshipAssignments(semesterId)`: cargas con profesores activos y NRC
+  para registrar una ayudantía en ese semestre.
+- `registerAssistantship(input)`: registra en una transacción serializable al
+  estudiante, su aprobación y la ayudantía con sus horarios. Reutiliza perfiles
+  por correo sin cambiar sus datos ni reescribir aprobaciones previas. Requiere
+  confirmación explícita de la aprobación y fechas de inicio y término dentro
+  del semestre. Detecta horarios superpuestos, incluso con otras ayudantías del
+  mismo estudiante cuyos períodos coincidan. Los conflictos concurrentes se
+  devuelven como errores recuperables para reintentar.
+
+La aprobación se registra a partir de la constancia declarada por el personal
+autorizado; no existe integración con notas institucionales. Los estados
+`SCHEDULED`, `ACTIVE` y `COMPLETED` se calculan por fechas, incluyendo el día de
+término. `ACADEMIC_TIME_ZONE` configura el calendario usado (por defecto,
+`America/Santiago`). Se permiten registros históricos de semestres anteriores.
+
+La vista `/dashboard/assistantships` reemplaza el historial anterior, cuya ruta
+redirige a la nueva vista. Permite buscar, filtrar y registrar desde un modal.
+Los horarios son opcionales y no se implementan edición ni eliminación de
+ayudantías en esta versión.
 
 ## Migración y verificación
 
