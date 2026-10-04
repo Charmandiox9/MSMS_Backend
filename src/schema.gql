@@ -11,6 +11,8 @@ type AssistantshipScheduleView {
 
 type AssistantshipView {
   id: ID!
+  teachingAssignmentId: ID!
+  assistantshipNrc: String
   assistantName: String!
   assistantEmail: String!
   studentCode: String
@@ -94,9 +96,11 @@ input AssistantshipFilters {
 
 type Mutation {
   registerAssistantship(input: RegisterAssistantshipInput!): AssistantshipView!
+  updateAssistantship(id: ID!, input: RegisterAssistantshipInput!): AssistantshipView!
 }
 
 input RegisterAssistantshipInput {
+  assistantshipNrc: String!
   teachingAssignmentId: ID!
   assistantName: String!
   assistantEmail: String!

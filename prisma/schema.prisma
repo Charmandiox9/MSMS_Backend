@@ -132,9 +132,11 @@ model AssistantCourseApproval {
   @@index([courseId])
 }
 
-/// Semester, NRC and supervising teacher come from the teaching assignment.
+/// Semester, course NRC and supervising teacher come from the teaching assignment.
+/// nrc identifies the assistantship itself and can differ from the course NRC.
 model Assistantship {
   id                   String                  @id @default(uuid())
+  nrc                  String?
   teachingAssignmentId String
   assistantId          String
   courseId             String
@@ -190,6 +192,7 @@ model JustificationInbox {
   externalResponseId String                    @unique
   studentEmail       String
   absenceDate        DateTime
+  absenceBlocks      String[]                  @default([])
   subjectName        String
   subjectCode        String?
   nrc                String?
@@ -214,6 +217,7 @@ model Justification {
   sourceResponseId    String                 @unique
   studentEmail        String
   absenceDate         DateTime
+  absenceBlocks       String[]               @default([])
   subjectName         String
   subjectCode         String?
   nrc                 String?

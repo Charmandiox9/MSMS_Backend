@@ -61,6 +61,8 @@ export class AssistantshipsService {
     } = record;
     return {
       id: record.id,
+      teachingAssignmentId: record.teachingAssignmentId,
+      assistantshipNrc: record.nrc,
       assistantName: assistant.name,
       assistantEmail: assistant.email,
       studentCode: assistant.studentCode,
@@ -128,6 +130,7 @@ export class AssistantshipsService {
                   ],
                 },
               },
+              { nrc: text },
             ],
           }
         : {}),
@@ -204,6 +207,22 @@ export class AssistantshipsService {
   async register(
     input: RegisterAssistantshipInput,
   ): Promise<AssistantshipView> {
+    return this.save(input);
+  }
+
+  async update(
+    id: string,
+    input: RegisterAssistantshipInput,
+  ): Promise<AssistantshipView> {
+    return this.save(input, id);
+  }
+
+  private async save(
+    input: RegisterAssistantshipInput,
+    id?: string,
+  ): Promise<AssistantshipView> {
+    if (!input.assistantshipNrc?.trim())
+      invalid('INVALID_INPUT', 'Indica el NRC de la ayudantía');
     const date = (value: string) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
         return invalid('INVALID_PERIOD', 'Usa fechas sin hora');
@@ -251,6 +270,14 @@ export class AssistantshipsService {
     try {
       const record = await this.prisma.$transaction(
         async (transaction) => {
+          if (
+            id &&
+            !(await transaction.assistantship.findUnique({ where: { id } }))
+          )
+            throw new NotFoundException({
+              code: 'NOT_FOUND',
+              message: 'La ayudantía no existe',
+            });
           const assignment = await transaction.teachingAssignment.findUnique({
             where: { id: input.teachingAssignmentId },
             include: { teacher: true, semester: true },
@@ -321,6 +348,7 @@ export class AssistantshipsService {
           const conflicts = await transaction.assistantship.findMany({
             where: {
               assistantId: assistant.id,
+              ...(id ? { id: { not: id } } : {}),
               startsOn: { lte: endsOn },
               OR: [{ endsOn: null }, { endsOn: { gte: startsOn } }],
             },
@@ -342,24 +370,26 @@ export class AssistantshipsService {
               'SCHEDULE_CONFLICT',
               'El ayudante tiene otra ayudantía con horario incompatible',
             );
-          return transaction.assistantship.create({
-            data: {
-              teachingAssignmentId: assignment.id,
-              courseId: assignment.courseId,
-              assistantId: assistant.id,
-              approvedOn,
-              startsOn,
-              endsOn,
-              weeklyHours: input.weeklyHours,
-              schedules: {
-                create: schedules.map((schedule) => ({
-                  ...schedule,
-                  location: schedule.location?.trim() || null,
-                })),
-              },
+          const data = {
+            nrc: input.assistantshipNrc.trim(),
+            teachingAssignmentId: assignment.id,
+            courseId: assignment.courseId,
+            assistantId: assistant.id,
+            approvedOn,
+            startsOn,
+            endsOn,
+            weeklyHours: input.weeklyHours ?? null,
+            schedules: {
+              ...(id ? { deleteMany: {} } : {}),
+              create: schedules.map((schedule) => ({
+                ...schedule,
+                location: schedule.location?.trim() || null,
+              })),
             },
-            include,
-          });
+          };
+          return id
+            ? transaction.assistantship.update({ where: { id }, data, include })
+            : transaction.assistantship.create({ data, include });
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );

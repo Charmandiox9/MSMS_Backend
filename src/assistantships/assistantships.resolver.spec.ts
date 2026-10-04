@@ -20,6 +20,7 @@ describe('AssistantshipsResolver contract', () => {
     options: jest.fn(),
     assignments: jest.fn(),
     register: jest.fn(),
+    update: jest.fn(),
   };
   let resolver: AssistantshipsResolver;
   beforeEach(async () => {
@@ -47,8 +48,10 @@ describe('AssistantshipsResolver contract', () => {
   it('delegates registration and assignment queries to the service', () => {
     const input = new RegisterAssistantshipInput();
     void resolver.registerAssistantship(input);
+    void resolver.updateAssistantship({ id: 'assistantship' }, input);
     void resolver.assistantshipAssignments({ semesterId: 'semester' });
     expect(service.register).toHaveBeenCalledWith(input);
+    expect(service.update).toHaveBeenCalledWith('assistantship', input);
     expect(service.assignments).toHaveBeenCalledWith('semester');
   });
   it('validates IDs, email, confirmation, dates, hours and nested schedules', () => {

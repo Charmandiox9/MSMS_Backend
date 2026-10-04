@@ -73,6 +73,7 @@ export class AssistantshipScheduleInput {
 
 @InputType()
 export class RegisterAssistantshipInput {
+  @Field() @IsString() @IsNotEmpty() @MaxLength(50) assistantshipNrc!: string;
   @Field(() => ID) @IsUUID() teachingAssignmentId!: string;
   @Field()
   @Transform(({ value }: { value: unknown }) =>
@@ -124,6 +125,8 @@ export class AssistantshipScheduleView {
 @ObjectType()
 export class AssistantshipView {
   @Field(() => ID) id!: string;
+  @Field(() => ID) teachingAssignmentId!: string;
+  @Field(() => String, { nullable: true }) assistantshipNrc!: string | null;
   @Field() assistantName!: string;
   @Field() assistantEmail!: string;
   @Field(() => String, { nullable: true }) studentCode!: string | null;

@@ -4,6 +4,12 @@ Esta guía configura el formulario, su hoja de respuestas, un Apps Script que su
 
 ## Flujo
 
+El payload de justificaciones admite `absenceBlocks` opcional, por ejemplo
+`["A", "B"]`. Los códigos deben pertenecer al catálogo académico. Cuando el
+formulario solo envía fecha, al aprobar se notifica a los ayudantes de la asignatura
+con ayudantía ese día dentro de su período. Si envía bloques, deben coincidir además
+con el horario de la ayudantía. Los rechazos no notifican al ayudante.
+
 ```text
 Google Form → hoja de respuestas → Apps Script
                                   ├─ solicita URL firmada al backend
@@ -59,6 +65,7 @@ Pega el siguiente código en `Code.gs`. Ajusta los valores de `CONFIG` a los enc
 const CONFIG = {
   emailHeader: 'Dirección de correo electrónico',
   absenceDateHeader: 'Día que faltó',
+  absenceBlocksHeader: 'Bloques de inasistencia', // Opcional; si no existe, se envía [].
   subjectHeader: 'Clase que faltó',
   evidenceHeader: 'Adjunte el justificante',
   reasonHeader: 'Motivo o comentario',
@@ -139,6 +146,8 @@ function handleFormSubmit(event) {
     externalResponseId: externalResponseId,
     studentEmail: studentEmail,
     absenceDate: absenceDate,
+    absenceBlocks: (optionalText_(answers[CONFIG.absenceBlocksHeader]) || '')
+      .split(/[,;]/).map((block) => block.trim().toUpperCase()).filter(Boolean),
     subjectName: subjectName || undefined,
     nrc: nrc,
     reason: optionalText_(answers[CONFIG.reasonHeader]),

@@ -91,6 +91,34 @@ ayudantías en esta versión.
 
 ## Migración y verificación
 
+### Integración con los flujos académicos
+
+- Cada ayudantía tiene un NRC propio (`Assistantship.nrc`), independiente del NRC
+  de su asignatura. El formulario reemplaza el código estudiantil por este dato;
+  los códigos estudiantiles históricos permanecen en el perfil del estudiante.
+- `updateAssistantship` actualiza el registro y reemplaza sus horarios en una sola
+  transacción, conserva la validación de aprobación y excluye el propio registro
+  al comprobar cruces. Los NRC históricos sin dato propio se muestran sin inventar uno.
+- Secretaría puede gestionar ayudantías. El analista puede consultarlas mediante
+  `ACADEMIC_RECORDS_VIEW`; las mutaciones requieren `TEACHING_ASSISTANTS_MANAGE`.
+- `/academic/courses` integra los horarios de ayudantías del semestre activo,
+  identificados con `kind: ASSISTANTSHIP`, sus períodos, ubicaciones y ayudantes.
+- Los dashboards de todos los roles incluyen ayudantías y ayudantes del semestre activo.
+- `/academic/reports` permite consultar profesores, asignaturas, cargas docentes,
+  estudiantes ayudantes, ayudantías y semestres. `/academic/reports/export` entrega
+  el mismo conjunto filtrado para CSV; exige `REPORTS_EXPORT` y la consulta exige
+  `REPORTS_VIEW`. El archivo incluye todas las filas filtradas, no solo la página visible.
+
+### Justificaciones y correos
+
+El webhook acepta `absenceBlocks` opcional, por ejemplo `["A", "B"]`, con los códigos
+del catálogo institucional. Se conserva el dato al abrir la entrada. Al aprobar
+una justificación se notifica a los ayudantes activos de la asignatura cuyo horario
+coincida con el día UTC de la fecha y cuyo período cubra la inasistencia. Si viene un
+bloque, también debe coincidir exactamente con su intervalo; si no viene, se consideran
+todas las ayudantías de ese día. El rechazo solo se comunica al solicitante.
+Los destinatarios se deduplican y no se envían justificativos adjuntos a ayudantes.
+
 El formulario utiliza los bloques institucionales A–H, incluido C2, definidos en
 `src/academic/schedule-blocks.ts`. `assistantshipOptions.blocks` entrega sus códigos
 y horas en minutos; el selector muestra ese horario y guarda el intervalo completo.

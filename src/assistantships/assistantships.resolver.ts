@@ -18,6 +18,11 @@ export class AssistantshipSemesterArgs {
   @Field(() => ID) @IsUUID() semesterId!: string;
 }
 
+@ArgsType()
+export class AssistantshipIdArgs {
+  @Field(() => ID) @IsUUID() id!: string;
+}
+
 @Resolver()
 @UseGuards(AssistantshipsGuard)
 export class AssistantshipsResolver {
@@ -44,5 +49,13 @@ export class AssistantshipsResolver {
   @Mutation(() => AssistantshipView)
   registerAssistantship(@Args('input') input: RegisterAssistantshipInput) {
     return this.service.register(input);
+  }
+
+  @Mutation(() => AssistantshipView)
+  updateAssistantship(
+    @Args() args: AssistantshipIdArgs,
+    @Args('input') input: RegisterAssistantshipInput,
+  ) {
+    return this.service.update(args.id, input);
   }
 }

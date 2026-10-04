@@ -42,6 +42,7 @@ const record = {
 };
 const validInput = (): RegisterAssistantshipInput =>
   Object.assign(new RegisterAssistantshipInput(), {
+    assistantshipNrc: '20001',
     teachingAssignmentId: 'assignment',
     assistantName: 'Estudiante',
     assistantEmail: 'STUDENT@example.test',
@@ -59,7 +60,12 @@ describe('AssistantshipsService', () => {
     teachingAssignment: { findUnique: jest.fn() },
     teachingAssistant: { findUnique: jest.fn(), create: jest.fn() },
     assistantCourseApproval: { findUnique: jest.fn(), create: jest.fn() },
-    assistantship: { findMany: jest.fn(), create: jest.fn() },
+    assistantship: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
   };
   const prisma = {
     $transaction: jest.fn(),
@@ -98,6 +104,40 @@ describe('AssistantshipsService', () => {
     service = module.get(AssistantshipsService);
   });
   afterEach(() => jest.useRealTimers());
+
+  it('updates the NRC and replaces schedules, excluding its own record from conflicts', async () => {
+    transaction.assistantship.findUnique.mockResolvedValue(record);
+    transaction.assistantship.update.mockResolvedValue({
+      ...record,
+      nrc: '20002',
+    });
+    await service.update('assistantship', {
+      ...validInput(),
+      assistantshipNrc: '20002',
+    });
+    expect(transaction.assistantship.create).not.toHaveBeenCalled();
+    expect(transaction.assistantship.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { not: 'assistantship' } }),
+      }),
+    );
+    expect(transaction.assistantship.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'assistantship' },
+        data: expect.objectContaining({
+          nrc: '20002',
+          schedules: { deleteMany: {}, create: [] },
+        }),
+      }),
+    );
+  });
+
+  it('rejects editing a missing assistantship', async () => {
+    transaction.assistantship.findUnique.mockResolvedValue(null);
+    await expect(service.update('missing', validInput())).rejects.toMatchObject(
+      { status: 404 },
+    );
+  });
 
   it('returns the institutional blocks and their predefined times with form options', async () => {
     prisma.academicSemester.findMany.mockResolvedValue([]);
@@ -291,7 +331,7 @@ describe('AssistantshipsService', () => {
       teacherId: 'teacher',
     });
     expect(query.where?.startsOn).toEqual({ lte: new Date('2026-10-04') });
-    expect(query.where?.OR).toHaveLength(2);
+    expect(query.where?.OR).toHaveLength(3);
   });
   it.each([
     ['2026-11-01', '2026-12-31', AssistantshipState.SCHEDULED],

@@ -6,9 +6,10 @@ import { AssistantshipsGuard } from './assistantships.guard';
 describe('AssistantshipsGuard', () => {
   const findFirst = jest.fn();
   let guard: AssistantshipsGuard;
-  const context = (user?: { id: string }) =>
+  const context = (user?: { id: string }, handler = 'registerAssistantship') =>
     ({
       getType: () => 'http',
+      getHandler: () => ({ name: handler }),
       switchToHttp: () => ({ getRequest: () => ({ user }) }),
     }) as unknown as ExecutionContext;
   beforeEach(async () => {
@@ -33,6 +34,19 @@ describe('AssistantshipsGuard', () => {
       guard.canActivate(context({ id: 'user' })),
     ).rejects.toMatchObject({ status: 403 });
   });
+  it('permits academic readers to query but requires management permission for updates', async () => {
+    findFirst.mockResolvedValue({ id: 'user' });
+    await guard.canActivate(context({ id: 'user' }, 'assistantships'));
+    expect(
+      findFirst.mock.calls[0][0].where.userRoles.some.role.permissions.some
+        .permission.code.in,
+    ).toContain('ACADEMIC_RECORDS_VIEW');
+    await guard.canActivate(context({ id: 'user' }, 'updateAssistantship'));
+    expect(
+      findFirst.mock.calls[1][0].where.userRoles.some.role.permissions.some
+        .permission.code.in,
+    ).toEqual(['TEACHING_ASSISTANTS_MANAGE']);
+  });
   it('checks active accounts and database permissions, regardless of role names', async () => {
     findFirst.mockResolvedValue({ id: 'user' });
     expect(await guard.canActivate(context({ id: 'user' }))).toBe(true);
@@ -44,7 +58,9 @@ describe('AssistantshipsGuard', () => {
           some: {
             role: {
               permissions: {
-                some: { permission: { code: 'TEACHING_ASSISTANTS_MANAGE' } },
+                some: {
+                  permission: { code: { in: ['TEACHING_ASSISTANTS_MANAGE'] } },
+                },
               },
             },
           },

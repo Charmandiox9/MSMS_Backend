@@ -4,19 +4,21 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  JustificationInboxStatus,
-  JustificationStatus,
-} from '@prisma/client';
+import { JustificationInboxStatus, JustificationStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationMessage, NotificationsService } from '../notifications/notifications.service';
+import {
+  NotificationMessage,
+  NotificationsService,
+} from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
+import { academicScheduleBlocks } from '../academic/schedule-blocks';
 
 export interface FormJustificationInput {
   externalResponseId: string;
   studentEmail: string;
   absenceDate: string;
+  absenceBlocks?: string[];
   subjectName?: string;
   subjectCode?: string;
   nrc: string;
@@ -25,10 +27,22 @@ export interface FormJustificationInput {
   evidenceContentType: string;
 }
 
-const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const WEEKDAYS = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
 
 type TeacherContact = { name: string; email: string };
-type ScheduleSource = { nrc: string | null; absenceDate: Date };
+type ScheduleSource = {
+  nrc: string | null;
+  absenceDate: Date;
+  absenceBlocks?: string[];
+};
 
 @Injectable()
 export class JustificationsService {
@@ -43,17 +57,38 @@ export class JustificationsService {
   async receiveFormSubmission(input: FormJustificationInput) {
     const absenceDate = this.parseDate(input.absenceDate);
     const nrc = input.nrc.trim();
+    if (
+      input.absenceBlocks?.some(
+        (code) => !academicScheduleBlocks.some((block) => block.code === code),
+      )
+    )
+      throw new BadRequestException('Bloque de inasistencia inválido');
     const assignment = await this.prisma.teachingAssignment.findFirst({
       where: { nrc, semester: { isActive: true } },
       include: { course: true },
     });
     const subjectName = assignment?.course.name ?? input.subjectName?.trim();
-    if (!subjectName) throw new BadRequestException('El NRC no corresponde a una asignatura activa');
+    if (!subjectName)
+      throw new BadRequestException(
+        'El NRC no corresponde a una asignatura activa',
+      );
 
     return this.prisma.justificationInbox.upsert({
       where: { externalResponseId: input.externalResponseId },
-      update: { ...input, nrc, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
-      create: { ...input, nrc, subjectName, subjectCode: assignment?.course.code ?? input.subjectCode, absenceDate },
+      update: {
+        ...input,
+        nrc,
+        subjectName,
+        subjectCode: assignment?.course.code ?? input.subjectCode,
+        absenceDate,
+      },
+      create: {
+        ...input,
+        nrc,
+        subjectName,
+        subjectCode: assignment?.course.code ?? input.subjectCode,
+        absenceDate,
+      },
     });
   }
 
@@ -77,58 +112,90 @@ export class JustificationsService {
   }
 
   async openInboxEntry(inboxId: string, userId: string) {
-    const justification = await this.prisma.$transaction(async (transaction) => {
-      const inbox = await transaction.justificationInbox.findUnique({ where: { id: inboxId } });
-      if (!inbox) throw new NotFoundException('Entrada de formulario no encontrada');
+    const justification = await this.prisma.$transaction(
+      async (transaction) => {
+        const inbox = await transaction.justificationInbox.findUnique({
+          where: { id: inboxId },
+        });
+        if (!inbox)
+          throw new NotFoundException('Entrada de formulario no encontrada');
 
-      if (inbox.justificationId) {
-        return transaction.justification.findUniqueOrThrow({ where: { id: inbox.justificationId } });
-      }
+        if (inbox.justificationId) {
+          return transaction.justification.findUniqueOrThrow({
+            where: { id: inbox.justificationId },
+          });
+        }
 
-      const justification = await transaction.justification.create({
-        data: {
-          id: randomUUID(),
-          sourceResponseId: inbox.externalResponseId,
-          studentEmail: inbox.studentEmail,
-          absenceDate: inbox.absenceDate,
-          subjectName: inbox.subjectName,
-          subjectCode: inbox.subjectCode,
-          nrc: inbox.nrc,
-          reasonCategory: inbox.reasonCategory,
-          parallel: inbox.parallel,
-          reason: inbox.reason,
-          evidenceKey: inbox.evidenceKey,
-          evidenceContentType: inbox.evidenceContentType,
-          createdById: userId,
-          history: { create: { toStatus: JustificationStatus.PENDING, changedById: userId } },
-        },
-      });
+        const justification = await transaction.justification.create({
+          data: {
+            id: randomUUID(),
+            sourceResponseId: inbox.externalResponseId,
+            studentEmail: inbox.studentEmail,
+            absenceDate: inbox.absenceDate,
+            absenceBlocks: inbox.absenceBlocks,
+            subjectName: inbox.subjectName,
+            subjectCode: inbox.subjectCode,
+            nrc: inbox.nrc,
+            reasonCategory: inbox.reasonCategory,
+            parallel: inbox.parallel,
+            reason: inbox.reason,
+            evidenceKey: inbox.evidenceKey,
+            evidenceContentType: inbox.evidenceContentType,
+            createdById: userId,
+            history: {
+              create: {
+                toStatus: JustificationStatus.PENDING,
+                changedById: userId,
+              },
+            },
+          },
+        });
 
-      await transaction.justificationInbox.update({
-        where: { id: inbox.id },
-        data: { status: JustificationInboxStatus.READ, readAt: new Date(), justificationId: justification.id },
-      });
+        await transaction.justificationInbox.update({
+          where: { id: inbox.id },
+          data: {
+            status: JustificationInboxStatus.READ,
+            readAt: new Date(),
+            justificationId: justification.id,
+          },
+        });
 
-      return justification;
-    });
+        return justification;
+      },
+    );
 
     const [withContext] = await this.withTeachersAndBlocks([justification]);
     return withContext;
   }
 
   async getEvidenceUrl(id: string) {
-    const justification = await this.prisma.justification.findUnique({ where: { id } });
-    if (!justification) throw new NotFoundException('Justificación no encontrada');
+    const justification = await this.prisma.justification.findUnique({
+      where: { id },
+    });
+    if (!justification)
+      throw new NotFoundException('Justificación no encontrada');
     return this.storage.createPresignedDownload(justification.evidenceKey);
   }
 
-  async decide(id: string, userId: string, status: JustificationStatus, rejectionReason?: string, reasonCategory?: string) {
-    if (status !== JustificationStatus.ACCEPTED && status !== JustificationStatus.REJECTED) {
+  async decide(
+    id: string,
+    userId: string,
+    status: JustificationStatus,
+    rejectionReason?: string,
+    reasonCategory?: string,
+  ) {
+    if (
+      status !== JustificationStatus.ACCEPTED &&
+      status !== JustificationStatus.REJECTED
+    ) {
       throw new BadRequestException('La decisión debe ser ACCEPTED o REJECTED');
     }
 
-    const justification = await this.prisma.justification.findUnique({ where: { id } });
-    if (!justification) throw new NotFoundException('Justificación no encontrada');
+    const justification = await this.prisma.justification.findUnique({
+      where: { id },
+    });
+    if (!justification)
+      throw new NotFoundException('Justificación no encontrada');
     if (justification.status !== JustificationStatus.PENDING) {
       throw new BadRequestException('La justificación ya fue resuelta');
     }
@@ -140,17 +207,35 @@ export class JustificationsService {
       // El filtro por estado hace que solo una decisión concurrente se aplique.
       const { count } = await transaction.justification.updateMany({
         where: { id, status: JustificationStatus.PENDING },
-        data: { status, rejectionReason: status === JustificationStatus.REJECTED ? rejectionReason : null, reasonCategory, decidedAt: new Date(), decidedById: userId },
+        data: {
+          status,
+          rejectionReason:
+            status === JustificationStatus.REJECTED ? rejectionReason : null,
+          reasonCategory,
+          decidedAt: new Date(),
+          decidedById: userId,
+        },
       });
-      if (count === 0) throw new BadRequestException('La justificación ya fue resuelta');
+      if (count === 0)
+        throw new BadRequestException('La justificación ya fue resuelta');
       await transaction.justificationStatusHistory.create({
-        data: { justificationId: id, fromStatus: JustificationStatus.PENDING, toStatus: status, note: rejectionReason, changedById: userId },
+        data: {
+          justificationId: id,
+          fromStatus: JustificationStatus.PENDING,
+          toStatus: status,
+          note: rejectionReason,
+          changedById: userId,
+        },
       });
       return transaction.justification.findUniqueOrThrow({ where: { id } });
     });
 
     const [withContext] = await this.withTeachersAndBlocks([updated]);
-    await this.notifyDecision(updated, withContext.teachers);
+    await this.notifyDecision(
+      updated,
+      withContext.teachers,
+      withContext.assistants,
+    );
     return withContext;
   }
 
@@ -163,20 +248,26 @@ export class JustificationsService {
       nrc: string | null;
       parallel: string | null;
       rejectionReason: string | null;
+      absenceDate?: Date;
     },
     teachers: TeacherContact[],
+    assistants: TeacherContact[],
   ): Promise<void> {
     if (justification.status === JustificationStatus.REJECTED) {
-      await this.sendAll([{
-        to: justification.studentEmail,
-        subject: 'Resultado de tu justificación de inasistencia',
-        text: `Tu justificación para ${justification.subjectName} fue rechazada.${justification.rejectionReason ? ` Motivo: ${justification.rejectionReason}` : ''}`,
-      }]);
+      await this.sendAll([
+        {
+          to: justification.studentEmail,
+          subject: 'Resultado de tu justificación de inasistencia',
+          text: `Tu justificación para ${justification.subjectName} fue rechazada.${justification.rejectionReason ? ` Motivo: ${justification.rejectionReason}` : ''}`,
+        },
+      ]);
       return;
     }
 
     if (teachers.length === 0) {
-      this.logger.warn(`Aprobación sin profesores destinatarios nrc=${justification.nrc ?? '<none>'}`);
+      this.logger.warn(
+        `Aprobación sin profesores destinatarios nrc=${justification.nrc ?? '<none>'}`,
+      );
     } else {
       this.logger.log(
         `Destinatarios de aprobación nrc=${justification.nrc ?? '<none>'} teacherCount=${teachers.length} teacherEmails=${teachers.map((teacher) => teacher.email).join(',')}`,
@@ -189,37 +280,129 @@ export class JustificationsService {
         subject: 'Tu justificación de inasistencia fue aprobada',
         text: `Tu justificación para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''} fue aprobada.`,
       },
-      ...teachers.map((teacher) => ({
-        to: teacher.email,
-        subject: 'Justificación de inasistencia aprobada',
-        text: `Se aprobó una justificación de inasistencia para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
-      })),
+      ...[
+        ...new Map(
+          [...teachers, ...assistants].map((contact) => [
+            contact.email.toLowerCase(),
+            contact,
+          ]),
+        ).values(),
+      ]
+        .filter(
+          (contact) =>
+            contact.email.toLowerCase() !==
+            justification.studentEmail.toLowerCase(),
+        )
+        .map((teacher) => ({
+          to: teacher.email,
+          subject: 'Justificación de inasistencia aprobada',
+          text: `Se aprobó la justificación de inasistencia de ${justification.studentEmail}${justification.absenceDate ? ` del ${justification.absenceDate.toISOString().slice(0, 10)}` : ''} para ${justification.subjectName}${justification.nrc ? ` (NRC ${justification.nrc})` : ''}.`,
+        })),
     ]);
   }
 
   // La decisión ya está guardada: un correo fallido se registra, pero no
   // convierte la respuesta en error ni impide los demás envíos.
   private async sendAll(messages: NotificationMessage[]): Promise<void> {
-    const results = await Promise.allSettled(messages.map((message) => this.notifications.send(message)));
+    const results = await Promise.allSettled(
+      messages.map((message) => this.notifications.send(message)),
+    );
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
-        this.logger.error(`No se pudo notificar la decisión a ${messages[index].to}: ${reason}`);
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        this.logger.error(
+          `No se pudo notificar la decisión a ${messages[index].to}: ${reason}`,
+        );
       }
     });
   }
 
   private async withTeachersAndBlocks<T extends ScheduleSource>(rows: T[]) {
-    const [teachers, blocks] = await Promise.all([
+    const [teachers, blocks, assistants] = await Promise.all([
       this.findTeachers(rows.map(({ nrc }) => nrc)),
       this.findScheduleBlocks(rows),
+      this.findAssistants(rows),
     ]);
-    return rows.map((row) => ({ ...row, teachers: teachers(row.nrc), blocks: blocks(row) }));
+    return rows.map((row) => ({
+      ...row,
+      teachers: teachers(row.nrc),
+      blocks: row.absenceBlocks?.length ? row.absenceBlocks : blocks(row),
+      assistants: assistants(row),
+    }));
+  }
+
+  /** Match the exact date, course NRC, ISO weekday and optional form blocks. */
+  private async findAssistants(rows: ScheduleSource[]) {
+    const nrcs = [
+      ...new Set(
+        rows
+          .map((row) => row.nrc?.trim())
+          .filter((nrc): nrc is string => !!nrc),
+      ),
+    ];
+    if (!nrcs.length) return () => [] as TeacherContact[];
+    const records = await this.prisma.assistantship.findMany({
+      where: {
+        teachingAssignment: { nrc: { in: nrcs } },
+        approval: { assistant: { isActive: true } },
+      },
+      include: {
+        teachingAssignment: true,
+        approval: { include: { assistant: true } },
+        schedules: true,
+      },
+    });
+    return (row: ScheduleSource): TeacherContact[] => {
+      if (!row.absenceDate || Number.isNaN(new Date(row.absenceDate).valueOf()))
+        return [];
+      const absenceDate = new Date(
+        new Date(row.absenceDate).toISOString().slice(0, 10),
+      );
+      const day = absenceDate.getUTCDay() || 7;
+      const matching = records.filter(
+        (record) =>
+          record.teachingAssignment.nrc === row.nrc?.trim() &&
+          record.startsOn <= absenceDate &&
+          (!record.endsOn || record.endsOn >= absenceDate) &&
+          record.schedules.some(
+            (schedule) =>
+              schedule.weekday === day &&
+              (!row.absenceBlocks?.length ||
+                row.absenceBlocks.some((code) => {
+                  const block = academicScheduleBlocks.find(
+                    (item) => item.code === code,
+                  );
+                  return (
+                    block &&
+                    block.startsAtMinute === schedule.startsAtMinute &&
+                    block.endsAtMinute === schedule.endsAtMinute
+                  );
+                })),
+          ),
+      );
+      return [
+        ...new Map(
+          matching.map(({ approval: { assistant } }) => [
+            assistant.email.toLowerCase(),
+            { name: assistant.name, email: assistant.email },
+          ]),
+        ).values(),
+      ];
+    };
   }
 
   /** Profesores por NRC en una sola consulta, sin importar cuántas filas haya. */
-  private async findTeachers(nrcs: (string | null)[]): Promise<(nrc: string | null) => TeacherContact[]> {
-    const normalized = [...new Set(nrcs.map((nrc) => nrc?.trim()).filter((nrc): nrc is string => !!nrc))];
+  private async findTeachers(
+    nrcs: (string | null)[],
+  ): Promise<(nrc: string | null) => TeacherContact[]> {
+    const normalized = [
+      ...new Set(
+        nrcs.map((nrc) => nrc?.trim()).filter((nrc): nrc is string => !!nrc),
+      ),
+    ];
     if (normalized.length === 0) return () => [];
 
     const assignments = await this.prisma.teachingAssignment.findMany({
@@ -239,14 +422,17 @@ export class JustificationsService {
       // between intake and the decision.
       const active = forNrc.filter(({ semester }) => semester.isActive);
       const teachers = new Map<string, TeacherContact>();
-      for (const { teacherId, teacher } of active.length > 0 ? active : forNrc) teachers.set(teacherId, teacher);
+      for (const { teacherId, teacher } of active.length > 0 ? active : forNrc)
+        teachers.set(teacherId, teacher);
       byNrc.set(nrc, [...teachers.values()]);
     }
     return (nrc) => byNrc.get(nrc?.trim() ?? '') ?? [];
   }
 
   /** Bloques del día de la inasistencia por NRC en una sola consulta; usa el histórico si el semestre activo no tiene. */
-  private async findScheduleBlocks(rows: ScheduleSource[]): Promise<(row: ScheduleSource) => string[]> {
+  private async findScheduleBlocks(
+    rows: ScheduleSource[],
+  ): Promise<(row: ScheduleSource) => string[]> {
     const keyOf = ({ nrc, absenceDate }: ScheduleSource) => {
       const normalizedNrc = nrc?.trim();
       const day = this.weekdayOf(absenceDate);
@@ -255,7 +441,9 @@ export class JustificationsService {
     const byKey = new Map<string, string[]>();
     const lookup = (row: ScheduleSource) => byKey.get(keyOf(row) ?? '') ?? [];
 
-    const keys = [...new Set(rows.map(keyOf).filter((key): key is string => !!key))];
+    const keys = [
+      ...new Set(rows.map(keyOf).filter((key): key is string => !!key)),
+    ];
     if (keys.length === 0) return lookup;
 
     try {
@@ -265,34 +453,51 @@ export class JustificationsService {
           day: { in: [...new Set(keys.map((key) => key.split('|')[1]))] },
         },
         orderBy: { block: 'asc' },
-        select: { nrc: true, day: true, block: true, semester: { select: { isActive: true } } },
+        select: {
+          nrc: true,
+          day: true,
+          block: true,
+          semester: { select: { isActive: true } },
+        },
       });
       for (const key of keys) {
-        const forKey = schedules.filter(({ nrc, day }) => `${nrc}|${day}` === key);
+        const forKey = schedules.filter(
+          ({ nrc, day }) => `${nrc}|${day}` === key,
+        );
         const active = forKey.filter(({ semester }) => semester.isActive);
-        byKey.set(key, (active.length > 0 ? active : forKey).map(({ block }) => block));
+        byKey.set(
+          key,
+          (active.length > 0 ? active : forKey).map(({ block }) => block),
+        );
       }
     } catch (error) {
-      this.logger.warn(`No se pudieron cargar los bloques de horario: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `No se pudieron cargar los bloques de horario: ${error instanceof Error ? error.message : String(error)}`,
+      );
       byKey.clear();
     }
     return lookup;
   }
 
   /** Día de la semana de la fecha (UTC); `undefined` para domingo o fechas inválidas. */
-  private weekdayOf(absenceDate: Date | string | null | undefined): string | undefined {
+  private weekdayOf(
+    absenceDate: Date | string | null | undefined,
+  ): string | undefined {
     if (!absenceDate) return undefined;
-    const dateObj = absenceDate instanceof Date ? absenceDate : new Date(absenceDate);
+    const dateObj =
+      absenceDate instanceof Date ? absenceDate : new Date(absenceDate);
     if (Number.isNaN(dateObj.getTime())) return undefined;
 
     const [y, m, d] = dateObj.toISOString().slice(0, 10).split('-').map(Number);
-    const dayName = WEEKDAYS[new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()];
+    const dayName =
+      WEEKDAYS[new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()];
     return dayName === 'Domingo' ? undefined : dayName;
   }
 
   private parseDate(value: string): Date {
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('La fecha de inasistencia no es válida');
+    if (Number.isNaN(date.getTime()))
+      throw new BadRequestException('La fecha de inasistencia no es válida');
     return date;
   }
 }

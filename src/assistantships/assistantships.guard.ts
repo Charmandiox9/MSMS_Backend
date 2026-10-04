@@ -15,6 +15,11 @@ export class AssistantshipsGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const user = getRequestFromContext(context).user;
     if (!user?.id) throw new UnauthorizedException();
+    const isRead = [
+      'assistantships',
+      'assistantshipOptions',
+      'assistantshipAssignments',
+    ].includes(context.getHandler().name);
     const authorized = await this.prisma.user.findFirst({
       where: {
         id: user.id,
@@ -23,7 +28,18 @@ export class AssistantshipsGuard implements CanActivate {
           some: {
             role: {
               permissions: {
-                some: { permission: { code: 'TEACHING_ASSISTANTS_MANAGE' } },
+                some: {
+                  permission: {
+                    code: {
+                      in: isRead
+                        ? [
+                            'TEACHING_ASSISTANTS_MANAGE',
+                            'ACADEMIC_RECORDS_VIEW',
+                          ]
+                        : ['TEACHING_ASSISTANTS_MANAGE'],
+                    },
+                  },
+                },
               },
             },
           },

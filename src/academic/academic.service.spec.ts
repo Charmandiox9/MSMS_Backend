@@ -6,6 +6,7 @@ describe('AcademicService', () => {
   let service: AcademicService;
 
   const prisma = {
+    assistantship: { findMany: jest.fn().mockResolvedValue([]) },
     academicSemester: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -356,6 +357,42 @@ describe('AcademicService', () => {
       expect(prisma.courseSchedule.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { semester: { isActive: true } } }),
       );
+    });
+    it('includes assistantships in their academic block with their own NRC', async () => {
+      prisma.courseSchedule.findMany.mockResolvedValue([]);
+      prisma.assistantship.findMany.mockResolvedValue([
+        {
+          nrc: '20001',
+          startsOn: new Date('2026-08-01'),
+          endsOn: null,
+          teachingAssignment: {
+            nrc: '10001',
+            course: { name: 'Biología' },
+            semester: { name: '2026-2' },
+          },
+          approval: { assistant: { name: 'Ana', email: 'ana@example.test' } },
+          schedules: [
+            {
+              id: 'slot',
+              weekday: 1,
+              startsAtMinute: 490,
+              endsAtMinute: 580,
+              location: 'Sala 2',
+            },
+          ],
+        },
+      ]);
+      expect(await service.listCourseSchedules()).toEqual([
+        expect.objectContaining({
+          kind: 'ASSISTANTSHIP',
+          nrc: '10001',
+          assistantshipNrc: '20001',
+          day: 'Lunes',
+          block: 'A',
+          location: 'Sala 2',
+          assistant: { name: 'Ana', email: 'ana@example.test' },
+        }),
+      ]);
     });
   });
 });
