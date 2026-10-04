@@ -3,6 +3,10 @@ import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
 
+// ACADEMIC_RECORDS_VIEW (matriz RBAC): consulta de docentes, asignaturas y
+// semestres. Las importaciones siguen reservadas a secretaría académica.
+const ACADEMIC_READERS = ['ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST', 'TEACHING_SUPPORT_COORDINATOR'];
+
 class CsvImportDto {
   @IsString()
   @IsNotEmpty()
@@ -26,11 +30,13 @@ class SemesterDto {
 export class AcademicController {
   constructor(private readonly service: AcademicService) {}
 
+  @Roles(...ACADEMIC_READERS)
   @Get()
   listTeachers() {
     return this.service.listTeachers();
   }
 
+  @Roles(...ACADEMIC_READERS)
   @Get(':id')
   getTeacher(@Param('id') id: string) {
     return this.service.getTeacher(id);
@@ -52,6 +58,7 @@ export class AcademicController {
 export class AcademicCoursesController {
   constructor(private readonly service: AcademicService) {}
 
+  @Roles(...ACADEMIC_READERS)
   @Get()
   listCourseSchedules() {
     return this.service.listCourseSchedules();
@@ -68,6 +75,7 @@ export class AcademicCoursesController {
 export class AcademicSemestersController {
   constructor(private readonly service: AcademicService) {}
 
+  @Roles(...ACADEMIC_READERS)
   @Get()
   listSemesters() {
     return this.service.listSemesters();

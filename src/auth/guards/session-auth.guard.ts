@@ -8,9 +8,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { AuthSession, SessionService } from '../session.service';
+import { ActiveUserService } from '../active-user.service';
 import { getRequestFromContext } from '../../common/utils/execution-context.util';
 
-type RequestWithUser = Omit<Request, 'user'> & { user?: AuthSession };
+// `id` replica `sub` para que el usuario del request tenga la misma forma que
+// entrega JwtStrategy ({ id, ... }) en cualquier entorno.
+export type SessionUser = AuthSession & { id: string };
+
+type RequestWithUser = Omit<Request, 'user'> & { user?: SessionUser };
 type CookieRequest = Omit<Request, 'user'>;
 
 const getCookie = (
@@ -35,6 +40,7 @@ export class SessionAuthGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
     private readonly sessionService: SessionService,
+    private readonly activeUsers: ActiveUserService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -48,7 +54,7 @@ export class SessionAuthGuard implements CanActivate {
       if (!session) {
         throw new UnauthorizedException('Sesión no válida o expirada');
       }
-      request.user = session;
+      request.user = await this.toActiveUser(session);
       return true;
     }
 
@@ -56,7 +62,17 @@ export class SessionAuthGuard implements CanActivate {
     if (!token) {
       throw new UnauthorizedException('Token no encontrado');
     }
-    request.user = await this.jwtService.verifyAsync<AuthSession>(token);
+    const payload = await this.jwtService.verifyAsync<AuthSession>(token);
+    request.user = await this.toActiveUser(payload);
     return true;
+  }
+
+  // La sesión dura 24 h; se revalida que la cuenta siga activa para que una
+  // desactivación tenga efecto sin esperar a que expire.
+  private async toActiveUser(session: AuthSession): Promise<SessionUser> {
+    if (!(await this.activeUsers.findActive(session.sub))) {
+      throw new UnauthorizedException('Usuario inválido o inactivo');
+    }
+    return { ...session, id: session.sub };
   }
 }

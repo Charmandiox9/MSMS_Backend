@@ -73,7 +73,7 @@ export class JustificationsController {
   }
 
   @Get()
-  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
   list(@Req() request: AuthenticatedRequest) {
     const status = request.query.status;
     return this.service.listJustifications(
@@ -96,7 +96,7 @@ export class JustificationsController {
   }
 
   @Get(':id/evidence-url')
-  @Roles('TEACHING_SUPPORT_COORDINATOR')
+  @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
   evidenceUrl(@Param('id') id: string) {
     return this.service.getEvidenceUrl(id);
   }

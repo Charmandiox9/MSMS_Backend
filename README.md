@@ -58,9 +58,10 @@ Para configurar el formulario de justificaciones, Google Apps Script y su conexi
 pnpm build
 pnpm test
 pnpm test:e2e
+pnpm test:stress
 ```
 
-También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Los tests e2e usan la configuración de `test/jest-e2e.json`.
+También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Los tests e2e usan la configuración de `test/jest-e2e.json` y no requieren base de datos ni servicios externos. `test:stress` ejecuta pruebas de carga contra un backend ya levantado y se configura con las variables `STRESS_*` de `.env.example`. El detalle de la cobertura y los resultados está en [docs/tests.md](docs/tests.md).
 
 ## Estructura principal
 

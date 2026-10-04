@@ -1,6 +1,16 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { AssignRoleDto, PreloadUserDto } from './users.controller';
+import { ExecutionContext } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import type { Cache } from 'cache-manager';
+import { ActiveUserService } from '../auth/active-user.service';
+import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
+import { SessionService } from '../auth/session.service';
+import { WhitelistService } from '../auth/whitelist/whitelist.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { AssignRoleDto, PreloadUserDto, UsersController } from './users.controller';
+import { UsersService } from './users.service';
 
 describe('AssignRoleDto', () => {
   it('accepts a seeded role identifier with UUID structure', async () => {
@@ -36,5 +46,74 @@ describe('PreloadUserDto', () => {
     });
 
     await expect(validate(dto)).resolves.toHaveLength(2);
+  });
+});
+
+describe('UsersController con el usuario autenticado de cada entorno', () => {
+  const targetAdmin = { id: 'admin-1', isActive: true, userRoles: [{ role: { code: 'SYSTEM_ADMIN' } }] };
+  const prisma = {
+    user: { findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    userRole: { count: jest.fn() },
+    justification: { count: jest.fn() },
+    justificationStatusHistory: { count: jest.fn() },
+  };
+  let controller: UsersController;
+
+  // Desarrollo: JwtStrategy entrega { id, ... }. Producción: el usuario lo arma
+  // SessionAuthGuard a partir de la sesión almacenada ({ sub, ... }).
+  const jwtUser = { id: 'admin-1', email: 'admin@ucn.cl', roles: ['SYSTEM_ADMIN'] };
+  const storedSession = { sub: 'admin-1', email: 'admin@ucn.cl', roles: ['SYSTEM_ADMIN'] };
+  let sessionUser: unknown;
+
+  beforeAll(async () => {
+    const request: { cookies: Record<string, string>; headers: object; user?: unknown } = {
+      cookies: { session: 'session-id' },
+      headers: {},
+    };
+    const guard = new SessionAuthGuard(
+      new ConfigService({ NODE_ENV: 'production' }),
+      {} as JwtService,
+      { get: jest.fn().mockResolvedValue(storedSession) } as unknown as SessionService,
+      { findActive: jest.fn().mockResolvedValue(jwtUser) } as unknown as ActiveUserService,
+    );
+    await guard.canActivate({
+      getType: () => 'http',
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext);
+    sessionUser = request.user;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.user.findUnique.mockResolvedValue(targetAdmin);
+    prisma.userRole.count.mockResolvedValue(2);
+    prisma.justification.count.mockResolvedValue(0);
+    prisma.justificationStatusHistory.count.mockResolvedValue(0);
+    const service = new UsersService(
+      prisma as unknown as PrismaService,
+      { isEmailAllowed: jest.fn() } as unknown as WhitelistService,
+      { del: jest.fn() } as unknown as Cache,
+    );
+    controller = new UsersController(service);
+  });
+
+  it.each([
+    ['desarrollo (JWT)', () => jwtUser],
+    ['producción (sesión)', () => sessionUser],
+  ])('impide desactivar la propia cuenta en %s', async (_env, actor) => {
+    await expect(
+      controller.setActive('admin-1', { isActive: false }, actor() as { id: string }),
+    ).rejects.toThrow('No puedes desactivar tu propia cuenta');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['desarrollo (JWT)', () => jwtUser],
+    ['producción (sesión)', () => sessionUser],
+  ])('impide eliminar la propia cuenta en %s', async (_env, actor) => {
+    await expect(
+      controller.permanentlyDelete('admin-1', actor() as { id: string }),
+    ).rejects.toThrow('No puedes eliminar tu propia cuenta');
+    expect(prisma.user.delete).not.toHaveBeenCalled();
   });
 });
