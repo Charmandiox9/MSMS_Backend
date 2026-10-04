@@ -57,43 +57,116 @@ model AcademicSemester {
 }
 
 model Teacher {
-  id           String   @id @default(uuid())
+  id           String               @id @default(uuid())
   name         String
-  email        String   @unique
-  employeeCode String?  @unique
+  email        String               @unique
+  employeeCode String?              @unique
+  isActive     Boolean              @default(true)
+  joinedOn     DateTime?            @db.Date
+  leftOn       DateTime?            @db.Date
   assignments  TeachingAssignment[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
 }
 
 model Course {
-  id           String   @id @default(uuid())
-  code         String
-  name         String
-  assignments  TeachingAssignment[]
-  schedules    CourseSchedule[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String                    @id @default(uuid())
+  code               String
+  name               String
+  assignments        TeachingAssignment[]
+  schedules          CourseSchedule[]
+  assistantApprovals AssistantCourseApproval[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
 
   @@unique([code, name])
 }
 
 model TeachingAssignment {
-  id         String   @id @default(uuid())
-  semesterId String
-  teacherId  String
-  courseId   String
-  nrc        String   @default("")
+  id             String           @id @default(uuid())
+  semesterId     String
+  teacherId      String
+  courseId       String
+  nrc            String           @default("")
   /// Deprecated: retained only for historical data. New imports use nrc.
-  parallel   String   @default("")
-  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
-  teacher    Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  parallel       String           @default("")
+  semester       AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  teacher        Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  assistantships Assistantship[]
 
+  // Composite reference ensures an assistantship uses this assignment's course.
+  @@unique([id, courseId])
   @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
+}
+
+/// Academic student record; independent from administrative login accounts.
+model TeachingAssistant {
+  id          String                    @id @default(uuid())
+  name        String
+  email       String                    @unique
+  studentCode String?                   @unique
+  isActive    Boolean                   @default(true)
+  approvals   AssistantCourseApproval[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+}
+
+/// Records an already passed course, independently of its NRC in each semester.
+model AssistantCourseApproval {
+  assistantId    String
+  courseId       String
+  approvedOn     DateTime          @db.Date
+  assistant      TeachingAssistant @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  course         Course            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  assistantships Assistantship[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@id([assistantId, courseId])
+  // Supports a foreign key that keeps the approval date consistent in assignments.
+  @@unique([assistantId, courseId, approvedOn])
+  @@index([courseId])
+}
+
+/// Semester, NRC and supervising teacher come from the teaching assignment.
+model Assistantship {
+  id                   String                  @id @default(uuid())
+  teachingAssignmentId String
+  assistantId          String
+  courseId             String
+  /// Must match the approval record; SQL checks approval precedes startsOn.
+  approvedOn           DateTime                @db.Date
+  startsOn             DateTime                @db.Date
+  endsOn               DateTime?               @db.Date
+  weeklyHours          Decimal?                @db.Decimal(5, 2)
+  teachingAssignment   TeachingAssignment      @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
+  schedules            AssistantshipSchedule[]
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@unique([teachingAssignmentId, assistantId])
+  @@index([assistantId, courseId, approvedOn])
+  @@index([teachingAssignmentId, courseId])
+}
+
+/// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).
+model AssistantshipSchedule {
+  id              String        @id @default(uuid())
+  assistantshipId String
+  weekday         Int
+  startsAtMinute  Int
+  endsAtMinute    Int
+  location        String?
+  assistantship   Assistantship @relation(fields: [assistantshipId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([assistantshipId, weekday, startsAtMinute, endsAtMinute])
 }
 
 model CourseSchedule {
