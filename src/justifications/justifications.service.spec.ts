@@ -506,7 +506,7 @@ describe('JustificationsService flujo completo', () => {
       },
     );
 
-    it('sin bloque avisa a todos los ayudantes del día y deduplica destinatarios', async () => {
+    it('sin bloque avisa a todos los ayudantes del día y deduplica dentro de cada rol', async () => {
       prisma.justification.findUnique.mockResolvedValue(pending);
       prisma.teachingAssignment.findMany.mockResolvedValue([
         teacher('10001', 't', 'helper1@example.test'),
@@ -537,6 +537,7 @@ describe('JustificationsService flujo completo', () => {
         [
           pending.studentEmail,
           'helper1@example.test',
+          'helper1@example.test',
           'helper2@example.test',
         ].sort(),
       );
@@ -546,6 +547,40 @@ describe('JustificationsService flujo completo', () => {
           text: expect.stringContaining('2026-09-23'),
         }),
       );
+    });
+
+    it('envía los tres mensajes por rol aunque alumno, profesor y ayudante compartan correo', async () => {
+      prisma.justification.findUnique.mockResolvedValue(pending);
+      prisma.teachingAssignment.findMany.mockResolvedValue([
+        teacher('10001', 'Docente', pending.studentEmail),
+      ]);
+      const helper = {
+        teachingAssignment: { nrc: '10001' },
+        startsOn: new Date('2026-08-01'),
+        endsOn: null,
+        approval: {
+          assistant: { name: 'Ayudante', email: pending.studentEmail },
+        },
+        schedules: [{ weekday: 3, startsAtMinute: 490, endsAtMinute: 580 }],
+      };
+      prisma.assistantship.findMany.mockResolvedValue([helper, helper]);
+      await service.decide('just-1', 'u', JustificationStatus.ACCEPTED);
+      expect(notifications.send).toHaveBeenCalledTimes(3);
+      const messages = notifications.send.mock.calls.map(
+        ([message]: [{ to: string; text: string }]) => message,
+      );
+      expect(
+        messages.every((message) => message.to === pending.studentEmail),
+      ).toBe(true);
+      expect(
+        messages.filter((message) => message.text.includes('Tu justificación')),
+      ).toHaveLength(1);
+      expect(
+        messages.filter((message) => message.text.includes('como docente')),
+      ).toHaveLength(1);
+      expect(
+        messages.filter((message) => message.text.includes('como ayudante')),
+      ).toHaveLength(1);
     });
 
     it('no notifica ayudantes cuando la justificación se rechaza', async () => {

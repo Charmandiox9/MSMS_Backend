@@ -281,15 +281,12 @@ export class JustificationsService {
               ...contact,
               role: 'teacher' as const,
             })),
-          ].map((contact) => [contact.email.toLowerCase(), contact]),
+          ].map((contact) => [
+            `${contact.role}|${contact.email.trim().toLowerCase()}`,
+            contact,
+          ]),
         ).values(),
-      ]
-        .filter(
-          (contact) =>
-            contact.email.toLowerCase() !==
-            justification.studentEmail.toLowerCase(),
-        )
-        .map((recipient) => decisionEmail(justification, recipient)),
+      ].map((recipient) => decisionEmail(justification, recipient)),
     ]);
   }
 

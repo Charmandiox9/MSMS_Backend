@@ -74,6 +74,7 @@ También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Lo
   - El código de asignatura es opcional (`null` si no se conoce), independiente del NRC. Las importaciones de carga docente permiten omitir `courseCode`; los CSV de horarios nunca deducen el código a partir del NRC. Al editar, omitir `code` conserva su valor y enviar `null` o una cadena vacía lo elimina.
   - El CSV de horarios admite `nrc;asignatura;dia;bloque;sala`; omitir `sala` conserva las ubicaciones existentes y una celda vacía las elimina. Las salas se incluyen también en los reportes de asignaturas.
 - `src/justifications`: justificaciones y recepción de formularios.
+  - Las aprobaciones de justificaciones envían un mensaje por rol (alumno, profesor y ayudante), incluso cuando comparten correo. Se deduplican direcciones dentro de cada rol; los rechazos se notifican solo al alumno.
 - `src/dashboard`: datos agregados para los paneles.
 - `prisma/schema.prisma` y `prisma/migrations`: modelo de datos e historial de cambios.
 
