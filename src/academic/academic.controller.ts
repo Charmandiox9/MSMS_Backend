@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
+import { UpdateCourseDto } from './update-course.dto';
 
 // ACADEMIC_RECORDS_VIEW (matriz RBAC): consulta de docentes, asignaturas y
 // semestres. Las importaciones siguen reservadas a secretaría académica.
-const ACADEMIC_READERS = ['ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST', 'TEACHING_SUPPORT_COORDINATOR'];
+const ACADEMIC_READERS = [
+  'ACADEMIC_SECRETARY',
+  'ACADEMIC_PROCESS_ANALYST',
+  'TEACHING_SUPPORT_COORDINATOR',
+];
 
 class CsvImportDto {
   @IsString()
@@ -57,6 +62,17 @@ export class AcademicController {
 @Roles('ACADEMIC_SECRETARY')
 export class AcademicCoursesController {
   constructor(private readonly service: AcademicService) {}
+
+  @Roles(...ACADEMIC_READERS)
+  @Get('options')
+  scheduleOptions() {
+    return this.service.scheduleOptions();
+  }
+
+  @Patch(':nrc')
+  updateCourse(@Param('nrc') nrc: string, @Body() body: UpdateCourseDto) {
+    return this.service.updateCourse(nrc, body);
+  }
 
   @Roles(...ACADEMIC_READERS)
   @Get()

@@ -68,6 +68,10 @@ También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Lo
 - `src/auth`: OAuth, sesión, JWT y autorización.
 - `src/users`: cuentas, roles y permisos.
 - `src/academic`: semestres, docentes, asignaturas y horarios.
+  - `GET /academic/courses/options` entrega días y bloques institucionales.
+  - `PATCH /academic/courses/:nrc` permite a administrador y secretaría editar nombre, código, NRC y horarios del semestre activo, con `location` opcional por horario. Conserva las asignaciones docentes y las ayudantías vinculadas; rechaza NRC ocupados y bloques duplicados.
+  - El nombre y código se actualizan en el catálogo compartido entre semestres. Los horarios y el NRC se actualizan solo en el semestre activo.
+  - El CSV de horarios admite `nrc;asignatura;dia;bloque;sala`; omitir `sala` conserva las ubicaciones existentes y una celda vacía las elimina. Las salas se incluyen también en los reportes de asignaturas.
 - `src/justifications`: justificaciones y recepción de formularios.
 - `src/dashboard`: datos agregados para los paneles.
 - `prisma/schema.prisma` y `prisma/migrations`: modelo de datos e historial de cambios.

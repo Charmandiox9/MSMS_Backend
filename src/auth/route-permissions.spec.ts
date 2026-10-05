@@ -95,6 +95,8 @@ describe('Matriz de permisos por endpoint', () => {
       'AcademicController.importCsv': SECRETARY,
       'AcademicController.importRoster': SECRETARY,
       'AcademicCoursesController.listCourseSchedules': ACADEMIC_READERS,
+      'AcademicCoursesController.scheduleOptions': ACADEMIC_READERS,
+      'AcademicCoursesController.updateCourse': SECRETARY,
       'AcademicCoursesController.importCourseSchedules': SECRETARY,
       'AcademicSemestersController.listSemesters': ACADEMIC_READERS,
       'AcademicSemestersController.activateSemester': SECRETARY,

@@ -1,6 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { academicScheduleBlocks } from './schedule-blocks';
+import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
 
 interface TeacherImportRow {
   teacherEmail: string;
@@ -19,6 +26,7 @@ interface CourseScheduleImportRow {
   subjectName: string;
   day: string;
   block: string;
+  location?: string;
 }
 
 const DAYS = new Map([
@@ -34,6 +42,110 @@ const BLOCKS = new Set(academicScheduleBlocks.map((block) => block.code));
 @Injectable()
 export class AcademicService {
   constructor(private readonly prisma: PrismaService) {}
+
+  scheduleOptions() {
+    return { days: academicScheduleDays, blocks: academicScheduleBlocks };
+  }
+
+  async updateCourse(originalNrc: string, input: UpdateCourseDto) {
+    const schedules = input.schedules.map((schedule) => ({
+      day: this.normalizeDay(schedule.day),
+      block: schedule.block.trim().toUpperCase(),
+      location: schedule.location?.trim() || null,
+    }));
+    if (
+      !schedules.length ||
+      schedules.some((schedule) => !BLOCKS.has(schedule.block))
+    )
+      throw new BadRequestException(
+        'Debes incluir horarios con bloques válidos',
+      );
+    if (
+      new Set(schedules.map((schedule) => `${schedule.day}|${schedule.block}`))
+        .size !== schedules.length
+    )
+      throw new BadRequestException('No puedes repetir el mismo día y bloque');
+    const name = input.name.trim();
+    const code = input.code.trim();
+    const nrc = input.nrc.trim();
+    if (!name || !code || !nrc)
+      throw new BadRequestException('Nombre, código y NRC son obligatorios');
+    try {
+      return await this.prisma.$transaction(
+        async (transaction) => {
+          const semester = await transaction.academicSemester.findFirst({
+            where: { isActive: true },
+          });
+          if (!semester)
+            throw new BadRequestException('No existe un semestre activo');
+          const where = { semesterId: semester.id, nrc: originalNrc };
+          const [existing, assignments] = await Promise.all([
+            transaction.courseSchedule.findMany({
+              where,
+              select: { courseId: true },
+            }),
+            transaction.teachingAssignment.findMany({
+              where,
+              select: { courseId: true },
+            }),
+          ]);
+          const courseIds = new Set(
+            [...existing, ...assignments].map((item) => item.courseId),
+          );
+          if (!courseIds.size)
+            throw new NotFoundException(
+              'La asignatura no existe en el semestre activo',
+            );
+          if (courseIds.size !== 1)
+            throw new ConflictException(
+              'El NRC está asociado a varias asignaturas; revisa la carga académica',
+            );
+          const courseId = [...courseIds][0];
+          if (nrc !== originalNrc) {
+            const target = { semesterId: semester.id, nrc };
+            const [schedule, assignment] = await Promise.all([
+              transaction.courseSchedule.findFirst({ where: target }),
+              transaction.teachingAssignment.findFirst({ where: target }),
+            ]);
+            if (schedule || assignment)
+              throw new ConflictException(
+                'El NRC ya existe en el semestre activo',
+              );
+          }
+          await transaction.course.update({
+            where: { id: courseId },
+            data: { name, code },
+          });
+          await transaction.teachingAssignment.updateMany({
+            where: { ...where, courseId },
+            data: { nrc },
+          });
+          await transaction.courseSchedule.deleteMany({
+            where: { ...where, courseId },
+          });
+          await transaction.courseSchedule.createMany({
+            data: schedules.map((schedule) => ({
+              ...schedule,
+              semesterId: semester.id,
+              courseId,
+              nrc,
+            })),
+          });
+          return { courseId, nrc, updatedSchedules: schedules.length };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P2002', 'P2034'].includes(error.code)
+      )
+        throw new ConflictException(
+          'Los datos están duplicados o fueron modificados. Recarga e intenta nuevamente',
+        );
+      throw error;
+    }
+  }
 
   listSemesters() {
     return this.prisma.academicSemester.findMany({
@@ -365,13 +477,21 @@ export class AcademicService {
               block,
             },
           },
-          update: { courseId },
+          update: {
+            courseId,
+            ...(row.location === undefined
+              ? {}
+              : { location: row.location || null }),
+          },
           create: {
             semesterId: semester.id,
             courseId,
             nrc: row.nrc,
             day: normalizedDay,
             block,
+            ...(row.location === undefined
+              ? {}
+              : { location: row.location || null }),
           },
         });
       }
@@ -460,6 +580,7 @@ export class AcademicService {
         subjectName: row.asignatura,
         day: row.dia,
         block: row.bloque,
+        location: row.sala ?? row.location ?? row.room,
       };
     });
   }

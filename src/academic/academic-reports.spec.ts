@@ -23,6 +23,35 @@ describe('Academic reports', () => {
   let reports: AcademicReportsService;
   let guard: AcademicReportsGuard;
   let controller: AcademicReportsController;
+  it('exports each course room with its corresponding weekly schedule', async () => {
+    prisma.course.findMany.mockResolvedValue([
+      {
+        code: 'ED',
+        name: 'Datos',
+        assignments: [],
+        schedules: [
+          {
+            nrc: '10001',
+            day: 'Lunes',
+            block: 'A',
+            location: 'Sala 1',
+            semester: { name: '2026-2' },
+          },
+          {
+            nrc: '10001',
+            day: 'Miércoles',
+            block: 'B',
+            location: 'Laboratorio 3',
+            semester: { name: '2026-2' },
+          },
+        ],
+      },
+    ]);
+    const result = await reports.data('courses');
+    expect(result.rows[0].schedules).toBe(
+      '10001: Lunes A · Sala 1 (2026-2); 10001: Miércoles B · Laboratorio 3 (2026-2)',
+    );
+  });
   beforeEach(async () => {
     jest.resetAllMocks();
     const module = await Test.createTestingModule({

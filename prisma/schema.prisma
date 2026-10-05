@@ -178,6 +178,7 @@ model CourseSchedule {
   nrc        String
   day        String
   block      String
+  location   String?
   semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
   createdAt  DateTime         @default(now())

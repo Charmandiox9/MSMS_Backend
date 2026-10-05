@@ -79,7 +79,7 @@ export class AcademicReportsService {
           schedules: item.schedules
             .map(
               (slot) =>
-                `${slot.nrc}: ${slot.day} ${slot.block} (${slot.semester.name})`,
+                `${slot.nrc}: ${slot.day} ${slot.block}${slot.location ? ` · ${slot.location}` : ''} (${slot.semester.name})`,
             )
             .join('; '),
         }));
