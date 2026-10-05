@@ -90,6 +90,23 @@ describe('Edición de asignaturas', () => {
     ).rejects.toThrow(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('permite quitar el código, guardando null sin copiar el NRC', async () => {
+    const { code: _code, ...withoutCode } = input;
+    expect(
+      await validate(plainToInstance(UpdateCourseDto, withoutCode)),
+    ).toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(UpdateCourseDto, { ...input, code: null }),
+      ),
+    ).toHaveLength(0);
+    await service.updateCourse('10001', { ...input, code: '' });
+    expect(prisma.course.update).toHaveBeenCalledWith({
+      where: { id: 'course' },
+      data: { name: input.name, code: null },
+    });
+  });
   it('rechaza un NRC ocupado sin eliminar horarios', async () => {
     prisma.courseSchedule.findFirst.mockResolvedValue({ id: 'other' });
     await expect(service.updateCourse('10001', input)).rejects.toThrow(

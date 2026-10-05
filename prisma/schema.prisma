@@ -71,7 +71,7 @@ model Teacher {
 
 model Course {
   id                 String                    @id @default(uuid())
-  code               String
+  code               String?
   name               String
   assignments        TeachingAssignment[]
   schedules          CourseSchedule[]

@@ -131,7 +131,7 @@ export class AssistantshipView {
   @Field() assistantEmail!: string;
   @Field(() => String, { nullable: true }) studentCode!: string | null;
   @Field() courseName!: string;
-  @Field() courseCode!: string;
+  @Field(() => String, { nullable: true }) courseCode!: string | null;
   @Field() nrc!: string;
   @Field() teacherName!: string;
   @Field(() => ID) semesterId!: string;
@@ -191,7 +191,7 @@ export class AssistantshipOptions {
 export class AssistantshipAssignmentOption {
   @Field(() => ID) id!: string;
   @Field() courseName!: string;
-  @Field() courseCode!: string;
+  @Field(() => String, { nullable: true }) courseCode!: string | null;
   @Field() nrc!: string;
   @Field() teacherName!: string;
 }

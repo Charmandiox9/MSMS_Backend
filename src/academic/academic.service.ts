@@ -12,7 +12,7 @@ import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
 interface TeacherImportRow {
   teacherEmail: string;
   teacherName: string;
-  courseCode: string;
+  courseCode?: string;
   courseName: string;
   nrc: string;
   semesterName: string;
@@ -66,10 +66,11 @@ export class AcademicService {
     )
       throw new BadRequestException('No puedes repetir el mismo día y bloque');
     const name = input.name.trim();
-    const code = input.code.trim();
+    const code =
+      input.code === undefined ? undefined : input.code?.trim() || null;
     const nrc = input.nrc.trim();
-    if (!name || !code || !nrc)
-      throw new BadRequestException('Nombre, código y NRC son obligatorios');
+    if (!name || !nrc)
+      throw new BadRequestException('Nombre y NRC son obligatorios');
     try {
       return await this.prisma.$transaction(
         async (transaction) => {
@@ -233,11 +234,13 @@ export class AcademicService {
             employeeCode: row.employeeCode,
           },
         });
-        const course = await transaction.course.upsert({
-          where: { code_name: { code: row.courseCode, name: row.courseName } },
-          update: {},
-          create: { code: row.courseCode, name: row.courseName },
-        });
+        const course = await this.resolveImportedCourse(
+          transaction,
+          semester.id,
+          row.nrc,
+          row.courseName,
+          row.courseCode,
+        );
         await transaction.teachingAssignment.upsert({
           where: {
             semesterId_teacherId_courseId_nrc: {
@@ -457,12 +460,12 @@ export class AcademicService {
           });
           if (assignment) courseId = assignment.courseId;
           else {
-            const course = await transaction.course.upsert({
-              where: { code_name: { code: row.nrc, name: row.subjectName } },
-              update: {},
-              create: { code: row.nrc, name: row.subjectName },
-              select: { id: true },
-            });
+            const course = await this.resolveImportedCourse(
+              transaction,
+              semester.id,
+              row.nrc,
+              row.subjectName,
+            );
             courseId = course.id;
           }
           courseCache.set(`${row.nrc}|${row.subjectName}`, courseId);
@@ -500,6 +503,45 @@ export class AcademicService {
     });
   }
 
+  private async resolveImportedCourse(
+    transaction: Prisma.TransactionClient,
+    semesterId: string,
+    nrc: string,
+    name: string,
+    code?: string,
+  ) {
+    if (code?.trim())
+      return transaction.course.upsert({
+        where: { code_name: { code: code.trim(), name } },
+        update: {},
+        create: { code: code.trim(), name },
+        select: { id: true },
+      });
+    const assignment = await transaction.teachingAssignment.findFirst({
+      where: { semesterId, nrc },
+      select: { courseId: true },
+    });
+    const schedule = assignment
+      ? null
+      : await transaction.courseSchedule.findFirst({
+          where: { semesterId, nrc },
+          select: { courseId: true },
+        });
+    const courseId = assignment?.courseId ?? schedule?.courseId;
+    if (courseId) return { id: courseId };
+    const existing = await transaction.course.findFirst({
+      where: { code: null, name },
+      select: { id: true },
+    });
+    return (
+      existing ??
+      transaction.course.create({
+        data: { code: null, name },
+        select: { id: true },
+      })
+    );
+  }
+
   private parseCsv(csv: string): TeacherImportRow[] {
     const lines = csv
       .split(/\r?\n/)
@@ -510,7 +552,6 @@ export class AcademicService {
     const required = [
       'teacherEmail',
       'teacherName',
-      'courseCode',
       'courseName',
       'nrc',
       'semesterName',
@@ -528,7 +569,6 @@ export class AcademicService {
       if (
         !row.teacherEmail ||
         !row.teacherName ||
-        !row.courseCode ||
         !row.courseName ||
         !row.nrc ||
         !row.semesterName

@@ -44,11 +44,11 @@ export class UpdateCourseDto {
   @MaxLength(200)
   name!: string;
 
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(50)
-  code!: string;
+  code?: string | null;
 
   @Transform(trim)
   @IsString()

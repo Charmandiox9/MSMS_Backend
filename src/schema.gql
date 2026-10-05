@@ -17,7 +17,7 @@ type AssistantshipView {
   assistantEmail: String!
   studentCode: String
   courseName: String!
-  courseCode: String!
+  courseCode: String
   nrc: String!
   teacherName: String!
   semesterId: ID!
@@ -73,7 +73,7 @@ type AssistantshipOptions {
 type AssistantshipAssignmentOption {
   id: ID!
   courseName: String!
-  courseCode: String!
+  courseCode: String
   nrc: String!
   teacherName: String!
 }

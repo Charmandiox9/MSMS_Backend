@@ -14,7 +14,11 @@ describe('AcademicService', () => {
       updateMany: jest.fn(),
     },
     teacher: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn() },
-    course: { upsert: jest.fn() },
+    course: {
+      upsert: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'course-1' }),
+    },
     teachingAssignment: { findFirst: jest.fn(), upsert: jest.fn() },
     courseSchedule: {
       findMany: jest.fn(),
@@ -128,11 +132,24 @@ describe('AcademicService', () => {
       );
     });
 
+    it('importa carga docente sin columna de código y guarda null', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.findFirst.mockResolvedValue(null);
+      await service.importCsv(
+        'teacherEmail;teacherName;courseName;nrc;semesterName;startsOn;endsOn\nana@ucn.cl;Ana;Biología;10001;2026-2;2026-08-01;2026-12-15',
+      );
+      expect(prisma.course.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { code: null, name: 'Biología' } }),
+      );
+      expect(prisma.course.upsert).not.toHaveBeenCalled();
+    });
+
     it('indica la columna obligatoria que falta', async () => {
       const csv = 'teacherEmail,teacherName\nana@ucn.cl,Ana';
 
       await expect(service.importCsv(csv)).rejects.toThrow(
-        'Falta la columna courseCode',
+        'Falta la columna courseName',
       );
     });
 
@@ -238,6 +255,33 @@ describe('AcademicService', () => {
       prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-1' });
     });
 
+    it('reutiliza asignaturas sin código y conserva códigos reales al reimportar horarios', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.findFirst.mockResolvedValue({ id: 'catalog-course' });
+      await service.importCourseSchedules(
+        'nrc;asignatura;dia;bloque\n10009;Física;Lunes;A',
+      );
+      expect(prisma.course.create).not.toHaveBeenCalled();
+      expect(prisma.courseSchedule.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ courseId: 'catalog-course' }),
+        }),
+      );
+      prisma.courseSchedule.findFirst.mockResolvedValue({
+        courseId: 'real-code-course',
+      });
+      await service.importCourseSchedules(
+        'nrc;asignatura;dia;bloque\n10009;Física;Miércoles;B',
+      );
+      expect(prisma.courseSchedule.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ courseId: 'real-code-course' }),
+        }),
+      );
+      prisma.course.findFirst.mockResolvedValue(null);
+    });
+
     it('normaliza día y bloque y reutiliza la asignatura por NRC', async () => {
       prisma.teachingAssignment.findFirst.mockResolvedValue({
         courseId: 'course-1',
@@ -269,14 +313,15 @@ describe('AcademicService', () => {
 
     it('crea la asignatura cuando el NRC no tiene asignación docente', async () => {
       prisma.teachingAssignment.findFirst.mockResolvedValue(null);
-      prisma.course.upsert.mockResolvedValue({ id: 'new-course' });
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.create.mockResolvedValue({ id: 'new-course' });
 
       await service.importCourseSchedules(
         'nrc,asignatura,dia,bloque\n10009,Física,lunes,B',
       );
 
-      expect(prisma.course.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ create: { code: '10009', name: 'Física' } }),
+      expect(prisma.course.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { code: null, name: 'Física' } }),
       );
       expect(prisma.courseSchedule.upsert).toHaveBeenCalledWith(
         expect.objectContaining({

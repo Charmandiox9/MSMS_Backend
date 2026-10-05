@@ -71,6 +71,7 @@ También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Lo
   - `GET /academic/courses/options` entrega días y bloques institucionales.
   - `PATCH /academic/courses/:nrc` permite a administrador y secretaría editar nombre, código, NRC y horarios del semestre activo, con `location` opcional por horario. Conserva las asignaciones docentes y las ayudantías vinculadas; rechaza NRC ocupados y bloques duplicados.
   - El nombre y código se actualizan en el catálogo compartido entre semestres. Los horarios y el NRC se actualizan solo en el semestre activo.
+  - El código de asignatura es opcional (`null` si no se conoce), independiente del NRC. Las importaciones de carga docente permiten omitir `courseCode`; los CSV de horarios nunca deducen el código a partir del NRC. Al editar, omitir `code` conserva su valor y enviar `null` o una cadena vacía lo elimina.
   - El CSV de horarios admite `nrc;asignatura;dia;bloque;sala`; omitir `sala` conserva las ubicaciones existentes y una celda vacía las elimina. Las salas se incluyen también en los reportes de asignaturas.
 - `src/justifications`: justificaciones y recepción de formularios.
 - `src/dashboard`: datos agregados para los paneles.
