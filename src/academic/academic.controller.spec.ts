@@ -23,13 +23,15 @@ describe('Controladores académicos', () => {
   it('AcademicController delega consultas e importaciones al servicio', async () => {
     const controller = new AcademicController(academicService);
 
-    await expect(controller.listTeachers()).resolves.toEqual(['teacher']);
+    const query = { page: 2, pageSize: 10, search: 'ana', isActive: true };
+    await expect(controller.listTeachers(query)).resolves.toEqual(['teacher']);
     await expect(controller.getTeacher('teacher-1')).resolves.toEqual({
       id: 'teacher-1',
     });
     await controller.importCsv({ csv: 'a,b' });
     await controller.importRoster({ csv: 'c,d' });
 
+    expect(service.listTeachers).toHaveBeenCalledWith(query);
     expect(service.getTeacher).toHaveBeenCalledWith('teacher-1');
     expect(service.importCsv).toHaveBeenCalledWith('a,b');
     expect(service.importTeacherRoster).toHaveBeenCalledWith('c,d');

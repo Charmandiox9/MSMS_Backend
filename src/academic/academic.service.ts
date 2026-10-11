@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
 
@@ -180,21 +181,68 @@ export class AcademicService {
     });
   }
 
-  listTeachers() {
-    return this.prisma.teacher.findMany({
-      orderBy: { name: 'asc' },
-      include: {
-        assignments: {
-          where: { semester: { isActive: true } },
-          include: { course: true, semester: true },
-          orderBy: { course: { name: 'asc' } },
+  async listTeachers({
+    page,
+    pageSize,
+    search,
+    isActive,
+  }: ListTeachersQueryDto) {
+    const where: Prisma.TeacherWhereInput = {
+      ...(search
+        ? { id: { in: await this.findTeacherIdsMatching(search) } }
+        : {}),
+      ...(isActive === undefined ? {} : { isActive }),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.teacher.count({ where }),
+      this.prisma.teacher.findMany({
+        where,
+        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          assignments: {
+            where: { semester: { isActive: true } },
+            include: { course: true, semester: true },
+            orderBy: { course: { name: 'asc' } },
+          },
         },
-      },
-    });
+      }),
+    ]);
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
 
-  getTeacher(id: string) {
-    return this.prisma.teacher.findUnique({
+  // Prisma no ofrece comparaciones sin tildes, así que los ids que coinciden se
+  // buscan con unaccent + ILIKE ("alvaro" encuentra "Álvaro"). Cubre nombre,
+  // correo, código y los NRC del semestre activo, que son los del listado.
+  private async findTeacherIdsMatching(search: string): Promise<string[]> {
+    // Los comodines que escriba el usuario (% y _) se buscan literalmente.
+    const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT t."id"
+      FROM "Teacher" t
+      WHERE unaccent(t."name") ILIKE unaccent(${pattern})
+        OR unaccent(t."email") ILIKE unaccent(${pattern})
+        OR unaccent(COALESCE(t."employeeCode", '')) ILIKE unaccent(${pattern})
+        OR EXISTS (
+          SELECT 1
+          FROM "TeachingAssignment" a
+          JOIN "AcademicSemester" s ON s."id" = a."semesterId"
+          WHERE a."teacherId" = t."id"
+            AND s."isActive"
+            AND a."nrc" ILIKE ${pattern}
+        )`;
+    return rows.map((row) => row.id);
+  }
+
+  async getTeacher(id: string) {
+    const teacher = await this.prisma.teacher.findUnique({
       where: { id },
       include: {
         assignments: {
@@ -203,6 +251,8 @@ export class AcademicService {
         },
       },
     });
+    if (!teacher) throw new NotFoundException('El docente no existe');
+    return teacher;
   }
 
   async importCsv(csv: string) {

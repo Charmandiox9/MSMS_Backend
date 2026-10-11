@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicService } from './academic.service';
 
@@ -13,7 +13,12 @@ describe('AcademicService', () => {
       upsert: jest.fn(),
       updateMany: jest.fn(),
     },
-    teacher: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn() },
+    teacher: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      upsert: jest.fn(),
+      count: jest.fn(),
+    },
     course: {
       upsert: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null),
@@ -28,6 +33,7 @@ describe('AcademicService', () => {
     $transaction: jest.fn((operation: (client: unknown) => Promise<unknown>) =>
       operation(prisma),
     ),
+    $queryRaw: jest.fn(),
   };
 
   beforeEach(() => {
@@ -378,10 +384,13 @@ describe('AcademicService', () => {
   });
 
   describe('consultas', () => {
+    const firstPage = { page: 1, pageSize: 10 };
+
     it('lista profesores con sus asignaciones del semestre activo', async () => {
       prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
 
-      await service.listTeachers();
+      await service.listTeachers(firstPage);
 
       expect(prisma.teacher.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -391,6 +400,121 @@ describe('AcademicService', () => {
             }),
           },
         }),
+      );
+    });
+
+    it('pagina el listado y devuelve el total', async () => {
+      prisma.teacher.findMany.mockResolvedValue([{ id: 'teacher-21' }]);
+      prisma.teacher.count.mockResolvedValue(21);
+
+      const result = await service.listTeachers({ page: 3, pageSize: 10 });
+
+      expect(result).toEqual({
+        items: [{ id: 'teacher-21' }],
+        total: 21,
+        page: 3,
+        pageSize: 10,
+        totalPages: 3,
+      });
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {}, skip: 20, take: 10 }),
+      );
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    // $queryRaw se usa como tagged template: (strings, ...valores).
+    const rawQuerySql = () =>
+      (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    const rawQueryValues = () =>
+      prisma.$queryRaw.mock.calls[0].slice(1) as unknown[];
+
+    it('busca sin tildes por nombre, correo, código y NRC del semestre activo', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-1' }]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: 'álvaro' });
+
+      const sql = rawQuerySql();
+      expect(sql).toContain('unaccent(t."name") ILIKE unaccent(?)');
+      expect(sql).toContain('unaccent(t."email")');
+      expect(sql).toContain('"employeeCode"');
+      expect(sql).toContain('a."nrc" ILIKE ?');
+      expect(sql).toContain('s."isActive"');
+      // El término viaja como parámetro, nunca concatenado en el SQL.
+      expect(rawQueryValues()).toEqual([
+        '%álvaro%',
+        '%álvaro%',
+        '%álvaro%',
+        '%álvaro%',
+      ]);
+      const where = { id: { in: ['teacher-1'] } };
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where }),
+      );
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('escapa los comodines de LIKE que escribe el usuario', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: '50%_a\\b' });
+
+      expect(rawQueryValues()[0]).toBe('%50\\%\\_a\\\\b%');
+    });
+
+    it('combina la búsqueda con el filtro de estado', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-2' }]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({
+        ...firstPage,
+        search: 'soto',
+        isActive: false,
+      });
+
+      expect(prisma.teacher.count).toHaveBeenCalledWith({
+        where: { id: { in: ['teacher-2'] }, isActive: false },
+      });
+    });
+
+    it('sin búsqueda no ejecuta la consulta SQL', async () => {
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: '' });
+
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    it('filtra por estado, incluido isActive=false', async () => {
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, isActive: false });
+
+      expect(prisma.teacher.count).toHaveBeenCalledWith({
+        where: { isActive: false },
+      });
+    });
+
+    it('devuelve el docente solicitado', async () => {
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-1' });
+
+      await expect(service.getTeacher('teacher-1')).resolves.toEqual({
+        id: 'teacher-1',
+      });
+    });
+
+    it('responde 404 si el docente no existe', async () => {
+      prisma.teacher.findUnique.mockResolvedValue(null);
+
+      await expect(service.getTeacher('teacher-x')).rejects.toBeInstanceOf(
+        NotFoundException,
       );
     });
 

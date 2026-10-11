@@ -1,7 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
+import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { UpdateCourseDto } from './update-course.dto';
 
 // ACADEMIC_RECORDS_VIEW (matriz RBAC): consulta de docentes, asignaturas y
@@ -37,13 +47,13 @@ export class AcademicController {
 
   @Roles(...ACADEMIC_READERS)
   @Get()
-  listTeachers() {
-    return this.service.listTeachers();
+  listTeachers(@Query() query: ListTeachersQueryDto) {
+    return this.service.listTeachers(query);
   }
 
   @Roles(...ACADEMIC_READERS)
   @Get(':id')
-  getTeacher(@Param('id') id: string) {
+  getTeacher(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.getTeacher(id);
   }
 
