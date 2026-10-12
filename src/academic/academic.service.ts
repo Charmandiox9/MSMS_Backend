@@ -3,8 +3,11 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { AssistantshipState } from '../assistantships/assistantships.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
@@ -40,9 +43,61 @@ const DAYS = new Map([
 ]);
 const BLOCKS = new Set(academicScheduleBlocks.map((block) => block.code));
 
+/** Minutos desde medianoche a "HH:MM". */
+const clock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+// Las ayudantías guardan el día como número (1 = lunes … 7 = domingo).
+const assistantshipWeekdays = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
+/**
+ * Día y bloque de un horario de ayudantía. El bloque solo se asigna si las horas
+ * coinciden exactamente con uno institucional; si no, queda en ''.
+ */
+const assistantshipSlot = (schedule: {
+  weekday: number;
+  startsAtMinute: number;
+  endsAtMinute: number;
+}) => ({
+  day: assistantshipWeekdays[schedule.weekday % 7],
+  block:
+    academicScheduleBlocks.find(
+      (block) =>
+        block.startsAtMinute === schedule.startsAtMinute &&
+        block.endsAtMinute === schedule.endsAtMinute,
+    )?.code ?? '',
+});
+
 @Injectable()
 export class AcademicService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly config?: ConfigService,
+  ) {}
+
+  /** Hoy a las 00:00 UTC según la zona horaria académica (igual que AssistantshipsService). */
+  private today(): Date {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone:
+        this.config?.get<string>('ACADEMIC_TIME_ZONE') ?? 'America/Santiago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (name: string) =>
+      parts.find((item) => item.type === name)!.value;
+    return new Date(
+      `${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`,
+    );
+  }
 
   scheduleOptions() {
     return { days: academicScheduleDays, blocks: academicScheduleBlocks };
@@ -255,6 +310,130 @@ export class AcademicService {
     return teacher;
   }
 
+  /**
+   * Horario semanal del docente en el semestre activo, con el mismo criterio que
+   * la vista de asignaturas: clases cruzando sus NRC con los horarios de curso y
+   * ayudantías de sus asignaciones del semestre. `conflict` marca solo choques
+   * entre clases del docente; una ayudantía en el mismo bloque es normal.
+   */
+  async getTeacherSchedule(id: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id },
+      select: { id: true, name: true, email: true },
+    });
+    if (!teacher) throw new NotFoundException('El docente no existe');
+
+    const blocks = academicScheduleBlocks.map((block) => ({
+      code: block.code,
+      startsAt: clock(block.startsAtMinute),
+      endsAt: clock(block.endsAtMinute),
+    }));
+    const semester = await this.prisma.academicSemester.findFirst({
+      where: { isActive: true },
+      select: { id: true, name: true },
+    });
+    if (!semester) return { teacher, semester: null, blocks, entries: [] };
+
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: { teacherId: id, semesterId: semester.id },
+      select: { nrc: true },
+    });
+    const nrcs = [
+      ...new Set(assignments.map(({ nrc }) => nrc).filter(Boolean)),
+    ];
+    const schedules = nrcs.length
+      ? await this.prisma.courseSchedule.findMany({
+          where: { semesterId: semester.id, nrc: { in: nrcs } },
+          include: { course: true },
+        })
+      : [];
+    const assistantships = await this.prisma.assistantship.findMany({
+      where: { teachingAssignment: { teacherId: id, semesterId: semester.id } },
+      include: {
+        teachingAssignment: { include: { course: true } },
+        approval: { include: { assistant: true } },
+        schedules: true,
+      },
+    });
+
+    const slots = new Map<string, number>();
+    for (const { day, block } of schedules) {
+      const key = `${day}|${block}`;
+      slots.set(key, (slots.get(key) ?? 0) + 1);
+    }
+    const courseOf = (course: {
+      id: string;
+      code: string | null;
+      name: string;
+    }) => ({ id: course.id, code: course.code, name: course.name });
+
+    const classes = schedules.map((schedule) => {
+      const block = blocks.find(({ code }) => code === schedule.block);
+      return {
+        id: schedule.id,
+        kind: 'COURSE' as const,
+        day: schedule.day,
+        block: schedule.block,
+        startsAt: block?.startsAt ?? null,
+        endsAt: block?.endsAt ?? null,
+        nrc: schedule.nrc,
+        assistantshipNrc: null,
+        course: courseOf(schedule.course),
+        location: schedule.location,
+        assistant: null,
+        state: null,
+        conflict: (slots.get(`${schedule.day}|${schedule.block}`) ?? 0) > 1,
+      };
+    });
+    // Mismo criterio que AssistantshipsService: por empezar, vigente o terminada.
+    const today = this.today();
+    const stateOf = (item: { startsOn: Date; endsOn: Date | null }) =>
+      item.startsOn > today
+        ? AssistantshipState.SCHEDULED
+        : item.endsOn && item.endsOn < today
+          ? AssistantshipState.COMPLETED
+          : AssistantshipState.ACTIVE;
+    // Las ayudantías llevan su hora real aunque no calce con un bloque (block '').
+    const assistantshipEntries = assistantships.flatMap((item) =>
+      item.schedules.map((schedule) => ({
+        id: schedule.id,
+        kind: 'ASSISTANTSHIP' as const,
+        ...assistantshipSlot(schedule),
+        startsAt: clock(schedule.startsAtMinute),
+        endsAt: clock(schedule.endsAtMinute),
+        nrc: item.teachingAssignment.nrc,
+        assistantshipNrc: item.nrc,
+        course: courseOf(item.teachingAssignment.course),
+        location: schedule.location,
+        assistant: {
+          id: item.approval.assistant.id,
+          name: item.approval.assistant.name,
+          email: item.approval.assistant.email,
+        },
+        state: stateOf(item),
+        conflict: false,
+      })),
+    );
+
+    // Orden: día, hora de inicio, clases antes que ayudantías y NRC. Días y
+    // bloques desconocidos (datos antiguos) van al final y sin hora.
+    const dayPosition = (day: string) => {
+      const index = academicScheduleDays.indexOf(day);
+      return index === -1 ? academicScheduleDays.length : index;
+    };
+    const kindPosition = (kind: 'COURSE' | 'ASSISTANTSHIP') =>
+      kind === 'COURSE' ? 0 : 1;
+    const entries = [...classes, ...assistantshipEntries].sort(
+      (a, b) =>
+        dayPosition(a.day) - dayPosition(b.day) ||
+        (a.startsAt ?? '99:99').localeCompare(b.startsAt ?? '99:99') ||
+        kindPosition(a.kind) - kindPosition(b.kind) ||
+        a.nrc.localeCompare(b.nrc),
+    );
+
+    return { teacher, semester, blocks, entries };
+  }
+
   async importCsv(csv: string) {
     const rows = this.parseCsv(csv);
     if (rows.length === 0)
@@ -443,15 +622,6 @@ export class AcademicService {
         },
       }),
     ]);
-    const days = [
-      'Domingo',
-      'Lunes',
-      'Martes',
-      'Miércoles',
-      'Jueves',
-      'Viernes',
-      'Sábado',
-    ];
     return [
       ...courses.map((course) => ({ ...course, kind: 'COURSE' })),
       ...assistantships.flatMap((item) =>
@@ -459,13 +629,7 @@ export class AcademicService {
           id: schedule.id,
           nrc: item.teachingAssignment.nrc,
           assistantshipNrc: item.nrc,
-          day: days[schedule.weekday % 7],
-          block:
-            academicScheduleBlocks.find(
-              (block) =>
-                block.startsAtMinute === schedule.startsAtMinute &&
-                block.endsAtMinute === schedule.endsAtMinute,
-            )?.code ?? '',
+          ...assistantshipSlot(schedule),
           startsAtMinute: schedule.startsAtMinute,
           endsAtMinute: schedule.endsAtMinute,
           location: schedule.location,

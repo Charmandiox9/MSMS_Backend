@@ -24,7 +24,11 @@ describe('AcademicService', () => {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'course-1' }),
     },
-    teachingAssignment: { findFirst: jest.fn(), upsert: jest.fn() },
+    teachingAssignment: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      upsert: jest.fn(),
+    },
     courseSchedule: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -516,6 +520,301 @@ describe('AcademicService', () => {
       await expect(service.getTeacher('teacher-x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    describe('getTeacherSchedule', () => {
+      const teacher = { id: 'teacher-1', name: 'Ana', email: 'ana@ucn.cl' };
+      const semester = { id: 'sem-1', name: '2026-2' };
+      const course = (id: string) => ({
+        id,
+        code: `C-${id}`,
+        name: `Curso ${id}`,
+      });
+      const row = (
+        id: string,
+        day: string,
+        block: string,
+        nrc: string,
+        location: string | null = null,
+      ) => ({ id, day, block, nrc, location, course: course(nrc) });
+
+      it('responde 404 si el docente no existe', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.getTeacherSchedule('teacher-x'),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('devuelve los bloques y una lista vacía si no hay semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(null);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result).toEqual(
+          expect.objectContaining({ teacher, semester: null, entries: [] }),
+        );
+        expect(result.blocks[0]).toEqual({
+          code: 'A',
+          startsAt: '08:10',
+          endsAt: '09:40',
+        });
+        expect(prisma.teachingAssignment.findMany).not.toHaveBeenCalled();
+      });
+
+      it('cruza por NRC solo dentro del semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+          { nrc: '10002' },
+          { nrc: '10001' },
+          { nrc: '' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([]);
+
+        await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.teachingAssignment.findMany).toHaveBeenCalledWith({
+          where: { teacherId: 'teacher-1', semesterId: 'sem-1' },
+          select: { nrc: true },
+        });
+        expect(prisma.courseSchedule.findMany).toHaveBeenCalledWith({
+          where: { semesterId: 'sem-1', nrc: { in: ['10001', '10002'] } },
+          include: { course: true },
+        });
+      });
+
+      it('no consulta horarios si el docente no tiene NRC en el semestre', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result.entries).toEqual([]);
+        expect(prisma.courseSchedule.findMany).not.toHaveBeenCalled();
+      });
+
+      it('ordena por día y bloque y marca los choques', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+          { nrc: '10002' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([
+          row('s1', 'Miércoles', 'C', '10001', 'Sala 1'),
+          row('s2', 'Lunes', 'D', '10002'),
+          row('s3', 'Lunes', 'A', '10002'),
+          row('s4', 'Miércoles', 'C', '10002'),
+          row('s5', 'Lunes', 'Z', '10001'),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result.semester).toEqual(semester);
+        expect(
+          result.entries.map(({ id, conflict }) => [id, conflict]),
+        ).toEqual([
+          ['s3', false],
+          ['s2', false],
+          ['s5', false],
+          ['s1', true],
+          ['s4', true],
+        ]);
+        expect(result.entries[0]).toEqual({
+          id: 's3',
+          kind: 'COURSE',
+          day: 'Lunes',
+          block: 'A',
+          startsAt: '08:10',
+          endsAt: '09:40',
+          nrc: '10002',
+          assistantshipNrc: null,
+          course: course('10002'),
+          location: null,
+          assistant: null,
+          state: null,
+          conflict: false,
+        });
+        // Un bloque desconocido se conserva, pero sin hora.
+        expect(result.entries[2]).toEqual(
+          expect.objectContaining({ block: 'Z', startsAt: null, endsAt: null }),
+        );
+        expect(result.entries[3].location).toBe('Sala 1');
+      });
+
+      const assistantship = (
+        nrc: string | null,
+        schedules: {
+          id: string;
+          weekday: number;
+          startsAtMinute: number;
+          endsAtMinute: number;
+          location?: string | null;
+        }[],
+        dates: { startsOn: Date; endsOn: Date | null } = {
+          startsOn: new Date('2026-08-01'),
+          endsOn: null,
+        },
+      ) => ({
+        nrc,
+        ...dates,
+        teachingAssignment: { nrc: '10001', course: course('10001') },
+        approval: {
+          assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
+        },
+        schedules: schedules.map((schedule) => ({
+          location: null,
+          ...schedule,
+        })),
+      });
+
+      it('busca las ayudantías de las asignaciones del docente en el semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+        prisma.assistantship.findMany.mockResolvedValue([]);
+
+        await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.assistantship.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              teachingAssignment: {
+                teacherId: 'teacher-1',
+                semesterId: 'sem-1',
+              },
+            },
+          }),
+        );
+      });
+
+      it('incluye las ayudantías con su día, bloque, hora y ayudante', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([
+          row('s1', 'Lunes', 'A', '10001'),
+        ]);
+        prisma.assistantship.findMany.mockResolvedValue([
+          assistantship('20001', [
+            // Mismo bloque que la clase: no es choque.
+            { id: 'a1', weekday: 1, startsAtMinute: 490, endsAtMinute: 580 },
+            // Horario que no calza con un bloque institucional.
+            {
+              id: 'a2',
+              weekday: 2,
+              startsAtMinute: 600,
+              endsAtMinute: 660,
+              location: 'Lab 3',
+            },
+            // 7 = domingo, fuera de los días del horario: va al final.
+            { id: 'a3', weekday: 7, startsAtMinute: 490, endsAtMinute: 580 },
+          ]),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(
+          result.entries.map(({ id, kind, day, block, conflict }) => [
+            id,
+            kind,
+            day,
+            block,
+            conflict,
+          ]),
+        ).toEqual([
+          ['s1', 'COURSE', 'Lunes', 'A', false],
+          ['a1', 'ASSISTANTSHIP', 'Lunes', 'A', false],
+          ['a2', 'ASSISTANTSHIP', 'Martes', '', false],
+          ['a3', 'ASSISTANTSHIP', 'Domingo', 'A', false],
+        ]);
+        expect(result.entries[2]).toEqual({
+          id: 'a2',
+          kind: 'ASSISTANTSHIP',
+          day: 'Martes',
+          block: '',
+          startsAt: '10:00',
+          endsAt: '11:00',
+          nrc: '10001',
+          assistantshipNrc: '20001',
+          course: course('10001'),
+          location: 'Lab 3',
+          assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
+          state: 'ACTIVE',
+          conflict: false,
+        });
+      });
+
+      it('marca el estado de cada ayudantía según la fecha de hoy en Chile', async () => {
+        // 11-10-2026 01:00 UTC todavía es 10-10-2026 en America/Santiago.
+        jest.useFakeTimers().setSystemTime(new Date('2026-10-11T01:00:00Z'));
+        try {
+          prisma.teacher.findUnique.mockResolvedValue(teacher);
+          prisma.academicSemester.findFirst.mockResolvedValue(semester);
+          prisma.teachingAssignment.findMany.mockResolvedValue([]);
+          const slot = (id: string) => [
+            { id, weekday: 1, startsAtMinute: 490, endsAtMinute: 580 },
+          ];
+          prisma.assistantship.findMany.mockResolvedValue([
+            assistantship('1', slot('por-empezar'), {
+              startsOn: new Date('2026-10-11'),
+              endsOn: null,
+            }),
+            assistantship('2', slot('termina-hoy'), {
+              startsOn: new Date('2026-08-01'),
+              endsOn: new Date('2026-10-10'),
+            }),
+            assistantship('3', slot('terminada'), {
+              startsOn: new Date('2026-08-01'),
+              endsOn: new Date('2026-10-09'),
+            }),
+          ]);
+
+          const result = await service.getTeacherSchedule('teacher-1');
+
+          expect(
+            Object.fromEntries(
+              result.entries.map(({ id, state }) => [id, state]),
+            ),
+          ).toEqual({
+            'por-empezar': 'SCHEDULED',
+            'termina-hoy': 'ACTIVE',
+            terminada: 'COMPLETED',
+          });
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('incluye ayudantías aunque el docente no tenga horarios de clase', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+        prisma.assistantship.findMany.mockResolvedValue([
+          assistantship(null, [
+            { id: 'a1', weekday: 3, startsAtMinute: 700, endsAtMinute: 790 },
+          ]),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.courseSchedule.findMany).not.toHaveBeenCalled();
+        expect(result.entries).toEqual([
+          expect.objectContaining({
+            id: 'a1',
+            day: 'Miércoles',
+            block: 'C',
+            assistantshipNrc: null,
+            nrc: '10001',
+          }),
+        ]);
+      });
     });
 
     it('lista horarios solo del semestre activo', async () => {

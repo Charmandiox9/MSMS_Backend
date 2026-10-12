@@ -92,6 +92,7 @@ describe('Matriz de permisos por endpoint', () => {
 
       'AcademicController.listTeachers': ACADEMIC_READERS,
       'AcademicController.getTeacher': ACADEMIC_READERS,
+      'AcademicController.getTeacherSchedule': ACADEMIC_READERS,
       'AcademicController.importCsv': SECRETARY,
       'AcademicController.importRoster': SECRETARY,
       'AcademicCoursesController.listCourseSchedules': ACADEMIC_READERS,
@@ -169,6 +170,7 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.listInbox'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
+    ['ACADEMIC_RECORDS_VIEW', 'AcademicController.getTeacherSchedule'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicCoursesController.listCourseSchedules'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicSemestersController.listSemesters'],
     ['ACADEMIC_RECORDS_MANAGE', 'AcademicController.importCsv'],

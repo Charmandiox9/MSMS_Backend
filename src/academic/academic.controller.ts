@@ -57,6 +57,12 @@ export class AcademicController {
     return this.service.getTeacher(id);
   }
 
+  @Roles(...ACADEMIC_READERS)
+  @Get(':id/schedule')
+  getTeacherSchedule(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.getTeacherSchedule(id);
+  }
+
   @Post('import-csv')
   importCsv(@Body() body: CsvImportDto) {
     return this.service.importCsv(body.csv);
