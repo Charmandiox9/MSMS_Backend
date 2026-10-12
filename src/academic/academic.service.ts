@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { isEmail } from 'class-validator';
 import { AssistantshipState } from '../assistantships/assistantships.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
@@ -14,6 +15,7 @@ import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
 
 interface TeacherImportRow {
+  line: number;
   teacherEmail: string;
   teacherName: string;
   courseCode?: string;
@@ -26,6 +28,7 @@ interface TeacherImportRow {
 }
 
 interface CourseScheduleImportRow {
+  line: number;
   nrc: string;
   subjectName: string;
   day: string;
@@ -42,6 +45,42 @@ const DAYS = new Map([
   ['sabado', 'Sábado'],
 ]);
 const BLOCKS = new Set(academicScheduleBlocks.map((block) => block.code));
+
+// Largos máximos de los campos importados (los mismos de UpdateCourseDto).
+const MAX_NAME = 200;
+const MAX_CODE = 50;
+const MAX_SEMESTER_NAME = 100;
+
+// Las importaciones hacen varias consultas por fila: con la base remota superan
+// fácilmente los 5 s que Prisma da por defecto a una transacción interactiva.
+const IMPORT_TRANSACTION = { maxWait: 10_000, timeout: 60_000 };
+
+/** Líneas no vacías del CSV con su número en el archivo (la cabecera es la fila 1). */
+const csvLines = (csv: string) =>
+  csv
+    .split(/\r?\n/)
+    .map((text, index) => ({ line: index + 1, text: text.trim() }))
+    .filter(({ text }) => text);
+
+const rowError = (line: number, message: string) =>
+  new BadRequestException(`Fila ${line}: ${message}`);
+
+/** Rechaza valores que superan el largo máximo de su columna. */
+const checkLengths = (
+  line: number,
+  fields: [label: string, value: string | undefined, max: number][],
+) => {
+  for (const [label, value, max] of fields)
+    if (value && value.length > max)
+      throw rowError(line, `${label} supera los ${max} caracteres`);
+};
+
+/** Correo en minúsculas, para que Ana@ucn.cl y ana@ucn.cl sean el mismo docente. */
+const importedEmail = (line: number, value: string) => {
+  const email = value.toLowerCase();
+  if (!isEmail(email)) throw rowError(line, `Correo inválido: ${value}`);
+  return email;
+};
 
 /** Minutos desde medianoche a "HH:MM". */
 const clock = (minutes: number) =>
@@ -104,6 +143,8 @@ export class AcademicService {
   }
 
   async updateCourse(originalNrc: string, input: UpdateCourseDto) {
+    if (!originalNrc.trim() || originalNrc.length > MAX_CODE)
+      throw new BadRequestException('El NRC de la asignatura no es válido');
     const schedules = input.schedules.map((schedule) => ({
       day: this.normalizeDay(schedule.day),
       block: schedule.block.trim().toUpperCase(),
@@ -215,6 +256,11 @@ export class AcademicService {
     startsOnValue: string,
     endsOnValue: string,
   ) {
+    const semesterName = name.trim();
+    if (!semesterName || semesterName.length > MAX_SEMESTER_NAME)
+      throw new BadRequestException(
+        `El nombre del semestre es obligatorio y admite hasta ${MAX_SEMESTER_NAME} caracteres`,
+      );
     const startsOn = this.parseDate(startsOnValue);
     const endsOn = this.parseDate(endsOnValue);
     if (endsOn <= startsOn)
@@ -224,9 +270,9 @@ export class AcademicService {
 
     return this.prisma.$transaction(async (transaction) => {
       const semester = await transaction.academicSemester.upsert({
-        where: { name: name.trim() },
+        where: { name: semesterName },
         update: { startsOn, endsOn, isActive: true },
-        create: { name: name.trim(), startsOn, endsOn, isActive: true },
+        create: { name: semesterName, startsOn, endsOn, isActive: true },
       });
       await transaction.academicSemester.updateMany({
         where: { id: { not: semester.id } },
@@ -454,15 +500,15 @@ export class AcademicService {
       });
 
       for (const row of rows) {
-        const teacher = await transaction.teacher.upsert({
-          where: { email: row.teacherEmail },
-          update: { name: row.teacherName, employeeCode: row.employeeCode },
-          create: {
-            email: row.teacherEmail,
+        const teacher = await this.upsertTeacher(
+          transaction,
+          row.teacherEmail,
+          {
             name: row.teacherName,
-            employeeCode: row.employeeCode,
+            // Vacío no se guarda: employeeCode es único y '' chocaría entre docentes.
+            employeeCode: row.employeeCode || undefined,
           },
-        });
+        );
         const course = await this.resolveImportedCourse(
           transaction,
           semester.id,
@@ -491,18 +537,15 @@ export class AcademicService {
       }
 
       return { semesterId: semester.id, importedRows: rows.length };
-    });
+    }, IMPORT_TRANSACTION);
   }
 
   async importTeacherRoster(csv: string) {
-    const lines = csv
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const lines = csvLines(csv);
     if (lines.length < 2)
       throw new BadRequestException('El CSV de profesores no contiene filas');
 
-    const headers = this.splitCsvLine(lines[0]).map((header) =>
+    const headers = this.splitCsvLine(lines[0].text).map((header) =>
       this.normalizeHeader(header),
     );
     const nameIndex = headers.findIndex((header) =>
@@ -517,8 +560,8 @@ export class AcademicService {
       );
     }
 
-    const rows = lines.slice(1).map((line) => {
-      const values = this.splitCsvLine(line).map((value) => value.trim());
+    const rows = lines.slice(1).map(({ line, text }) => {
+      const values = this.splitCsvLine(text).map((value) => value.trim());
       const nrcs = values
         .filter(
           (value, index) =>
@@ -531,12 +574,19 @@ export class AcademicService {
             .filter(Boolean),
         );
       if (!values[nameIndex] || !values[emailIndex] || nrcs.length === 0)
-        throw new BadRequestException(
-          'Hay una fila incompleta en el CSV de profesores',
-        );
+        throw rowError(line, 'Hay una fila incompleta en el CSV de profesores');
+      checkLengths(line, [
+        ['El nombre', values[nameIndex], MAX_NAME],
+        ...nrcs.map((nrc): [string, string, number] => [
+          'El NRC',
+          nrc,
+          MAX_CODE,
+        ]),
+      ]);
       return {
+        line,
         name: values[nameIndex],
-        email: values[emailIndex],
+        email: importedEmail(line, values[emailIndex]),
         nrcs: [...new Set(nrcs)],
       };
     });
@@ -552,10 +602,8 @@ export class AcademicService {
 
       let importedAssignments = 0;
       for (const row of rows) {
-        const teacher = await transaction.teacher.upsert({
-          where: { email: row.email },
-          update: { name: row.name },
-          create: { name: row.name, email: row.email },
+        const teacher = await this.upsertTeacher(transaction, row.email, {
+          name: row.name,
         });
         for (const nrc of row.nrcs) {
           const assignment = await transaction.teachingAssignment.findFirst({
@@ -570,7 +618,8 @@ export class AcademicService {
               });
           const courseId = assignment?.courseId ?? schedule?.courseId;
           if (!courseId)
-            throw new BadRequestException(
+            throw rowError(
+              row.line,
               `El NRC ${nrc} no está cargado en el semestre activo`,
             );
           await transaction.teachingAssignment.upsert({
@@ -599,7 +648,7 @@ export class AcademicService {
         importedTeachers: rows.length,
         importedAssignments,
       };
-    });
+    }, IMPORT_TRANSACTION);
   }
 
   async listCourseSchedules() {
@@ -661,11 +710,7 @@ export class AcademicService {
 
       const courseCache = new Map<string, string>();
       for (const row of rows) {
-        const normalizedDay = this.normalizeDay(row.day);
-        const block = row.block.trim().toUpperCase();
-        if (!BLOCKS.has(block))
-          throw new BadRequestException(`Bloque inválido: ${row.block}`);
-
+        const { day: normalizedDay, block } = row;
         let courseId = courseCache.get(`${row.nrc}|${row.subjectName}`);
         if (!courseId) {
           const assignment = await transaction.teachingAssignment.findFirst({
@@ -714,7 +759,7 @@ export class AcademicService {
       }
 
       return { semesterId: semester.id, importedRows: rows.length };
-    });
+    }, IMPORT_TRANSACTION);
   }
 
   private async resolveImportedCourse(
@@ -757,12 +802,11 @@ export class AcademicService {
   }
 
   private parseCsv(csv: string): TeacherImportRow[] {
-    const lines = csv
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const lines = csvLines(csv);
     if (lines.length < 2) return [];
-    const headers = this.splitCsvLine(lines[0]).map((header) => header.trim());
+    const headers = this.splitCsvLine(lines[0].text).map((header) =>
+      header.trim(),
+    );
     const required = [
       'teacherEmail',
       'teacherName',
@@ -775,8 +819,8 @@ export class AcademicService {
     for (const key of required)
       if (!headers.includes(key))
         throw new BadRequestException(`Falta la columna ${key}`);
-    return lines.slice(1).map((line) => {
-      const values = this.splitCsvLine(line);
+    const rows = lines.slice(1).map(({ line, text }) => {
+      const values = this.splitCsvLine(text);
       const row = Object.fromEntries(
         headers.map((header, index) => [header, values[index]?.trim() ?? '']),
       ) as Partial<TeacherImportRow>;
@@ -787,9 +831,42 @@ export class AcademicService {
         !row.nrc ||
         !row.semesterName
       )
-        throw new BadRequestException('Hay una fila incompleta en el CSV');
-      return row as TeacherImportRow;
+        throw rowError(line, 'Hay una fila incompleta en el CSV');
+      checkLengths(line, [
+        ['El nombre del docente', row.teacherName, MAX_NAME],
+        ['El código de funcionario', row.employeeCode, MAX_CODE],
+        ['La asignatura', row.courseName, MAX_NAME],
+        ['El código de asignatura', row.courseCode, MAX_CODE],
+        ['El NRC', row.nrc, MAX_CODE],
+        ['El semestre', row.semesterName, MAX_SEMESTER_NAME],
+      ]);
+      return {
+        ...row,
+        line,
+        teacherEmail: importedEmail(line, row.teacherEmail),
+      } as TeacherImportRow;
     });
+
+    // La importación activa un único semestre: todas las filas deben describirlo igual.
+    const [first, ...rest] = rows;
+    const startsOn = this.rowDate(first.line, first.startsOn);
+    const endsOn = this.rowDate(first.line, first.endsOn);
+    if (endsOn <= startsOn)
+      throw rowError(
+        first.line,
+        'La fecha de término debe ser posterior al inicio',
+      );
+    for (const row of rest)
+      if (
+        row.semesterName !== first.semesterName ||
+        this.rowDate(row.line, row.startsOn).getTime() !== startsOn.getTime() ||
+        this.rowDate(row.line, row.endsOn).getTime() !== endsOn.getTime()
+      )
+        throw rowError(
+          row.line,
+          `Todas las filas deben ser del semestre ${first.semesterName} (${first.startsOn} a ${first.endsOn})`,
+        );
+    return rows;
   }
 
   private splitCsvLine(line: string): string[] {
@@ -808,33 +885,43 @@ export class AcademicService {
   }
 
   private parseCourseScheduleCsv(csv: string): CourseScheduleImportRow[] {
-    const lines = csv
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const lines = csvLines(csv);
     if (lines.length < 2) return [];
-    const headers = this.splitCsvLine(lines[0]).map((header) =>
+    const headers = this.splitCsvLine(lines[0].text).map((header) =>
       this.normalizeHeader(header),
     );
     const required = ['nrc', 'asignatura', 'dia', 'bloque'];
     for (const key of required)
       if (!headers.includes(key))
         throw new BadRequestException(`Falta la columna ${key}`);
-    return lines.slice(1).map((line) => {
-      const values = this.splitCsvLine(line);
+    return lines.slice(1).map(({ line, text }) => {
+      const values = this.splitCsvLine(text);
       const row = Object.fromEntries(
         headers.map((header, index) => [header, values[index]?.trim() ?? '']),
       );
       if (!row.nrc || !row.asignatura || !row.dia || !row.bloque)
-        throw new BadRequestException(
+        throw rowError(
+          line,
           'Hay una fila incompleta en el CSV de asignaturas',
         );
+      const day = DAYS.get(this.normalizeHeader(row.dia));
+      if (!day) throw rowError(line, `Día inválido: ${row.dia}`);
+      const block = row.bloque.toUpperCase();
+      if (!BLOCKS.has(block))
+        throw rowError(line, `Bloque inválido: ${row.bloque}`);
+      const location = row.sala ?? row.location ?? row.room;
+      checkLengths(line, [
+        ['El NRC', row.nrc, MAX_CODE],
+        ['La asignatura', row.asignatura, MAX_NAME],
+        ['La sala', location, MAX_NAME],
+      ]);
       return {
+        line,
         nrc: row.nrc,
         subjectName: row.asignatura,
-        day: row.dia,
-        block: row.bloque,
-        location: row.sala ?? row.location ?? row.room,
+        day,
+        block,
+        location,
       };
     });
   }
@@ -859,5 +946,32 @@ export class AcademicService {
     if (Number.isNaN(date.getTime()))
       throw new BadRequestException(`Fecha inválida: ${value}`);
     return date;
+  }
+
+  private rowDate(line: number, value: string): Date {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()))
+      throw rowError(line, `Fecha inválida: ${value}`);
+    return date;
+  }
+
+  /**
+   * Crea o actualiza al docente por correo. Busca sin distinguir mayúsculas para
+   * reutilizar docentes guardados antes de normalizar los correos.
+   */
+  private async upsertTeacher(
+    transaction: Prisma.TransactionClient,
+    email: string,
+    data: { name: string; employeeCode?: string },
+  ) {
+    const existing = await transaction.teacher.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { email: true },
+    });
+    return transaction.teacher.upsert({
+      where: { email: existing?.email ?? email },
+      update: data,
+      create: { email, ...data },
+    });
   }
 }

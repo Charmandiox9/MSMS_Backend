@@ -8,7 +8,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsDateString, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
@@ -29,8 +30,12 @@ class CsvImportDto {
 }
 
 class SemesterDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 
   @IsDateString()

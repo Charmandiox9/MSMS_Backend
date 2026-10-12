@@ -14,6 +14,7 @@ describe('AcademicService', () => {
       updateMany: jest.fn(),
     },
     teacher: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       upsert: jest.fn(),
@@ -85,6 +86,31 @@ describe('AcademicService', () => {
       await expect(
         service.activateSemester('2026-2', 'no-es-fecha', '2026-12-15'),
       ).rejects.toThrow('Fecha inválida: no-es-fecha');
+    });
+
+    it('rechaza un nombre de semestre vacío o demasiado largo', async () => {
+      await expect(
+        service.activateSemester('   ', '2026-08-01', '2026-12-15'),
+      ).rejects.toThrow('El nombre del semestre es obligatorio');
+      await expect(
+        service.activateSemester('x'.repeat(101), '2026-08-01', '2026-12-15'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateCourse', () => {
+    it('rechaza un NRC de la URL vacío o demasiado largo', async () => {
+      const input = {
+        name: 'Cálculo',
+        nrc: '10001',
+        schedules: [{ day: 'Lunes', block: 'A' }],
+      };
+      for (const nrc of [' ', '1'.repeat(51)])
+        await expect(service.updateCourse(nrc, input)).rejects.toThrow(
+          'El NRC de la asignatura no es válido',
+        );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -178,6 +204,92 @@ describe('AcademicService', () => {
         'Fecha inválida: ayer',
       );
     });
+
+    it('indica la fila del archivo donde está el error, contando la cabecera', async () => {
+      const csv = [
+        header,
+        'ana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15',
+        '',
+        'luis@ucn.cl,,QUI200,Química,10002,2026-2,2026-08-01,2026-12-15',
+      ].join('\n');
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 4: Hay una fila incompleta en el CSV',
+      );
+    });
+
+    it('rechaza correos inválidos', async () => {
+      const csv = `${header}\nana-ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: Correo inválido: ana-ucn.cl',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('guarda los correos en minúsculas y reutiliza docentes guardados con mayúsculas', async () => {
+      prisma.teacher.findFirst.mockResolvedValueOnce({ email: 'Ana@UCN.cl' });
+      const csv = `${header}\nANA@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+
+      await service.importCsv(csv);
+
+      expect(prisma.teacher.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: { equals: 'ana@ucn.cl', mode: 'insensitive' } },
+        }),
+      );
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: 'Ana@UCN.cl' },
+          create: expect.objectContaining({ email: 'ana@ucn.cl' }),
+        }),
+      );
+    });
+
+    it('no guarda un código de funcionario vacío', async () => {
+      const csv =
+        'teacherEmail,teacherName,courseName,nrc,semesterName,startsOn,endsOn,employeeCode\n' +
+        'ana@ucn.cl,Ana,Biología,10001,2026-2,2026-08-01,2026-12-15,';
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+
+      await service.importCsv(csv);
+
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: { name: 'Ana', employeeCode: undefined },
+        }),
+      );
+    });
+
+    it('exige que todas las filas sean del mismo semestre', async () => {
+      const csv = [
+        header,
+        'ana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15',
+        'luis@ucn.cl,Luis,QUI200,Química,10002,2027-1,2027-03-01,2027-07-15',
+      ].join('\n');
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 3: Todas las filas deben ser del semestre 2026-2',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un semestre cuyo término no es posterior al inicio', async () => {
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-12-15,2026-08-01`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: La fecha de término debe ser posterior al inicio',
+      );
+    });
+
+    it('rechaza valores más largos de lo permitido', async () => {
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,${'1'.repeat(51)},2026-2,2026-08-01,2026-12-15`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: El NRC supera los 50 caracteres',
+      );
+    });
   });
 
   describe('importTeacherRoster', () => {
@@ -258,11 +370,55 @@ describe('AcademicService', () => {
         service.importTeacherRoster('nombre,correo,nrc'),
       ).rejects.toThrow('El CSV de profesores no contiene filas');
     });
+
+    it('valida el correo, lo guarda en minúsculas e indica la fila', async () => {
+      await expect(
+        service.importTeacherRoster(
+          'nombre,correo,nrc\nAna,ana@ucn.cl,10001\nLuis,luis@,10002',
+        ),
+      ).rejects.toThrow('Fila 3: Correo inválido: luis@');
+
+      prisma.teachingAssignment.findFirst.mockResolvedValue({
+        courseId: 'course-1',
+      });
+      await service.importTeacherRoster(
+        'nombre,correo,nrc\nAna,Ana@UCN.cl,10001',
+      );
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { email: 'ana@ucn.cl', name: 'Ana' },
+        }),
+      );
+    });
+
+    it('indica la fila del NRC que no está cargado', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.importTeacherRoster('nombre,correo,nrc\nAna,ana@ucn.cl,99999'),
+      ).rejects.toThrow('Fila 2: El NRC 99999 no está cargado');
+    });
   });
 
   describe('importCourseSchedules', () => {
     beforeEach(() => {
       prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-1' });
+    });
+
+    it('da a la transacción más tiempo que los 5 s por defecto de Prisma', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue({
+        courseId: 'course-1',
+      });
+
+      await service.importCourseSchedules(
+        'nrc,asignatura,dia,bloque\n10001,Biología,lunes,A',
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ timeout: 60_000 }),
+      );
     });
 
     it('reutiliza asignaturas sin código y conserva códigos reales al reimportar horarios', async () => {
@@ -358,6 +514,20 @@ describe('AcademicService', () => {
           'nrc,asignatura,dia,bloque\n10001,Biología,domingo,A',
         ),
       ).rejects.toThrow('Día inválido: domingo');
+    });
+
+    it('valida día, bloque y largos antes de tocar la base, indicando la fila', async () => {
+      await expect(
+        service.importCourseSchedules(
+          'nrc,asignatura,dia,bloque\n10001,Biología,lunes,A\n10001,Biología,lunes,Z',
+        ),
+      ).rejects.toThrow('Fila 3: Bloque inválido: Z');
+      await expect(
+        service.importCourseSchedules(
+          `nrc,asignatura,dia,bloque,sala\n10001,Biología,lunes,A,${'x'.repeat(201)}`,
+        ),
+      ).rejects.toThrow('Fila 2: La sala supera los 200 caracteres');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('indica la columna obligatoria que falta', async () => {
