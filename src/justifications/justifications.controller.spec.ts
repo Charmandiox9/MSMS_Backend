@@ -57,19 +57,17 @@ describe('JustificationsController', () => {
       const expected = [{ id: 'just-1' }];
       mockService.listJustifications.mockResolvedValue(expected);
 
-      const req = { query: { status: 'PENDING' }, user: { id: 'user-1' } } as any;
-      const result = await controller.list(req);
+      const result = await controller.list(JustificationStatus.PENDING);
 
       expect(result).toBe(expected);
       expect(mockService.listJustifications).toHaveBeenCalledWith(JustificationStatus.PENDING);
     });
 
-    it('calls service without filter when status is invalid or omitted', async () => {
+    it('calls service without filter when status is omitted', async () => {
       const expected = [{ id: 'just-1' }];
       mockService.listJustifications.mockResolvedValue(expected);
 
-      const req = { query: {}, user: { id: 'user-1' } } as any;
-      const result = await controller.list(req);
+      const result = await controller.list(undefined);
 
       expect(result).toBe(expected);
       expect(mockService.listJustifications).toHaveBeenCalledWith(undefined);

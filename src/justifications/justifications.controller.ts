@@ -1,11 +1,15 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
   Param,
+  ParseEnumPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -98,28 +102,35 @@ export class JustificationsController {
     'ACADEMIC_SECRETARY',
     'ACADEMIC_PROCESS_ANALYST',
   )
-  list(@Req() request: AuthenticatedRequest) {
-    const status = request.query.status;
-    return this.service.listJustifications(
-      typeof status === 'string' &&
-        Object.values(JustificationStatus).includes(
-          status as JustificationStatus,
-        )
-        ? (status as JustificationStatus)
-        : undefined,
-    );
+  list(
+    @Query(
+      'status',
+      new ParseEnumPipe(JustificationStatus, {
+        optional: true,
+        exceptionFactory: () =>
+          new BadRequestException(
+            `Estado inválido: usa ${Object.values(JustificationStatus).join(', ')}`,
+          ),
+      }),
+    )
+    status?: JustificationStatus,
+  ) {
+    return this.service.listJustifications(status);
   }
 
   @Post('inbox/:id/open')
   @Roles('TEACHING_SUPPORT_COORDINATOR')
-  open(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+  open(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
     return this.service.openInboxEntry(id, getAuthenticatedUserId(request));
   }
 
   @Patch(':id/decision')
   @Roles('TEACHING_SUPPORT_COORDINATOR')
   decide(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() body: DecisionDto,
     @Req() request: AuthenticatedRequest,
   ) {
@@ -134,7 +145,7 @@ export class JustificationsController {
 
   @Get(':id/evidence-url')
   @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
-  evidenceUrl(@Param('id') id: string) {
+  evidenceUrl(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.getEvidenceUrl(id);
   }
 }

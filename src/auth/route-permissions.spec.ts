@@ -123,7 +123,7 @@ describe('Matriz de permisos por endpoint', () => {
         'TEACHING_SUPPORT_COORDINATOR',
       ],
 
-      'StorageController.createPresignedUpload': 'AUTHENTICATED',
+      'StorageController.createPresignedUpload': COORDINATOR,
       'StorageController.createFormsPresignedUpload': 'PUBLIC',
     });
   });
@@ -169,6 +169,7 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     ['JUSTIFICATIONS_VIEW', 'JustificationsController.list'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.listInbox'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
+    ['JUSTIFICATIONS_CREATE', 'StorageController.createPresignedUpload'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.getTeacherSchedule'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicCoursesController.listCourseSchedules'],
