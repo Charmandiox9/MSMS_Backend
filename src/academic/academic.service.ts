@@ -487,17 +487,16 @@ export class AcademicService {
 
     return this.prisma.$transaction(async (transaction) => {
       const first = rows[0];
-      const startsOn = this.parseDate(first.startsOn);
-      const endsOn = this.parseDate(first.endsOn);
-      const semester = await transaction.academicSemester.upsert({
-        where: { name: first.semesterName },
-        update: { startsOn, endsOn, isActive: true },
-        create: { name: first.semesterName, startsOn, endsOn, isActive: true },
+      const semester = await transaction.academicSemester.findFirst({
+        where: { isActive: true },
       });
-      await transaction.academicSemester.updateMany({
-        where: { id: { not: semester.id } },
-        data: { isActive: false },
-      });
+      if (!semester)
+        throw new BadRequestException('No existe un semestre activo');
+      if (first.semesterName !== semester.name)
+        throw rowError(
+          first.line,
+          `La carga debe corresponder al semestre activo ${semester.name}`,
+        );
 
       for (const row of rows) {
         const teacher = await this.upsertTeacher(
@@ -597,7 +596,7 @@ export class AcademicService {
       });
       if (!semester)
         throw new BadRequestException(
-          'No existe un semestre activo. Importa primero la carga académica o crea el semestre.',
+          'No existe un semestre activo. Activa un semestre antes de importar asignaciones.',
         );
 
       let importedAssignments = 0;
@@ -847,7 +846,7 @@ export class AcademicService {
       } as TeacherImportRow;
     });
 
-    // La importación activa un único semestre: todas las filas deben describirlo igual.
+    // El CSV debe describir un solo semestre; importCsv comprueba que sea el activo.
     const [first, ...rest] = rows;
     const startsOn = this.rowDate(first.line, first.startsOn);
     const endsOn = this.rowDate(first.line, first.endsOn);

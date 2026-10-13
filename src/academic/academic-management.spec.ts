@@ -244,6 +244,30 @@ describe('Gestión individual de docentes y asignaturas', () => {
     ).rejects.toThrow(BadRequestException);
     expect(prisma.courseSchedule.createMany).not.toHaveBeenCalled();
   });
+  it('crear una asignatura exige el semestre activo y nunca crea registros en otro semestre', async () => {
+    await expect(
+      service.createCourse({ ...courseInput, semesterId: teacherId }),
+    ).rejects.toThrow(ConflictException);
+    prisma.academicSemester.findFirst.mockResolvedValue(null);
+    await expect(service.createCourse(courseInput)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(prisma.course.create).not.toHaveBeenCalled();
+    expect(prisma.courseSchedule.createMany).not.toHaveBeenCalled();
+  });
+  it('crea y edita el perfil de un profesor sin consultar ni depender de un semestre', async () => {
+    prisma.academicSemester.findFirst.mockResolvedValue(null);
+    await service.createTeacher(profile);
+    await service.updateTeacher(teacherId, { ...profile, name: 'Ana Pérez' });
+    expect(prisma.teacher.create).toHaveBeenCalledWith({ data: profile });
+    expect(prisma.teacher.update).toHaveBeenCalledWith({
+      where: { id: teacherId },
+      data: { ...profile, name: 'Ana Pérez' },
+    });
+    expect(prisma.academicSemester.findFirst).not.toHaveBeenCalled();
+    expect(prisma.teachingAssignment.create).not.toHaveBeenCalled();
+    expect(prisma.teachingAssignment.deleteMany).not.toHaveBeenCalled();
+  });
   it('vincula y desvincula desde una asignatura del semestre activo', async () => {
     await controller.setCourseTeachers('10001', {
       semesterId,

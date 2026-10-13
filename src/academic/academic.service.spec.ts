@@ -118,8 +118,37 @@ describe('AcademicService', () => {
     const header =
       'teacherEmail,teacherName,courseCode,courseName,nrc,semesterName,startsOn,endsOn';
 
+    it('rechaza la carga de un semestre distinto del activo sin crear docentes ni asignaturas', async () => {
+      prisma.academicSemester.findFirst.mockResolvedValue({
+        id: 'active',
+        name: '2027-1',
+      });
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'La carga debe corresponder al semestre activo 2027-1',
+      );
+      expect(prisma.teacher.upsert).not.toHaveBeenCalled();
+      expect(prisma.course.upsert).not.toHaveBeenCalled();
+      expect(prisma.academicSemester.upsert).not.toHaveBeenCalled();
+      expect(prisma.academicSemester.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('sin semestre activo no crea ni activa uno a partir del CSV', async () => {
+      prisma.academicSemester.findFirst.mockResolvedValue(null);
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'No existe un semestre activo',
+      );
+      expect(prisma.academicSemester.upsert).not.toHaveBeenCalled();
+      expect(prisma.teacher.upsert).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
       prisma.academicSemester.upsert.mockResolvedValue({ id: 'sem-1' });
+      prisma.academicSemester.findFirst.mockResolvedValue({
+        id: 'sem-1',
+        name: '2026-2',
+      });
       prisma.teacher.upsert.mockImplementation(
         ({ create }: { create: { email: string } }) =>
           Promise.resolve({ id: `teacher-${create.email}` }),
@@ -156,10 +185,11 @@ describe('AcademicService', () => {
           },
         }),
       );
-      expect(prisma.academicSemester.updateMany).toHaveBeenCalledWith({
-        where: { id: { not: 'sem-1' } },
-        data: { isActive: false },
+      expect(prisma.academicSemester.findFirst).toHaveBeenCalledWith({
+        where: { isActive: true },
       });
+      expect(prisma.academicSemester.upsert).not.toHaveBeenCalled();
+      expect(prisma.academicSemester.updateMany).not.toHaveBeenCalled();
     });
 
     it('rechaza un CSV sin filas de datos', async () => {
@@ -293,6 +323,34 @@ describe('AcademicService', () => {
   });
 
   describe('importTeacherRoster', () => {
+    it('reutiliza el mismo profesor al importar asignaciones en otro semestre', async () => {
+      prisma.teacher.findFirst.mockResolvedValue(null);
+      prisma.teacher.upsert.mockResolvedValue({ id: 'persistent-teacher' });
+      prisma.teachingAssignment.findFirst.mockResolvedValue({
+        courseId: 'course-current',
+      });
+      const csv = 'nombre;correo;nrc\nAna;ana@ucn.cl;10001';
+      await service.importTeacherRoster(csv);
+      prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-2' });
+      await service.importTeacherRoster(csv);
+      expect(
+        prisma.teacher.upsert.mock.calls.map(([input]) => input.where),
+      ).toEqual([{ email: 'ana@ucn.cl' }, { email: 'ana@ucn.cl' }]);
+      expect(
+        prisma.teachingAssignment.upsert.mock.calls.map(
+          ([input]) => input.create,
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          semesterId: 'sem-1',
+          teacherId: 'persistent-teacher',
+        }),
+        expect.objectContaining({
+          semesterId: 'sem-2',
+          teacherId: 'persistent-teacher',
+        }),
+      ]);
+    });
     beforeEach(() => {
       prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-1' });
       prisma.teacher.upsert.mockResolvedValue({ id: 'teacher-1' });
@@ -459,6 +517,13 @@ describe('AcademicService', () => {
 
       expect(result).toEqual({ semesterId: 'sem-1', importedRows: 2 });
       expect(prisma.teachingAssignment.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.academicSemester.findFirst).toHaveBeenCalledWith({
+        where: { isActive: true },
+      });
+      expect(prisma.teachingAssignment.findFirst).toHaveBeenCalledWith({
+        where: { semesterId: 'sem-1', nrc: '10001' },
+        select: { courseId: true },
+      });
       expect(prisma.courseSchedule.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: {
@@ -559,6 +624,22 @@ describe('AcademicService', () => {
 
   describe('consultas', () => {
     const firstPage = { page: 1, pageSize: 10 };
+
+    it('mantiene visibles los profesores sin asignaturas o sin semestre activo', async () => {
+      prisma.academicSemester.findFirst.mockResolvedValue(null);
+      prisma.teacher.findMany.mockResolvedValue([
+        { id: 'persistent-teacher', assignments: [] },
+      ]);
+      prisma.teacher.count.mockResolvedValue(1);
+      const result = await service.listTeachers(firstPage);
+      expect(result.items).toEqual([
+        { id: 'persistent-teacher', assignments: [] },
+      ]);
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+      expect(prisma.academicSemester.findFirst).not.toHaveBeenCalled();
+    });
 
     it('lista profesores con sus asignaciones del semestre activo', async () => {
       prisma.teacher.findMany.mockResolvedValue([]);
