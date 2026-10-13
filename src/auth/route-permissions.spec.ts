@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppController } from '../app.controller';
+import { AcademicManagementController } from '../academic/academic-management.controller';
 import {
   AcademicController,
   AcademicCoursesController,
@@ -19,6 +20,7 @@ import { ROLES_KEY } from './decorators/roles.decorator';
 type Access = 'PUBLIC' | 'AUTHENTICATED' | string[];
 
 const controllers: Type[] = [
+  AcademicManagementController,
   AppController,
   AuthController,
   UsersController,
@@ -74,6 +76,11 @@ const ACADEMIC_READERS = [
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
     expect(routeMatrix()).toEqual({
+      'AcademicManagementController.currentCourses': ACADEMIC_READERS,
+      'AcademicManagementController.createTeacher': SECRETARY,
+      'AcademicManagementController.updateTeacher': SECRETARY,
+      'AcademicManagementController.createCourse': SECRETARY,
+      'AcademicManagementController.setCourseTeachers': SECRETARY,
       'AppController.getHello': 'PUBLIC',
 
       'AuthController.googleAuth': 'PUBLIC',
