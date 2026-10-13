@@ -52,6 +52,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
+    studentEnrollment: { findMany: jest.fn() },
     assistantship: { count: jest.fn() },
     $transaction: jest.fn(),
   };
@@ -90,6 +91,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
       { nrc: '10001', course },
     ]);
     prisma.teachingAssignment.findMany.mockResolvedValue([]);
+    prisma.studentEnrollment.findMany.mockResolvedValue([]);
     prisma.assistantship.count.mockResolvedValue(0);
     prisma.course.findFirst.mockResolvedValue(null);
     prisma.course.create.mockResolvedValue(course);

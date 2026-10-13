@@ -18,6 +18,11 @@ describe('Edición de asignaturas', () => {
   const prisma = {
     academicSemester: { findFirst: jest.fn() },
     course: { update: jest.fn() },
+    studentEnrollment: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      updateMany: jest.fn(),
+    },
     teachingAssignment: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -53,6 +58,8 @@ describe('Edición de asignaturas', () => {
     ]);
     prisma.courseSchedule.findFirst.mockResolvedValue(null);
     prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+    prisma.studentEnrollment.findMany.mockResolvedValue([]);
+    prisma.studentEnrollment.findFirst.mockResolvedValue(null);
     prisma.course.update.mockResolvedValue({ id: 'course' });
   });
   it('actualiza salas independientes y el NRC sin reemplazar las asignaciones docentes', async () => {
@@ -71,6 +78,10 @@ describe('Edición de asignaturas', () => {
       })),
     });
     expect(prisma.teachingAssignment.updateMany).toHaveBeenCalledWith({
+      where: { semesterId: 'semester', nrc: '10001', courseId: 'course' },
+      data: { nrc: '20001' },
+    });
+    expect(prisma.studentEnrollment.updateMany).toHaveBeenCalledWith({
       where: { semesterId: 'semester', nrc: '10001', courseId: 'course' },
       data: { nrc: '20001' },
     });

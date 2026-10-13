@@ -177,7 +177,7 @@ export class AcademicService {
           if (!semester)
             throw new BadRequestException('No existe un semestre activo');
           const where = { semesterId: semester.id, nrc: originalNrc };
-          const [existing, assignments] = await Promise.all([
+          const [existing, assignments, enrollments] = await Promise.all([
             transaction.courseSchedule.findMany({
               where,
               select: { courseId: true },
@@ -186,9 +186,15 @@ export class AcademicService {
               where,
               select: { courseId: true },
             }),
+            transaction.studentEnrollment.findMany({
+              where,
+              select: { courseId: true },
+            }),
           ]);
           const courseIds = new Set(
-            [...existing, ...assignments].map((item) => item.courseId),
+            [...existing, ...assignments, ...enrollments].map(
+              (item) => item.courseId,
+            ),
           );
           if (!courseIds.size)
             throw new NotFoundException(
@@ -201,11 +207,12 @@ export class AcademicService {
           const courseId = [...courseIds][0];
           if (nrc !== originalNrc) {
             const target = { semesterId: semester.id, nrc };
-            const [schedule, assignment] = await Promise.all([
+            const [schedule, assignment, enrollment] = await Promise.all([
               transaction.courseSchedule.findFirst({ where: target }),
               transaction.teachingAssignment.findFirst({ where: target }),
+              transaction.studentEnrollment.findFirst({ where: target }),
             ]);
-            if (schedule || assignment)
+            if (schedule || assignment || enrollment)
               throw new ConflictException(
                 'El NRC ya existe en el semestre activo',
               );
@@ -215,6 +222,10 @@ export class AcademicService {
             data: { name, code },
           });
           await transaction.teachingAssignment.updateMany({
+            where: { ...where, courseId },
+            data: { nrc },
+          });
+          await transaction.studentEnrollment.updateMany({
             where: { ...where, courseId },
             data: { nrc },
           });

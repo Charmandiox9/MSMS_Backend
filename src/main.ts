@@ -25,6 +25,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.setGlobalPrefix('api');
   app.use(CSV_IMPORT_ROUTES, json({ limit: CSV_IMPORT_BODY_LIMIT }));
+  app.use('/api/academic/students/import-csv', json({ limit: '8mb' }));
   app.use(json());
   app.use(urlencoded({ extended: true }));
 
@@ -37,7 +38,10 @@ async function bootstrap() {
   ];
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
@@ -71,4 +75,4 @@ async function bootstrap() {
   console.log(`🚀 API: ${host}/api`);
   console.log(`📊 GraphQL: ${host}/api/graphql`);
 }
-bootstrap();
+void bootstrap();

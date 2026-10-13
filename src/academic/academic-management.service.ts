@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { loadCurrentCourses } from './current-courses';
 import {
   CourseTeachersDto,
   CreateCourseDto,
@@ -21,67 +22,8 @@ export class AcademicManagementService {
     return this.prisma.$transaction((tx) => this.catalog(tx));
   }
 
-  private async catalog(tx: Prisma.TransactionClient) {
-    const semester = await tx.academicSemester.findFirst({
-      where: { isActive: true },
-      select: { id: true, name: true },
-    });
-    if (!semester) return { semester: null, courses: [] };
-    const [schedules, assignments] = await Promise.all([
-      tx.courseSchedule.findMany({
-        where: { semesterId: semester.id },
-        select: {
-          nrc: true,
-          course: { select: { id: true, name: true, code: true } },
-        },
-      }),
-      tx.teachingAssignment.findMany({
-        where: { semesterId: semester.id },
-        select: {
-          nrc: true,
-          course: { select: { id: true, name: true, code: true } },
-          teacher: { select: { id: true, name: true, email: true } },
-        },
-      }),
-    ]);
-    type Offering = {
-      nrc: string;
-      courseId: string;
-      name: string;
-      code: string | null;
-      teachers: { id: string; name: string; email: string }[];
-    };
-    const courses = new Map<string, Offering>();
-    for (const item of [...schedules, ...assignments]) {
-      if (!item.nrc) continue;
-      const existing = courses.get(item.nrc);
-      if (existing && existing.courseId !== item.course.id)
-        throw new ConflictException(
-          'Un NRC está asociado a varias asignaturas. Revisa la carga académica',
-        );
-      if (!existing)
-        courses.set(item.nrc, {
-          nrc: item.nrc,
-          courseId: item.course.id,
-          name: item.course.name,
-          code: item.course.code,
-          teachers: [],
-        });
-    }
-    for (const assignment of assignments) {
-      const offering = courses.get(assignment.nrc);
-      if (
-        offering &&
-        !offering.teachers.some(({ id }) => id === assignment.teacher.id)
-      )
-        offering.teachers.push(assignment.teacher);
-    }
-    return {
-      semester,
-      courses: [...courses.values()].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      ),
-    };
+  private catalog(tx: Prisma.TransactionClient) {
+    return loadCurrentCourses(tx);
   }
 
   private async activeSemester(

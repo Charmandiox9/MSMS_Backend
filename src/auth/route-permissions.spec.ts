@@ -4,6 +4,7 @@ import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppController } from '../app.controller';
 import { AcademicManagementController } from '../academic/academic-management.controller';
+import { StudentsController } from '../students/students.controller';
 import {
   AcademicController,
   AcademicCoursesController,
@@ -20,6 +21,7 @@ import { ROLES_KEY } from './decorators/roles.decorator';
 type Access = 'PUBLIC' | 'AUTHENTICATED' | string[];
 
 const controllers: Type[] = [
+  StudentsController,
   AcademicManagementController,
   AppController,
   AuthController,
@@ -76,6 +78,11 @@ const ACADEMIC_READERS = [
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
     expect(routeMatrix()).toEqual({
+      'StudentsController.list': ACADEMIC_READERS,
+      'StudentsController.get': ACADEMIC_READERS,
+      'StudentsController.create': SECRETARY,
+      'StudentsController.update': SECRETARY,
+      'StudentsController.importCsv': SECRETARY,
       'AcademicManagementController.currentCourses': ACADEMIC_READERS,
       'AcademicManagementController.createTeacher': SECRETARY,
       'AcademicManagementController.updateTeacher': SECRETARY,
@@ -178,6 +185,8 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
     ['JUSTIFICATIONS_CREATE', 'StorageController.createPresignedUpload'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
+    ['ACADEMIC_RECORDS_VIEW', 'StudentsController.list'],
+    ['ACADEMIC_RECORDS_MANAGE', 'StudentsController.create'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.getTeacherSchedule'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicCoursesController.listCourseSchedules'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicSemestersController.listSemesters'],
