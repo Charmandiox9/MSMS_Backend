@@ -167,6 +167,21 @@ export class AssistantshipsService {
     };
   }
 
+  async get(id: string): Promise<AssistantshipView> {
+    const today = this.today();
+    const record = await this.prisma.assistantship.findUnique({
+      where: { id },
+      include,
+    });
+    if (!record) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Ayudantía no encontrada',
+      });
+    }
+    return this.view(record, today);
+  }
+
   async options() {
     const [semesters, teachers] = await Promise.all([
       this.prisma.academicSemester.findMany({

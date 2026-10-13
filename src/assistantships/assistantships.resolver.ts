@@ -36,6 +36,11 @@ export class AssistantshipsResolver {
     return this.service.list(filters ?? new AssistantshipFilters());
   }
 
+  @Query(() => AssistantshipView, { nullable: true })
+  assistantship(@Args() args: AssistantshipIdArgs) {
+    return this.service.get(args.id);
+  }
+
   @Query(() => AssistantshipOptions)
   assistantshipOptions() {
     return this.service.options();

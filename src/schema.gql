@@ -81,6 +81,7 @@ type AssistantshipAssignmentOption {
 type Query {
   hello: String!
   assistantships(filters: AssistantshipFilters): AssistantshipPage!
+  assistantship(id: ID!): AssistantshipView
   assistantshipOptions: AssistantshipOptions!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
 }

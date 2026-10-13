@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { createTestApp, TestApp } from './support/test-app';
+import { createTestApp, TestApp, UserKey } from './support/test-app';
 
 // La base en memoria no modela docentes: el listado llega vacío y la consulta
 // por id no encuentra registros. Aquí se cubre el contrato HTTP (validación de
@@ -67,7 +67,7 @@ describe('Listado de docentes (e2e)', () => {
       ['pageSize=101'],
       ['isActive=yes'],
       ['orden=nombre'],
-    ])('rechaza ?%s con 400', async (query) => {
+    ])('rechaza ?%s con 400', async (query: string) => {
       await get(`/api/academic/teachers?${query}`).expect(400);
     });
   });

@@ -24,8 +24,8 @@ describe('UsersService preloaded users', () => {
       $transaction: jest.fn((operation: (client: typeof transaction) => Promise<unknown>) => operation(transaction)),
       preloadedUser: { findMany: jest.fn() },
     };
-    whitelist.isEmailAllowed.mockReturnValue(true);
-    service = new UsersService(prisma as unknown as PrismaService, whitelist as unknown as WhitelistService);
+    const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn() } as unknown as import('cache-manager').Cache;
+    service = new UsersService(prisma as unknown as PrismaService, whitelist as unknown as WhitelistService, cache);
   });
 
   it('stores a normalized email with its selected roles without creating a user account', async () => {

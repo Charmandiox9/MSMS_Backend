@@ -72,6 +72,7 @@ describe('AssistantshipsService', () => {
     assistantship: {
       count: jest.fn(),
       groupBy: jest.fn(),
+      findUnique: jest.fn(),
       findMany: jest.fn<
         Promise<unknown[]>,
         [Prisma.AssistantshipFindManyArgs]
@@ -366,6 +367,21 @@ describe('AssistantshipsService', () => {
       (await service.register({ ...validInput(), endsOn: '2026-10-04' })).state,
     ).toBe(AssistantshipState.ACTIVE);
   });
+  it('retrieves an assistantship by ID', async () => {
+    prisma.assistantship.findUnique.mockResolvedValue(record);
+    const result = await service.get('assistantship');
+    expect(result.id).toBe('assistantship');
+    expect(result.assistantName).toBe('Estudiante');
+  });
+
+  it('throws NotFoundException when an assistantship ID does not exist', async () => {
+    prisma.assistantship.findUnique.mockResolvedValue(null);
+    await expect(service.get('nonexistent')).rejects.toMatchObject({
+      status: 404,
+      response: { code: 'NOT_FOUND' },
+    });
+  });
+
   it('does not expose unexpected database errors', async () => {
     transaction.assistantship.create.mockRejectedValue(
       new Error('private database detail'),
