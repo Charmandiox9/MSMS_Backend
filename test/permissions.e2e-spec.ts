@@ -132,7 +132,7 @@ const routes: Route[] = [
     method: 'post',
     path: '/api/storage/presigned-upload',
     body: { fileName: 'a.pdf', contentType: 'application/pdf' },
-    allowed: ['secretary', 'analyst', 'coordinator', 'noRole'],
+    allowed: ['coordinator'],
   },
 ];
 

@@ -170,4 +170,36 @@ describe('Listado de docentes (e2e)', () => {
       ).expect(403);
     });
   });
+
+  // El cruce de NRC y el armado de la grilla se prueban en academic.service.spec.ts:
+  // la base en memoria no modela docentes ni semestres.
+  describe('GET /api/academic/teachers/:id/schedule', () => {
+    const path =
+      '/api/academic/teachers/00000000-0000-0000-0000-000000000001/schedule';
+
+    it('rechaza un id que no es UUID con 400', async () => {
+      await get('/api/academic/teachers/no-es-uuid/schedule').expect(400);
+    });
+
+    it('responde 404 si el docente no existe', async () => {
+      const response = await get(path).expect(404);
+
+      expect(response.body.message).toBe('El docente no existe');
+    });
+
+    it('permite la consulta a coordinación docente', async () => {
+      await request(ctx.app.getHttpServer())
+        .get(path)
+        .set('Cookie', ctx.cookieFor('coordinator'))
+        .expect(404);
+    });
+
+    it('rechaza sin sesión con 401 y sin rol con 403', async () => {
+      await request(ctx.app.getHttpServer()).get(path).expect(401);
+      await request(ctx.app.getHttpServer())
+        .get(path)
+        .set('Cookie', ctx.cookieFor('noRole'))
+        .expect(403);
+    });
+  });
 });

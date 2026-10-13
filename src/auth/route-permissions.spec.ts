@@ -92,6 +92,7 @@ describe('Matriz de permisos por endpoint', () => {
 
       'AcademicController.listTeachers': ACADEMIC_READERS,
       'AcademicController.getTeacher': ACADEMIC_READERS,
+      'AcademicController.getTeacherSchedule': ACADEMIC_READERS,
       'AcademicController.importCsv': SECRETARY,
       'AcademicController.importRoster': SECRETARY,
       'AcademicController.createTeacher': SECRETARY,
@@ -125,7 +126,7 @@ describe('Matriz de permisos por endpoint', () => {
         'TEACHING_SUPPORT_COORDINATOR',
       ],
 
-      'StorageController.createPresignedUpload': 'AUTHENTICATED',
+      'StorageController.createPresignedUpload': COORDINATOR,
       'StorageController.createFormsPresignedUpload': 'PUBLIC',
     });
   });
@@ -171,7 +172,9 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     ['JUSTIFICATIONS_VIEW', 'JustificationsController.list'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.listInbox'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
+    ['JUSTIFICATIONS_CREATE', 'StorageController.createPresignedUpload'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
+    ['ACADEMIC_RECORDS_VIEW', 'AcademicController.getTeacherSchedule'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicCoursesController.listCourseSchedules'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicSemestersController.listSemesters'],
     ['ACADEMIC_RECORDS_MANAGE', 'AcademicController.importCsv'],

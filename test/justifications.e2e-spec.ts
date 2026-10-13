@@ -203,7 +203,7 @@ describe('Flujo de justificaciones (e2e)', () => {
     expect(response.body.message).toBe('La justificación ya fue resuelta');
   });
 
-  it('filtra por estado e ignora estados desconocidos', async () => {
+  it('filtra por estado y rechaza estados desconocidos', async () => {
     const accepted = await http()
       .get('/api/justifications?status=ACCEPTED')
       .set('Cookie', asCoordinator())
@@ -215,16 +215,32 @@ describe('Flujo de justificaciones (e2e)', () => {
     const unknown = await http()
       .get('/api/justifications?status=DROP TABLE')
       .set('Cookie', asCoordinator())
-      .expect(200);
+      .expect(400);
 
     expect(accepted.body).toHaveLength(1);
     expect(pending.body).toHaveLength(0);
-    expect(unknown.body).toHaveLength(1);
+    expect(unknown.body.message).toBe(
+      'Estado inválido: usa PENDING, ACCEPTED, REJECTED',
+    );
+  });
+
+  it('rechaza un id que no es UUID con 400', async () => {
+    await http()
+      .post('/api/justifications/inbox/no-existe/open')
+      .set('Cookie', asCoordinator())
+      .expect(400);
+    await http()
+      .patch('/api/justifications/no-existe/decision')
+      .set('Cookie', asCoordinator())
+      .send({ status: 'ACCEPTED' })
+      .expect(400);
   });
 
   it('responde 404 al abrir una entrada inexistente', async () => {
     const response = await http()
-      .post('/api/justifications/inbox/no-existe/open')
+      .post(
+        '/api/justifications/inbox/00000000-0000-0000-0000-000000000099/open',
+      )
       .set('Cookie', asCoordinator())
       .expect(404);
 

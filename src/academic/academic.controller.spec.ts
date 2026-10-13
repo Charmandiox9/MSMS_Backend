@@ -18,6 +18,7 @@ describe('Controladores académicos', () => {
     toggleTeacherStatus: jest
       .fn()
       .mockResolvedValue({ id: 'teacher-1', isActive: false }),
+    getTeacherSchedule: jest.fn().mockResolvedValue({ entries: [] }),
     importCsv: jest.fn().mockResolvedValue({ importedRows: 1 }),
     importTeacherRoster: jest.fn().mockResolvedValue({ importedTeachers: 1 }),
     listCourseSchedules: jest.fn().mockResolvedValue(['schedule']),
@@ -35,6 +36,9 @@ describe('Controladores académicos', () => {
     await expect(controller.getTeacher('teacher-1')).resolves.toEqual({
       id: 'teacher-1',
     });
+    await expect(controller.getTeacherSchedule('teacher-1')).resolves.toEqual({
+      entries: [],
+    });
     await controller.importCsv({ csv: 'a,b' });
     await controller.importRoster({ csv: 'c,d' });
     await expect(
@@ -49,6 +53,7 @@ describe('Controladores académicos', () => {
 
     expect(service.listTeachers).toHaveBeenCalledWith(query);
     expect(service.getTeacher).toHaveBeenCalledWith('teacher-1');
+    expect(service.getTeacherSchedule).toHaveBeenCalledWith('teacher-1');
     expect(service.importCsv).toHaveBeenCalledWith('a,b');
     expect(service.importTeacherRoster).toHaveBeenCalledWith('c,d');
     expect(service.createTeacher).toHaveBeenCalledWith({

@@ -8,7 +8,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsDateString, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
 import { CreateTeacherDto } from './create-teacher.dto';
@@ -31,8 +32,12 @@ class CsvImportDto {
 }
 
 class SemesterDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 
   @IsDateString()
@@ -57,6 +62,12 @@ export class AcademicController {
   @Get(':id')
   getTeacher(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.getTeacher(id);
+  }
+
+  @Roles(...ACADEMIC_READERS)
+  @Get(':id/schedule')
+  getTeacherSchedule(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.getTeacherSchedule(id);
   }
 
   @Post('import-csv')
