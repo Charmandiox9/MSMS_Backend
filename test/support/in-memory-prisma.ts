@@ -83,6 +83,8 @@ export function createInMemoryPrisma() {
     $disconnect: () => Promise.resolve(),
     $transaction: (operation: (tx: unknown) => Promise<unknown>) =>
       operation(proxy),
+    // Solo la búsqueda de docentes usa SQL crudo; en memoria no hay docentes.
+    $queryRaw: () => Promise.resolve([]),
 
     user: {
       findUnique: ({ where }: { where: { id: string } }) => {

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicService } from './academic.service';
 
@@ -6,15 +6,30 @@ describe('AcademicService', () => {
   let service: AcademicService;
 
   const prisma = {
+    assistantship: { findMany: jest.fn().mockResolvedValue([]) },
     academicSemester: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       upsert: jest.fn(),
       updateMany: jest.fn(),
     },
-    teacher: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn() },
-    course: { upsert: jest.fn() },
-    teachingAssignment: { findFirst: jest.fn(), upsert: jest.fn() },
+    teacher: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      upsert: jest.fn(),
+      count: jest.fn(),
+    },
+    course: {
+      upsert: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'course-1' }),
+    },
+    teachingAssignment: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      upsert: jest.fn(),
+    },
     courseSchedule: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -23,6 +38,7 @@ describe('AcademicService', () => {
     $transaction: jest.fn((operation: (client: unknown) => Promise<unknown>) =>
       operation(prisma),
     ),
+    $queryRaw: jest.fn(),
   };
 
   beforeEach(() => {
@@ -70,6 +86,31 @@ describe('AcademicService', () => {
       await expect(
         service.activateSemester('2026-2', 'no-es-fecha', '2026-12-15'),
       ).rejects.toThrow('Fecha inválida: no-es-fecha');
+    });
+
+    it('rechaza un nombre de semestre vacío o demasiado largo', async () => {
+      await expect(
+        service.activateSemester('   ', '2026-08-01', '2026-12-15'),
+      ).rejects.toThrow('El nombre del semestre es obligatorio');
+      await expect(
+        service.activateSemester('x'.repeat(101), '2026-08-01', '2026-12-15'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateCourse', () => {
+    it('rechaza un NRC de la URL vacío o demasiado largo', async () => {
+      const input = {
+        name: 'Cálculo',
+        nrc: '10001',
+        schedules: [{ day: 'Lunes', block: 'A' }],
+      };
+      for (const nrc of [' ', '1'.repeat(51)])
+        await expect(service.updateCourse(nrc, input)).rejects.toThrow(
+          'El NRC de la asignatura no es válido',
+        );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -127,11 +168,24 @@ describe('AcademicService', () => {
       );
     });
 
+    it('importa carga docente sin columna de código y guarda null', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.findFirst.mockResolvedValue(null);
+      await service.importCsv(
+        'teacherEmail;teacherName;courseName;nrc;semesterName;startsOn;endsOn\nana@ucn.cl;Ana;Biología;10001;2026-2;2026-08-01;2026-12-15',
+      );
+      expect(prisma.course.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { code: null, name: 'Biología' } }),
+      );
+      expect(prisma.course.upsert).not.toHaveBeenCalled();
+    });
+
     it('indica la columna obligatoria que falta', async () => {
       const csv = 'teacherEmail,teacherName\nana@ucn.cl,Ana';
 
       await expect(service.importCsv(csv)).rejects.toThrow(
-        'Falta la columna courseCode',
+        'Falta la columna courseName',
       );
     });
 
@@ -148,6 +202,92 @@ describe('AcademicService', () => {
 
       await expect(service.importCsv(csv)).rejects.toThrow(
         'Fecha inválida: ayer',
+      );
+    });
+
+    it('indica la fila del archivo donde está el error, contando la cabecera', async () => {
+      const csv = [
+        header,
+        'ana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15',
+        '',
+        'luis@ucn.cl,,QUI200,Química,10002,2026-2,2026-08-01,2026-12-15',
+      ].join('\n');
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 4: Hay una fila incompleta en el CSV',
+      );
+    });
+
+    it('rechaza correos inválidos', async () => {
+      const csv = `${header}\nana-ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: Correo inválido: ana-ucn.cl',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('guarda los correos en minúsculas y reutiliza docentes guardados con mayúsculas', async () => {
+      prisma.teacher.findFirst.mockResolvedValueOnce({ email: 'Ana@UCN.cl' });
+      const csv = `${header}\nANA@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15`;
+
+      await service.importCsv(csv);
+
+      expect(prisma.teacher.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: { equals: 'ana@ucn.cl', mode: 'insensitive' } },
+        }),
+      );
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: 'Ana@UCN.cl' },
+          create: expect.objectContaining({ email: 'ana@ucn.cl' }),
+        }),
+      );
+    });
+
+    it('no guarda un código de funcionario vacío', async () => {
+      const csv =
+        'teacherEmail,teacherName,courseName,nrc,semesterName,startsOn,endsOn,employeeCode\n' +
+        'ana@ucn.cl,Ana,Biología,10001,2026-2,2026-08-01,2026-12-15,';
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+
+      await service.importCsv(csv);
+
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: { name: 'Ana', employeeCode: undefined },
+        }),
+      );
+    });
+
+    it('exige que todas las filas sean del mismo semestre', async () => {
+      const csv = [
+        header,
+        'ana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-08-01,2026-12-15',
+        'luis@ucn.cl,Luis,QUI200,Química,10002,2027-1,2027-03-01,2027-07-15',
+      ].join('\n');
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 3: Todas las filas deben ser del semestre 2026-2',
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un semestre cuyo término no es posterior al inicio', async () => {
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,10001,2026-2,2026-12-15,2026-08-01`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: La fecha de término debe ser posterior al inicio',
+      );
+    });
+
+    it('rechaza valores más largos de lo permitido', async () => {
+      const csv = `${header}\nana@ucn.cl,Ana,BIO101,Biología,${'1'.repeat(51)},2026-2,2026-08-01,2026-12-15`;
+
+      await expect(service.importCsv(csv)).rejects.toThrow(
+        'Fila 2: El NRC supera los 50 caracteres',
       );
     });
   });
@@ -230,11 +370,82 @@ describe('AcademicService', () => {
         service.importTeacherRoster('nombre,correo,nrc'),
       ).rejects.toThrow('El CSV de profesores no contiene filas');
     });
+
+    it('valida el correo, lo guarda en minúsculas e indica la fila', async () => {
+      await expect(
+        service.importTeacherRoster(
+          'nombre,correo,nrc\nAna,ana@ucn.cl,10001\nLuis,luis@,10002',
+        ),
+      ).rejects.toThrow('Fila 3: Correo inválido: luis@');
+
+      prisma.teachingAssignment.findFirst.mockResolvedValue({
+        courseId: 'course-1',
+      });
+      await service.importTeacherRoster(
+        'nombre,correo,nrc\nAna,Ana@UCN.cl,10001',
+      );
+      expect(prisma.teacher.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { email: 'ana@ucn.cl', name: 'Ana' },
+        }),
+      );
+    });
+
+    it('indica la fila del NRC que no está cargado', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.importTeacherRoster('nombre,correo,nrc\nAna,ana@ucn.cl,99999'),
+      ).rejects.toThrow('Fila 2: El NRC 99999 no está cargado');
+    });
   });
 
   describe('importCourseSchedules', () => {
     beforeEach(() => {
       prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-1' });
+    });
+
+    it('da a la transacción más tiempo que los 5 s por defecto de Prisma', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue({
+        courseId: 'course-1',
+      });
+
+      await service.importCourseSchedules(
+        'nrc,asignatura,dia,bloque\n10001,Biología,lunes,A',
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ timeout: 60_000 }),
+      );
+    });
+
+    it('reutiliza asignaturas sin código y conserva códigos reales al reimportar horarios', async () => {
+      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.findFirst.mockResolvedValue({ id: 'catalog-course' });
+      await service.importCourseSchedules(
+        'nrc;asignatura;dia;bloque\n10009;Física;Lunes;A',
+      );
+      expect(prisma.course.create).not.toHaveBeenCalled();
+      expect(prisma.courseSchedule.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ courseId: 'catalog-course' }),
+        }),
+      );
+      prisma.courseSchedule.findFirst.mockResolvedValue({
+        courseId: 'real-code-course',
+      });
+      await service.importCourseSchedules(
+        'nrc;asignatura;dia;bloque\n10009;Física;Miércoles;B',
+      );
+      expect(prisma.courseSchedule.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ courseId: 'real-code-course' }),
+        }),
+      );
+      prisma.course.findFirst.mockResolvedValue(null);
     });
 
     it('normaliza día y bloque y reutiliza la asignatura por NRC', async () => {
@@ -268,14 +479,15 @@ describe('AcademicService', () => {
 
     it('crea la asignatura cuando el NRC no tiene asignación docente', async () => {
       prisma.teachingAssignment.findFirst.mockResolvedValue(null);
-      prisma.course.upsert.mockResolvedValue({ id: 'new-course' });
+      prisma.courseSchedule.findFirst.mockResolvedValue(null);
+      prisma.course.create.mockResolvedValue({ id: 'new-course' });
 
       await service.importCourseSchedules(
         'nrc,asignatura,dia,bloque\n10009,Física,lunes,B',
       );
 
-      expect(prisma.course.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ create: { code: '10009', name: 'Física' } }),
+      expect(prisma.course.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { code: null, name: 'Física' } }),
       );
       expect(prisma.courseSchedule.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -302,6 +514,20 @@ describe('AcademicService', () => {
           'nrc,asignatura,dia,bloque\n10001,Biología,domingo,A',
         ),
       ).rejects.toThrow('Día inválido: domingo');
+    });
+
+    it('valida día, bloque y largos antes de tocar la base, indicando la fila', async () => {
+      await expect(
+        service.importCourseSchedules(
+          'nrc,asignatura,dia,bloque\n10001,Biología,lunes,A\n10001,Biología,lunes,Z',
+        ),
+      ).rejects.toThrow('Fila 3: Bloque inválido: Z');
+      await expect(
+        service.importCourseSchedules(
+          `nrc,asignatura,dia,bloque,sala\n10001,Biología,lunes,A,${'x'.repeat(201)}`,
+        ),
+      ).rejects.toThrow('Fila 2: La sala supera los 200 caracteres');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('indica la columna obligatoria que falta', async () => {
@@ -332,10 +558,13 @@ describe('AcademicService', () => {
   });
 
   describe('consultas', () => {
+    const firstPage = { page: 1, pageSize: 10 };
+
     it('lista profesores con sus asignaciones del semestre activo', async () => {
       prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
 
-      await service.listTeachers();
+      await service.listTeachers(firstPage);
 
       expect(prisma.teacher.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -348,6 +577,416 @@ describe('AcademicService', () => {
       );
     });
 
+    it('pagina el listado y devuelve el total', async () => {
+      prisma.teacher.findMany.mockResolvedValue([{ id: 'teacher-21' }]);
+      prisma.teacher.count.mockResolvedValue(21);
+
+      const result = await service.listTeachers({ page: 3, pageSize: 10 });
+
+      expect(result).toEqual({
+        items: [{ id: 'teacher-21' }],
+        total: 21,
+        page: 3,
+        pageSize: 10,
+        totalPages: 3,
+      });
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {}, skip: 20, take: 10 }),
+      );
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    // $queryRaw se usa como tagged template: (strings, ...valores).
+    const rawQuerySql = () =>
+      (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    const rawQueryValues = () =>
+      prisma.$queryRaw.mock.calls[0].slice(1) as unknown[];
+
+    it('busca sin tildes por nombre, correo, código y NRC del semestre activo', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-1' }]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: 'álvaro' });
+
+      const sql = rawQuerySql();
+      expect(sql).toContain('unaccent(t."name") ILIKE unaccent(?)');
+      expect(sql).toContain('unaccent(t."email")');
+      expect(sql).toContain('"employeeCode"');
+      expect(sql).toContain('a."nrc" ILIKE ?');
+      expect(sql).toContain('s."isActive"');
+      // El término viaja como parámetro, nunca concatenado en el SQL.
+      expect(rawQueryValues()).toEqual([
+        '%álvaro%',
+        '%álvaro%',
+        '%álvaro%',
+        '%álvaro%',
+      ]);
+      const where = { id: { in: ['teacher-1'] } };
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where }),
+      );
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('escapa los comodines de LIKE que escribe el usuario', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: '50%_a\\b' });
+
+      expect(rawQueryValues()[0]).toBe('%50\\%\\_a\\\\b%');
+    });
+
+    it('combina la búsqueda con el filtro de estado', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-2' }]);
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({
+        ...firstPage,
+        search: 'soto',
+        isActive: false,
+      });
+
+      expect(prisma.teacher.count).toHaveBeenCalledWith({
+        where: { id: { in: ['teacher-2'] }, isActive: false },
+      });
+    });
+
+    it('sin búsqueda no ejecuta la consulta SQL', async () => {
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, search: '' });
+
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.teacher.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    it('filtra por estado, incluido isActive=false', async () => {
+      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.teacher.count.mockResolvedValue(0);
+
+      await service.listTeachers({ ...firstPage, isActive: false });
+
+      expect(prisma.teacher.count).toHaveBeenCalledWith({
+        where: { isActive: false },
+      });
+    });
+
+    it('devuelve el docente solicitado', async () => {
+      prisma.teacher.findUnique.mockResolvedValue({ id: 'teacher-1' });
+
+      await expect(service.getTeacher('teacher-1')).resolves.toEqual({
+        id: 'teacher-1',
+      });
+    });
+
+    it('responde 404 si el docente no existe', async () => {
+      prisma.teacher.findUnique.mockResolvedValue(null);
+
+      await expect(service.getTeacher('teacher-x')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    describe('getTeacherSchedule', () => {
+      const teacher = { id: 'teacher-1', name: 'Ana', email: 'ana@ucn.cl' };
+      const semester = { id: 'sem-1', name: '2026-2' };
+      const course = (id: string) => ({
+        id,
+        code: `C-${id}`,
+        name: `Curso ${id}`,
+      });
+      const row = (
+        id: string,
+        day: string,
+        block: string,
+        nrc: string,
+        location: string | null = null,
+      ) => ({ id, day, block, nrc, location, course: course(nrc) });
+
+      it('responde 404 si el docente no existe', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.getTeacherSchedule('teacher-x'),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('devuelve los bloques y una lista vacía si no hay semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(null);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result).toEqual(
+          expect.objectContaining({ teacher, semester: null, entries: [] }),
+        );
+        expect(result.blocks[0]).toEqual({
+          code: 'A',
+          startsAt: '08:10',
+          endsAt: '09:40',
+        });
+        expect(prisma.teachingAssignment.findMany).not.toHaveBeenCalled();
+      });
+
+      it('cruza por NRC solo dentro del semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+          { nrc: '10002' },
+          { nrc: '10001' },
+          { nrc: '' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([]);
+
+        await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.teachingAssignment.findMany).toHaveBeenCalledWith({
+          where: { teacherId: 'teacher-1', semesterId: 'sem-1' },
+          select: { nrc: true },
+        });
+        expect(prisma.courseSchedule.findMany).toHaveBeenCalledWith({
+          where: { semesterId: 'sem-1', nrc: { in: ['10001', '10002'] } },
+          include: { course: true },
+        });
+      });
+
+      it('no consulta horarios si el docente no tiene NRC en el semestre', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result.entries).toEqual([]);
+        expect(prisma.courseSchedule.findMany).not.toHaveBeenCalled();
+      });
+
+      it('ordena por día y bloque y marca los choques', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+          { nrc: '10002' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([
+          row('s1', 'Miércoles', 'C', '10001', 'Sala 1'),
+          row('s2', 'Lunes', 'D', '10002'),
+          row('s3', 'Lunes', 'A', '10002'),
+          row('s4', 'Miércoles', 'C', '10002'),
+          row('s5', 'Lunes', 'Z', '10001'),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(result.semester).toEqual(semester);
+        expect(
+          result.entries.map(({ id, conflict }) => [id, conflict]),
+        ).toEqual([
+          ['s3', false],
+          ['s2', false],
+          ['s5', false],
+          ['s1', true],
+          ['s4', true],
+        ]);
+        expect(result.entries[0]).toEqual({
+          id: 's3',
+          kind: 'COURSE',
+          day: 'Lunes',
+          block: 'A',
+          startsAt: '08:10',
+          endsAt: '09:40',
+          nrc: '10002',
+          assistantshipNrc: null,
+          course: course('10002'),
+          location: null,
+          assistant: null,
+          state: null,
+          conflict: false,
+        });
+        // Un bloque desconocido se conserva, pero sin hora.
+        expect(result.entries[2]).toEqual(
+          expect.objectContaining({ block: 'Z', startsAt: null, endsAt: null }),
+        );
+        expect(result.entries[3].location).toBe('Sala 1');
+      });
+
+      const assistantship = (
+        nrc: string | null,
+        schedules: {
+          id: string;
+          weekday: number;
+          startsAtMinute: number;
+          endsAtMinute: number;
+          location?: string | null;
+        }[],
+        dates: { startsOn: Date; endsOn: Date | null } = {
+          startsOn: new Date('2026-08-01'),
+          endsOn: null,
+        },
+      ) => ({
+        nrc,
+        ...dates,
+        teachingAssignment: { nrc: '10001', course: course('10001') },
+        approval: {
+          assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
+        },
+        schedules: schedules.map((schedule) => ({
+          location: null,
+          ...schedule,
+        })),
+      });
+
+      it('busca las ayudantías de las asignaciones del docente en el semestre activo', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+        prisma.assistantship.findMany.mockResolvedValue([]);
+
+        await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.assistantship.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              teachingAssignment: {
+                teacherId: 'teacher-1',
+                semesterId: 'sem-1',
+              },
+            },
+          }),
+        );
+      });
+
+      it('incluye las ayudantías con su día, bloque, hora y ayudante', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([
+          { nrc: '10001' },
+        ]);
+        prisma.courseSchedule.findMany.mockResolvedValue([
+          row('s1', 'Lunes', 'A', '10001'),
+        ]);
+        prisma.assistantship.findMany.mockResolvedValue([
+          assistantship('20001', [
+            // Mismo bloque que la clase: no es choque.
+            { id: 'a1', weekday: 1, startsAtMinute: 490, endsAtMinute: 580 },
+            // Horario que no calza con un bloque institucional.
+            {
+              id: 'a2',
+              weekday: 2,
+              startsAtMinute: 600,
+              endsAtMinute: 660,
+              location: 'Lab 3',
+            },
+            // 7 = domingo, fuera de los días del horario: va al final.
+            { id: 'a3', weekday: 7, startsAtMinute: 490, endsAtMinute: 580 },
+          ]),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(
+          result.entries.map(({ id, kind, day, block, conflict }) => [
+            id,
+            kind,
+            day,
+            block,
+            conflict,
+          ]),
+        ).toEqual([
+          ['s1', 'COURSE', 'Lunes', 'A', false],
+          ['a1', 'ASSISTANTSHIP', 'Lunes', 'A', false],
+          ['a2', 'ASSISTANTSHIP', 'Martes', '', false],
+          ['a3', 'ASSISTANTSHIP', 'Domingo', 'A', false],
+        ]);
+        expect(result.entries[2]).toEqual({
+          id: 'a2',
+          kind: 'ASSISTANTSHIP',
+          day: 'Martes',
+          block: '',
+          startsAt: '10:00',
+          endsAt: '11:00',
+          nrc: '10001',
+          assistantshipNrc: '20001',
+          course: course('10001'),
+          location: 'Lab 3',
+          assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
+          state: 'ACTIVE',
+          conflict: false,
+        });
+      });
+
+      it('marca el estado de cada ayudantía según la fecha de hoy en Chile', async () => {
+        // 11-10-2026 01:00 UTC todavía es 10-10-2026 en America/Santiago.
+        jest.useFakeTimers().setSystemTime(new Date('2026-10-11T01:00:00Z'));
+        try {
+          prisma.teacher.findUnique.mockResolvedValue(teacher);
+          prisma.academicSemester.findFirst.mockResolvedValue(semester);
+          prisma.teachingAssignment.findMany.mockResolvedValue([]);
+          const slot = (id: string) => [
+            { id, weekday: 1, startsAtMinute: 490, endsAtMinute: 580 },
+          ];
+          prisma.assistantship.findMany.mockResolvedValue([
+            assistantship('1', slot('por-empezar'), {
+              startsOn: new Date('2026-10-11'),
+              endsOn: null,
+            }),
+            assistantship('2', slot('termina-hoy'), {
+              startsOn: new Date('2026-08-01'),
+              endsOn: new Date('2026-10-10'),
+            }),
+            assistantship('3', slot('terminada'), {
+              startsOn: new Date('2026-08-01'),
+              endsOn: new Date('2026-10-09'),
+            }),
+          ]);
+
+          const result = await service.getTeacherSchedule('teacher-1');
+
+          expect(
+            Object.fromEntries(
+              result.entries.map(({ id, state }) => [id, state]),
+            ),
+          ).toEqual({
+            'por-empezar': 'SCHEDULED',
+            'termina-hoy': 'ACTIVE',
+            terminada: 'COMPLETED',
+          });
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('incluye ayudantías aunque el docente no tenga horarios de clase', async () => {
+        prisma.teacher.findUnique.mockResolvedValue(teacher);
+        prisma.academicSemester.findFirst.mockResolvedValue(semester);
+        prisma.teachingAssignment.findMany.mockResolvedValue([]);
+        prisma.assistantship.findMany.mockResolvedValue([
+          assistantship(null, [
+            { id: 'a1', weekday: 3, startsAtMinute: 700, endsAtMinute: 790 },
+          ]),
+        ]);
+
+        const result = await service.getTeacherSchedule('teacher-1');
+
+        expect(prisma.courseSchedule.findMany).not.toHaveBeenCalled();
+        expect(result.entries).toEqual([
+          expect.objectContaining({
+            id: 'a1',
+            day: 'Miércoles',
+            block: 'C',
+            assistantshipNrc: null,
+            nrc: '10001',
+          }),
+        ]);
+      });
+    });
+
     it('lista horarios solo del semestre activo', async () => {
       prisma.courseSchedule.findMany.mockResolvedValue([]);
 
@@ -356,6 +995,42 @@ describe('AcademicService', () => {
       expect(prisma.courseSchedule.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { semester: { isActive: true } } }),
       );
+    });
+    it('includes assistantships in their academic block with their own NRC', async () => {
+      prisma.courseSchedule.findMany.mockResolvedValue([]);
+      prisma.assistantship.findMany.mockResolvedValue([
+        {
+          nrc: '20001',
+          startsOn: new Date('2026-08-01'),
+          endsOn: null,
+          teachingAssignment: {
+            nrc: '10001',
+            course: { name: 'Biología' },
+            semester: { name: '2026-2' },
+          },
+          approval: { assistant: { name: 'Ana', email: 'ana@example.test' } },
+          schedules: [
+            {
+              id: 'slot',
+              weekday: 1,
+              startsAtMinute: 490,
+              endsAtMinute: 580,
+              location: 'Sala 2',
+            },
+          ],
+        },
+      ]);
+      expect(await service.listCourseSchedules()).toEqual([
+        expect.objectContaining({
+          kind: 'ASSISTANTSHIP',
+          nrc: '10001',
+          assistantshipNrc: '20001',
+          day: 'Lunes',
+          block: 'A',
+          location: 'Sala 2',
+          assistant: { name: 'Ana', email: 'ana@example.test' },
+        }),
+      ]);
     });
   });
 });

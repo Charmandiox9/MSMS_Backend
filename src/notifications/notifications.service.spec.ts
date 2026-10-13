@@ -57,6 +57,30 @@ describe('NotificationsService', () => {
     });
   });
 
+  it('envía HTML junto al texto alternativo', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'email-html' }),
+    });
+    await createService({
+      RESEND_API_KEY: 'key',
+      NOTIFICATIONS_FROM: 'MARSYS <no-reply@ucn.cl>',
+    }).send({ ...message, html: '<h1>Decisión</h1>' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.resend.com/emails',
+      expect.objectContaining({
+        body: JSON.stringify({
+          from: 'MARSYS <no-reply@ucn.cl>',
+          to: [message.to],
+          subject: message.subject,
+          text: message.text,
+          html: '<h1>Decisión</h1>',
+        }),
+      }),
+    );
+  });
+
   it('lanza un error con el status cuando Resend rechaza el envío', async () => {
     fetchMock.mockResolvedValue({
       ok: false,

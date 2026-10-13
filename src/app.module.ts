@@ -21,6 +21,7 @@ import { JustificationsModule } from './justifications/justifications.module';
 import { AcademicModule } from './academic/academic.module';
 import { UsersModule } from './users/users.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AssistantshipsModule } from './assistantships/assistantships.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -78,6 +79,7 @@ const devProviders =
     AcademicModule,
     UsersModule,
     DashboardModule,
+    AssistantshipsModule,
   ],
   controllers: [AppController],
   providers: [
