@@ -61,12 +61,15 @@ model Teacher {
   name         String
   email        String               @unique
   employeeCode String?              @unique
-  isActive     Boolean              @default(true)
-  joinedOn     DateTime?            @db.Date
-  leftOn       DateTime?            @db.Date
-  assignments  TeachingAssignment[]
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  isActive          Boolean              @default(true)
+  joinedOn          DateTime?            @db.Date
+  leftOn            DateTime?            @db.Date
+  academicDegree    String?
+  professionalTitle String?
+  institution       String?
+  assignments       TeachingAssignment[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 }
 
 model Course {

@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicService } from './academic.service';
 
@@ -18,6 +22,8 @@ describe('AcademicService', () => {
       findUnique: jest.fn(),
       upsert: jest.fn(),
       count: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
     course: {
       upsert: jest.fn(),
@@ -515,6 +521,122 @@ describe('AcademicService', () => {
 
       await expect(service.getTeacher('teacher-x')).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+    });
+
+    it('crea un nuevo docente correctamente', async () => {
+      prisma.teacher.findUnique.mockResolvedValue(null);
+      prisma.teacher.create.mockResolvedValue({
+        id: 'teacher-new',
+        name: 'Camila Rojas',
+        email: 'camila.rojas@ucn.cl',
+        employeeCode: 'DOC-501',
+        isActive: true,
+      });
+
+      const result = await service.createTeacher({
+        name: '  Camila Rojas  ',
+        email: 'Camila.Rojas@UCN.CL',
+        employeeCode: 'DOC-501',
+        joinedOn: '2024-03-01',
+      });
+
+      expect(prisma.teacher.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'Camila Rojas',
+            email: 'camila.rojas@ucn.cl',
+            employeeCode: 'DOC-501',
+            isActive: true,
+          }),
+        }),
+      );
+      expect(result).toHaveProperty('id', 'teacher-new');
+    });
+
+    it('rechaza la creación si el correo ya está registrado', async () => {
+      prisma.teacher.findUnique.mockResolvedValueOnce({
+        id: 'existing-id',
+        email: 'camila.rojas@ucn.cl',
+      });
+
+      await expect(
+        service.createTeacher({
+          name: 'Camila Rojas',
+          email: 'camila.rojas@ucn.cl',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rechaza la creación si el código de empleado ya está en uso', async () => {
+      prisma.teacher.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'existing-code',
+          employeeCode: 'DOC-501',
+        });
+
+      await expect(
+        service.createTeacher({
+          name: 'Camila Rojas',
+          email: 'camila.rojas@ucn.cl',
+          employeeCode: 'DOC-501',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('actualiza un docente y maneja desactivación con fecha de salida', async () => {
+      prisma.teacher.findUnique.mockResolvedValue({
+        id: 'teacher-1',
+        name: 'Camila Rojas',
+        email: 'camila.rojas@ucn.cl',
+        employeeCode: 'DOC-501',
+        isActive: true,
+      });
+      prisma.teacher.update.mockResolvedValue({
+        id: 'teacher-1',
+        name: 'Camila Rojas V.',
+        isActive: false,
+      });
+
+      const result = await service.updateTeacher('teacher-1', {
+        name: 'Camila Rojas V.',
+        isActive: false,
+      });
+
+      expect(prisma.teacher.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'teacher-1' },
+          data: expect.objectContaining({
+            name: 'Camila Rojas V.',
+            isActive: false,
+            leftOn: expect.any(Date),
+          }),
+        }),
+      );
+      expect(result.isActive).toBe(false);
+    });
+
+    it('toggleTeacherStatus alterna el estado activo', async () => {
+      prisma.teacher.findUnique.mockResolvedValue({
+        id: 'teacher-1',
+        isActive: false,
+      });
+      prisma.teacher.update.mockResolvedValue({
+        id: 'teacher-1',
+        isActive: true,
+      });
+
+      await service.toggleTeacherStatus('teacher-1', true);
+
+      expect(prisma.teacher.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'teacher-1' },
+          data: expect.objectContaining({
+            isActive: true,
+            leftOn: null,
+          }),
+        }),
       );
     });
 

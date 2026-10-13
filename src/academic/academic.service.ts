@@ -7,6 +7,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
+import { CreateTeacherDto } from './create-teacher.dto';
+import { UpdateTeacherDto } from './update-teacher.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
 
@@ -253,6 +255,276 @@ export class AcademicService {
     });
     if (!teacher) throw new NotFoundException('El docente no existe');
     return teacher;
+  }
+
+  async createTeacher(dto: CreateTeacherDto) {
+    const email = dto.email.trim().toLowerCase();
+    const existingEmail = await this.prisma.teacher.findUnique({
+      where: { email },
+    });
+    if (existingEmail) {
+      throw new ConflictException(
+        'Ya existe un docente registrado con ese correo institucional',
+      );
+    }
+
+    const employeeCode = dto.employeeCode?.trim() || null;
+    if (employeeCode) {
+      const existingCode = await this.prisma.teacher.findUnique({
+        where: { employeeCode },
+      });
+      if (existingCode) {
+        throw new ConflictException(
+          'Ya existe un docente registrado con ese código de empleado',
+        );
+      }
+    }
+
+    const joinedOn = dto.joinedOn ? this.parseDate(dto.joinedOn) : null;
+    const academicDegree = dto.academicDegree?.trim() || null;
+    const professionalTitle = dto.professionalTitle?.trim() || null;
+    const institution = dto.institution?.trim() || null;
+
+    return this.prisma.$transaction(async (transaction) => {
+      const teacher = await transaction.teacher.create({
+        data: {
+          name: dto.name.trim(),
+          email,
+          employeeCode,
+          joinedOn,
+          academicDegree,
+          professionalTitle,
+          institution,
+          isActive: true,
+        },
+        include: {
+          assignments: {
+            where: { semester: { isActive: true } },
+            include: { course: true, semester: true },
+          },
+        },
+      });
+
+      if (dto.nrcs && dto.nrcs.length > 0) {
+        const semester = await transaction.academicSemester.findFirst({
+          where: { isActive: true },
+        });
+        if (semester) {
+          for (const rawNrc of dto.nrcs) {
+            const nrc = rawNrc.trim();
+            if (!nrc) continue;
+            const assignment = await transaction.teachingAssignment.findFirst({
+              where: { semesterId: semester.id, nrc },
+              select: { courseId: true },
+            });
+            const schedule = assignment
+              ? null
+              : await transaction.courseSchedule.findFirst({
+                  where: { semesterId: semester.id, nrc },
+                  select: { courseId: true },
+                });
+            const courseId = assignment?.courseId ?? schedule?.courseId;
+            if (courseId) {
+              await transaction.teachingAssignment.upsert({
+                where: {
+                  semesterId_teacherId_courseId_nrc: {
+                    semesterId: semester.id,
+                    teacherId: teacher.id,
+                    courseId,
+                    nrc,
+                  },
+                },
+                update: {},
+                create: {
+                  semesterId: semester.id,
+                  teacherId: teacher.id,
+                  courseId,
+                  nrc,
+                  parallel: '',
+                },
+              });
+            }
+          }
+          const reloaded = await transaction.teacher.findUnique({
+            where: { id: teacher.id },
+            include: {
+              assignments: {
+                where: { semester: { isActive: true } },
+                include: { course: true, semester: true },
+              },
+            },
+          });
+          if (reloaded) return reloaded;
+        }
+      }
+
+      return teacher;
+    });
+  }
+
+  async updateTeacher(id: string, dto: UpdateTeacherDto) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id },
+    });
+    if (!teacher) {
+      throw new NotFoundException('El docente no existe');
+    }
+
+    const data: Prisma.TeacherUpdateInput = {};
+
+    if (dto.name !== undefined) {
+      data.name = dto.name.trim();
+    }
+
+    if (dto.email !== undefined) {
+      const email = dto.email.trim().toLowerCase();
+      if (email !== teacher.email) {
+        const existingEmail = await this.prisma.teacher.findUnique({
+          where: { email },
+        });
+        if (existingEmail) {
+          throw new ConflictException(
+            'Ya existe un docente registrado con ese correo institucional',
+          );
+        }
+        data.email = email;
+      }
+    }
+
+    if (dto.employeeCode !== undefined) {
+      const employeeCode = dto.employeeCode.trim() || null;
+      if (employeeCode !== teacher.employeeCode && employeeCode !== null) {
+        const existingCode = await this.prisma.teacher.findUnique({
+          where: { employeeCode },
+        });
+        if (existingCode) {
+          throw new ConflictException(
+            'Ya existe un docente registrado con ese código de empleado',
+          );
+        }
+      }
+      data.employeeCode = employeeCode;
+    }
+
+    if (dto.isActive !== undefined) {
+      data.isActive = dto.isActive;
+      if (dto.isActive === false && teacher.isActive) {
+        data.leftOn = dto.leftOn ? this.parseDate(dto.leftOn) : new Date();
+      } else if (dto.isActive === true && !teacher.isActive) {
+        data.leftOn = null;
+      }
+    }
+
+    if (dto.joinedOn !== undefined) {
+      data.joinedOn = dto.joinedOn ? this.parseDate(dto.joinedOn) : null;
+    }
+
+    if (dto.leftOn !== undefined && dto.isActive === undefined) {
+      data.leftOn = dto.leftOn ? this.parseDate(dto.leftOn) : null;
+    }
+
+    if (dto.academicDegree !== undefined) {
+      data.academicDegree = dto.academicDegree.trim() || null;
+    }
+
+    if (dto.professionalTitle !== undefined) {
+      data.professionalTitle = dto.professionalTitle.trim() || null;
+    }
+
+    if (dto.institution !== undefined) {
+      data.institution = dto.institution.trim() || null;
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const updated = await transaction.teacher.update({
+        where: { id },
+        data,
+        include: {
+          assignments: {
+            where: { semester: { isActive: true } },
+            include: { course: true, semester: true },
+          },
+        },
+      });
+
+      if (dto.nrcs !== undefined) {
+        const semester = await transaction.academicSemester.findFirst({
+          where: { isActive: true },
+        });
+        if (semester) {
+          const currentAssignments =
+            await transaction.teachingAssignment.findMany({
+              where: { teacherId: id, semesterId: semester.id },
+            });
+          const targetNrcs = new Set(
+            dto.nrcs.map((n) => n.trim()).filter(Boolean),
+          );
+
+          for (const current of currentAssignments) {
+            if (!targetNrcs.has(current.nrc)) {
+              await transaction.teachingAssignment.delete({
+                where: { id: current.id },
+              });
+            }
+          }
+
+          for (const nrc of targetNrcs) {
+            const exists = currentAssignments.some((a) => a.nrc === nrc);
+            if (!exists) {
+              const assignment =
+                await transaction.teachingAssignment.findFirst({
+                  where: { semesterId: semester.id, nrc },
+                  select: { courseId: true },
+                });
+              const schedule = assignment
+                ? null
+                : await transaction.courseSchedule.findFirst({
+                    where: { semesterId: semester.id, nrc },
+                    select: { courseId: true },
+                  });
+              const courseId = assignment?.courseId ?? schedule?.courseId;
+              if (courseId) {
+                await transaction.teachingAssignment.upsert({
+                  where: {
+                    semesterId_teacherId_courseId_nrc: {
+                      semesterId: semester.id,
+                      teacherId: id,
+                      courseId,
+                      nrc,
+                    },
+                  },
+                  update: {},
+                  create: {
+                    semesterId: semester.id,
+                    teacherId: id,
+                    courseId,
+                    nrc,
+                    parallel: '',
+                  },
+                });
+              }
+            }
+          }
+
+          const reloaded = await transaction.teacher.findUnique({
+            where: { id },
+            include: {
+              assignments: {
+                where: { semester: { isActive: true } },
+                include: { course: true, semester: true },
+              },
+            },
+          });
+          if (reloaded) return reloaded;
+        }
+      }
+
+      return updated;
+    });
+  }
+
+  async toggleTeacherStatus(id: string, isActive: boolean) {
+    return this.updateTeacher(id, { isActive });
   }
 
   async importCsv(csv: string) {

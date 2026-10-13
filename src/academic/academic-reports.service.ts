@@ -23,7 +23,18 @@ export class AcademicReportsService {
     const assignmentFilter = semesterId ? { semesterId } : {};
     switch (dataset) {
       case 'teachers':
-        columns = ['name', 'email', 'status', 'courses'];
+        columns = [
+          'name',
+          'email',
+          'employeeCode',
+          'academicDegree',
+          'professionalTitle',
+          'institution',
+          'status',
+          'joinedOn',
+          'leftOn',
+          'courses',
+        ];
         rows = (
           await this.prisma.teacher.findMany({
             where: semesterId
@@ -40,7 +51,13 @@ export class AcademicReportsService {
         ).map((item) => ({
           name: item.name,
           email: item.email,
+          employeeCode: item.employeeCode ?? '',
+          academicDegree: item.academicDegree ?? '',
+          professionalTitle: item.professionalTitle ?? '',
+          institution: item.institution ?? '',
           status: item.isActive ? 'ACTIVE' : 'INACTIVE',
+          joinedOn: item.joinedOn ? item.joinedOn.toISOString().split('T')[0] : '',
+          leftOn: item.leftOn ? item.leftOn.toISOString().split('T')[0] : '',
           courses: item.assignments
             .map((a) => `${a.course.name} (${a.nrc}, ${a.semester.name})`)
             .join('; '),

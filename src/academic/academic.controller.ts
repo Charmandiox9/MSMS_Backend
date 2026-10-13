@@ -11,7 +11,9 @@ import {
 import { IsDateString, IsNotEmpty, IsString } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
+import { CreateTeacherDto } from './create-teacher.dto';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
+import { ToggleTeacherStatusDto, UpdateTeacherDto } from './update-teacher.dto';
 import { UpdateCourseDto } from './update-course.dto';
 
 // ACADEMIC_RECORDS_VIEW (matriz RBAC): consulta de docentes, asignaturas y
@@ -65,6 +67,27 @@ export class AcademicController {
   @Post('import-roster')
   importRoster(@Body() body: CsvImportDto) {
     return this.service.importTeacherRoster(body.csv);
+  }
+
+  @Post()
+  createTeacher(@Body() body: CreateTeacherDto) {
+    return this.service.createTeacher(body);
+  }
+
+  @Patch(':id')
+  updateTeacher(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateTeacherDto,
+  ) {
+    return this.service.updateTeacher(id, body);
+  }
+
+  @Patch(':id/status')
+  toggleTeacherStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ToggleTeacherStatusDto,
+  ) {
+    return this.service.toggleTeacherStatus(id, body.isActive);
   }
 }
 

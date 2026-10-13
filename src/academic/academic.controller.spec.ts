@@ -6,11 +6,18 @@ import {
   AcademicSemestersController,
 } from './academic.controller';
 import { AcademicService } from './academic.service';
+import { CreateTeacherDto } from './create-teacher.dto';
+import { ToggleTeacherStatusDto, UpdateTeacherDto } from './update-teacher.dto';
 
 describe('Controladores académicos', () => {
   const service = {
     listTeachers: jest.fn().mockResolvedValue(['teacher']),
     getTeacher: jest.fn().mockResolvedValue({ id: 'teacher-1' }),
+    createTeacher: jest.fn().mockResolvedValue({ id: 'teacher-new' }),
+    updateTeacher: jest.fn().mockResolvedValue({ id: 'teacher-1' }),
+    toggleTeacherStatus: jest
+      .fn()
+      .mockResolvedValue({ id: 'teacher-1', isActive: false }),
     importCsv: jest.fn().mockResolvedValue({ importedRows: 1 }),
     importTeacherRoster: jest.fn().mockResolvedValue({ importedTeachers: 1 }),
     listCourseSchedules: jest.fn().mockResolvedValue(['schedule']),
@@ -30,11 +37,31 @@ describe('Controladores académicos', () => {
     });
     await controller.importCsv({ csv: 'a,b' });
     await controller.importRoster({ csv: 'c,d' });
+    await expect(
+      controller.createTeacher({ name: 'Juan', email: 'juan@ucn.cl' }),
+    ).resolves.toEqual({ id: 'teacher-new' });
+    await expect(
+      controller.updateTeacher('teacher-1', { name: 'Juan P' }),
+    ).resolves.toEqual({ id: 'teacher-1' });
+    await expect(
+      controller.toggleTeacherStatus('teacher-1', { isActive: false }),
+    ).resolves.toEqual({ id: 'teacher-1', isActive: false });
 
     expect(service.listTeachers).toHaveBeenCalledWith(query);
     expect(service.getTeacher).toHaveBeenCalledWith('teacher-1');
     expect(service.importCsv).toHaveBeenCalledWith('a,b');
     expect(service.importTeacherRoster).toHaveBeenCalledWith('c,d');
+    expect(service.createTeacher).toHaveBeenCalledWith({
+      name: 'Juan',
+      email: 'juan@ucn.cl',
+    });
+    expect(service.updateTeacher).toHaveBeenCalledWith('teacher-1', {
+      name: 'Juan P',
+    });
+    expect(service.toggleTeacherStatus).toHaveBeenCalledWith(
+      'teacher-1',
+      false,
+    );
   });
 
   it('AcademicCoursesController delega horarios al servicio', async () => {
@@ -95,6 +122,41 @@ describe('Controladores académicos', () => {
           endsOn: '2026-12-15',
         }),
       ),
+    ).resolves.toHaveLength(0);
+  });
+
+  it('valida CreateTeacherDto, UpdateTeacherDto y ToggleTeacherStatusDto', async () => {
+    await expect(
+      validate(
+        plainToInstance(CreateTeacherDto, { name: '', email: 'not-an-email' }),
+      ),
+    ).resolves.toHaveLength(2);
+
+    await expect(
+      validate(
+        plainToInstance(CreateTeacherDto, {
+          name: 'Álvaro Gómez',
+          email: 'alvaro.gomez@ucn.cl',
+          employeeCode: 'DOC-1234',
+          joinedOn: '2024-03-01',
+        }),
+      ),
+    ).resolves.toHaveLength(0);
+
+    await expect(
+      validate(
+        plainToInstance(UpdateTeacherDto, {
+          name: 'Álvaro Gómez M.',
+          isActive: false,
+        }),
+      ),
+    ).resolves.toHaveLength(0);
+
+    await expect(
+      validate(plainToInstance(ToggleTeacherStatusDto, { isActive: 'si' })),
+    ).resolves.toHaveLength(1);
+    await expect(
+      validate(plainToInstance(ToggleTeacherStatusDto, { isActive: false })),
     ).resolves.toHaveLength(0);
   });
 });

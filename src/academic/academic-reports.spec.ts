@@ -2,13 +2,16 @@ import { Test } from '@nestjs/testing';
 import { ExecutionContext } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { PrismaService } from '../prisma/prisma.service';
-import { AcademicReportsService } from './academic-reports.service';
+import {
+  AcademicDataset,
+  AcademicReportsService,
+} from './academic-reports.service';
 import {
   AcademicReportQuery,
   AcademicReportsController,
   AcademicReportsGuard,
 } from './academic-reports.controller';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('Academic reports', () => {
   const prisma = {
@@ -23,6 +26,22 @@ describe('Academic reports', () => {
   let reports: AcademicReportsService;
   let guard: AcademicReportsGuard;
   let controller: AcademicReportsController;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        AcademicReportsService,
+        AcademicReportsGuard,
+        AcademicReportsController,
+        { provide: PrismaService, useValue: prisma },
+      ],
+    }).compile();
+    reports = module.get(AcademicReportsService);
+    guard = module.get(AcademicReportsGuard);
+    controller = module.get(AcademicReportsController);
+  });
+
   it('exports each course room with its corresponding weekly schedule', async () => {
     prisma.course.findMany.mockResolvedValue([
       {
@@ -52,20 +71,6 @@ describe('Academic reports', () => {
       '10001: Lunes A · Sala 1 (2026-2); 10001: Miércoles B · Laboratorio 3 (2026-2)',
     );
   });
-  beforeEach(async () => {
-    jest.resetAllMocks();
-    const module = await Test.createTestingModule({
-      providers: [
-        AcademicReportsService,
-        AcademicReportsGuard,
-        AcademicReportsController,
-        { provide: PrismaService, useValue: prisma },
-      ],
-    }).compile();
-    reports = module.get(AcademicReportsService);
-    guard = module.get(AcademicReportsGuard);
-    controller = module.get(AcademicReportsController);
-  });
   it('filters teachers by semester and search while returning export columns', async () => {
     prisma.teacher.findMany.mockResolvedValue([
       {
@@ -93,7 +98,18 @@ describe('Academic reports', () => {
       search: 'biología',
     });
     expect(result.rows).toHaveLength(1);
-    expect(result.columns).toEqual(['name', 'email', 'status', 'courses']);
+    expect(result.columns).toEqual([
+      'name',
+      'email',
+      'employeeCode',
+      'academicDegree',
+      'professionalTitle',
+      'institution',
+      'status',
+      'joinedOn',
+      'leftOn',
+      'courses',
+    ]);
     expect(prisma.teacher.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { assignments: { some: { semesterId: 'semester' } } },
@@ -156,7 +172,7 @@ describe('Academic reports', () => {
 
   it.each(['courses', 'assignments', 'assistants', 'semesters'] as const)(
     'supports the %s dataset',
-    async (dataset) => {
+    async (dataset: AcademicDataset) => {
       prisma.course.findMany.mockResolvedValue([]);
       prisma.teachingAssignment.findMany.mockResolvedValue([]);
       prisma.teachingAssistant.findMany.mockResolvedValue([]);
@@ -177,7 +193,7 @@ describe('Academic reports', () => {
   it.each([
     ['list', 'REPORTS_VIEW'],
     ['exportReport', 'REPORTS_EXPORT'],
-  ])('checks the persistent permission for %s', async (name, permission) => {
+  ])('checks the persistent permission for %s', async (name: string, permission: string) => {
     prisma.user.findFirst.mockResolvedValue({ id: 'user' });
     expect(await guard.canActivate(context(name))).toBe(true);
     expect(
