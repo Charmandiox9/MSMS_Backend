@@ -1,7 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { JustificationStatus } from '@prisma/client';
-import { JustificationsController } from './justifications.controller';
+import {
+  FormSubmissionDto,
+  JustificationsController,
+} from './justifications.controller';
 import { JustificationsService } from './justifications.service';
 
 describe('JustificationsController', () => {
@@ -60,7 +67,9 @@ describe('JustificationsController', () => {
       const result = await controller.list(JustificationStatus.PENDING);
 
       expect(result).toBe(expected);
-      expect(mockService.listJustifications).toHaveBeenCalledWith(JustificationStatus.PENDING);
+      expect(mockService.listJustifications).toHaveBeenCalledWith(
+        JustificationStatus.PENDING,
+      );
     });
 
     it('calls service without filter when status is omitted', async () => {
@@ -83,7 +92,10 @@ describe('JustificationsController', () => {
       const result = await controller.open('inbox-1', req);
 
       expect(result).toBe(expected);
-      expect(mockService.openInboxEntry).toHaveBeenCalledWith('inbox-1', 'user-123');
+      expect(mockService.openInboxEntry).toHaveBeenCalledWith(
+        'inbox-1',
+        'user-123',
+      );
     });
   });
 
@@ -101,22 +113,58 @@ describe('JustificationsController', () => {
       const result = await controller.decide('just-1', body, req);
 
       expect(result).toBe(expected);
-      expect(mockService.decide).toHaveBeenCalledWith('just-1', 'user-123', JustificationStatus.ACCEPTED, undefined, 'MEDICAL');
+      expect(mockService.decide).toHaveBeenCalledWith(
+        'just-1',
+        'user-123',
+        JustificationStatus.ACCEPTED,
+        undefined,
+        'MEDICAL',
+      );
     });
   });
 
   describe('evidenceUrl', () => {
     it('fetches presigned evidence download url', async () => {
-      mockService.getEvidenceUrl.mockResolvedValue({ downloadUrl: 'https://storage.example.com/file.pdf' });
+      mockService.getEvidenceUrl.mockResolvedValue({
+        downloadUrl: 'https://storage.example.com/file.pdf',
+      });
 
       const result = await controller.evidenceUrl('just-1');
 
-      expect(result).toEqual({ downloadUrl: 'https://storage.example.com/file.pdf' });
+      expect(result).toEqual({
+        downloadUrl: 'https://storage.example.com/file.pdf',
+      });
       expect(mockService.getEvidenceUrl).toHaveBeenCalledWith('just-1');
     });
   });
 
   describe('receiveFormSubmission', () => {
+    it('normaliza correo antes de validarlo y no admite un studentId indicado por el formulario', async () => {
+      const pipe = new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      });
+      const submission = {
+        externalResponseId: 'resp-1',
+        studentEmail: ' STUDENT@EXAMPLE.COM ',
+        absenceDate: '2026-09-25',
+        nrc: '12345',
+        evidenceKey: 'evidence/key.pdf',
+        evidenceContentType: 'application/pdf',
+      };
+      const result: FormSubmissionDto = await pipe.transform(submission, {
+        type: 'body',
+        metatype: FormSubmissionDto,
+      });
+      expect(result.studentEmail).toBe('student@example.com');
+      await expect(
+        pipe.transform(
+          { ...submission, studentId: 'arbitrary-student' },
+          { type: 'body', metatype: FormSubmissionDto },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
     it('rejects submissions with invalid secret', () => {
       const submission = {
         externalResponseId: 'resp-1',
@@ -144,10 +192,16 @@ describe('JustificationsController', () => {
       };
       mockService.receiveFormSubmission.mockResolvedValue({ id: 'inbox-1' });
 
-      const result = await controller.receiveFormSubmission('test-secret', undefined, submission);
+      const result = await controller.receiveFormSubmission(
+        'test-secret',
+        undefined,
+        submission,
+      );
 
       expect(result).toEqual({ id: 'inbox-1' });
-      expect(mockService.receiveFormSubmission).toHaveBeenCalledWith(submission);
+      expect(mockService.receiveFormSubmission).toHaveBeenCalledWith(
+        submission,
+      );
     });
   });
 });

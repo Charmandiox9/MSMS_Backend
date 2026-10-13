@@ -4,6 +4,18 @@ Esta guía configura el formulario, su hoja de respuestas, un Apps Script que su
 
 ## Flujo
 
+Al recibir una respuesta, el backend normaliza `studentEmail` (sin espacios
+externos y en minúsculas) y busca un registro académico `Student` con ese correo.
+Si existe, guarda su ID en la entrada de bandeja y lo conserva al crear la
+justificación. Las consultas devuelven `student: { id, name, email }` y la interfaz
+muestra el nombre registrado junto al correo del formulario. El vínculo permanece
+si posteriormente cambia el correo del estudiante; no se sobrescriben sus datos
+con el formulario. Si no hay coincidencia, se acepta la entrada con vínculo nulo,
+sin crear una cuenta ni un estudiante. Al abrir una entrada aún no vinculada,
+se busca nuevamente por correo por si el estudiante fue registrado entretanto.
+Las justificaciones ya abiertas conservan su información y sus decisiones.
+No se modifica el Apps Script ni se exige una matrícula para establecer el vínculo.
+
 El payload de justificaciones admite `absenceBlocks` opcional, por ejemplo
 `["A", "B"]`. Los códigos deben pertenecer al catálogo académico. Cuando el
 formulario solo envía fecha, al aprobar se notifica a los ayudantes de la asignatura

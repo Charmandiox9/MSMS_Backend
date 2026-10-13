@@ -25,6 +25,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import type { Request } from 'express';
+import { Transform } from 'class-transformer';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JustificationStatus } from '@prisma/client';
@@ -43,9 +44,13 @@ function getAuthenticatedUserId(request: AuthenticatedRequest): string {
   return userId;
 }
 
-class FormSubmissionDto implements FormJustificationInput {
+export class FormSubmissionDto implements FormJustificationInput {
   @IsString() @IsNotEmpty() @MaxLength(255) externalResponseId!: string;
-  @IsEmail() studentEmail!: string;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  studentEmail!: string;
   @IsString() @IsNotEmpty() absenceDate!: string;
   @IsOptional()
   @IsArray()

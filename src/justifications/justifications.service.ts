@@ -39,6 +39,9 @@ const WEEKDAYS = [
 ];
 
 type TeacherContact = { name: string; email: string };
+const studentContext = {
+  student: { select: { id: true, name: true, email: true } },
+} as const;
 type ScheduleSource = {
   nrc: string | null;
   absenceDate: Date;
@@ -74,10 +77,17 @@ export class JustificationsService {
         'El NRC no corresponde a una asignatura activa',
       );
 
+    const studentEmail = input.studentEmail.trim().toLowerCase();
+    const student = await this.prisma.student.findUnique({
+      where: { email: studentEmail },
+      select: { id: true },
+    });
     return this.prisma.justificationInbox.upsert({
       where: { externalResponseId: input.externalResponseId },
       update: {
         ...input,
+        studentEmail,
+        studentId: student?.id ?? null,
         nrc,
         subjectName,
         subjectCode: assignment?.course.code ?? input.subjectCode,
@@ -85,11 +95,14 @@ export class JustificationsService {
       },
       create: {
         ...input,
+        studentEmail,
+        studentId: student?.id ?? null,
         nrc,
         subjectName,
         subjectCode: assignment?.course.code ?? input.subjectCode,
         absenceDate,
       },
+      include: studentContext,
     });
   }
 
@@ -97,6 +110,7 @@ export class JustificationsService {
     const entries = await this.prisma.justificationInbox.findMany({
       where: { status: JustificationInboxStatus.UNREAD },
       orderBy: { createdAt: 'asc' },
+      include: studentContext,
     });
 
     const blocks = await this.findScheduleBlocks(entries);
@@ -107,6 +121,7 @@ export class JustificationsService {
     const justifications = await this.prisma.justification.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
+      include: studentContext,
     });
 
     return this.withTeachersAndBlocks(justifications);
@@ -124,14 +139,26 @@ export class JustificationsService {
         if (inbox.justificationId) {
           return transaction.justification.findUniqueOrThrow({
             where: { id: inbox.justificationId },
+            include: studentContext,
           });
         }
 
+        // Also match an unlinked entry if the student was registered after arrival.
+        const studentId =
+          inbox.studentId ??
+          (
+            await transaction.student.findUnique({
+              where: { email: inbox.studentEmail.trim().toLowerCase() },
+              select: { id: true },
+            })
+          )?.id ??
+          null;
         const justification = await transaction.justification.create({
           data: {
             id: randomUUID(),
             sourceResponseId: inbox.externalResponseId,
             studentEmail: inbox.studentEmail,
+            studentId,
             absenceDate: inbox.absenceDate,
             absenceBlocks: inbox.absenceBlocks,
             subjectName: inbox.subjectName,
@@ -150,6 +177,7 @@ export class JustificationsService {
               },
             },
           },
+          include: studentContext,
         });
 
         await transaction.justificationInbox.update({
@@ -158,6 +186,7 @@ export class JustificationsService {
             status: JustificationInboxStatus.READ,
             readAt: new Date(),
             justificationId: justification.id,
+            studentId,
           },
         });
 
@@ -228,7 +257,10 @@ export class JustificationsService {
           changedById: userId,
         },
       });
-      return transaction.justification.findUniqueOrThrow({ where: { id } });
+      return transaction.justification.findUniqueOrThrow({
+        where: { id },
+        include: studentContext,
+      });
     });
 
     const [withContext] = await this.withTeachersAndBlocks([updated]);

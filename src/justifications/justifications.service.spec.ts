@@ -10,6 +10,7 @@ describe('JustificationsService', () => {
   let service: JustificationsService;
 
   const mockPrisma = {
+    student: { findUnique: jest.fn().mockResolvedValue(null) },
     assistantship: { findMany: jest.fn().mockResolvedValue([]) },
     teachingAssignment: {
       findFirst: jest.fn(),
@@ -94,6 +95,7 @@ describe('JustificationsService', () => {
       expect(mockPrisma.justificationInbox.findMany).toHaveBeenCalledWith({
         where: { status: JustificationInboxStatus.UNREAD },
         orderBy: { createdAt: 'asc' },
+        include: { student: { select: { id: true, name: true, email: true } } },
       });
     });
   });
@@ -137,6 +139,7 @@ describe('JustificationsService', () => {
       expect(mockPrisma.justification.findMany).toHaveBeenCalledWith({
         where: undefined,
         orderBy: { createdAt: 'desc' },
+        include: { student: { select: { id: true, name: true, email: true } } },
       });
     });
   });
@@ -238,6 +241,7 @@ describe('JustificationsService', () => {
 describe('JustificationsService flujo completo', () => {
   let service: JustificationsService;
   const prisma = {
+    student: { findUnique: jest.fn() },
     assistantship: { findMany: jest.fn().mockResolvedValue([]) },
     teachingAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
     courseSchedule: { findMany: jest.fn() },
@@ -302,6 +306,7 @@ describe('JustificationsService flujo completo', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    prisma.student.findUnique.mockResolvedValue(null);
     prisma.assistantship.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(
       (operation: (client: unknown) => Promise<unknown>) => operation(prisma),
@@ -328,6 +333,42 @@ describe('JustificationsService flujo completo', () => {
   });
 
   describe('receiveFormSubmission', () => {
+    it('vincula por correo normalizado y devuelve los datos del estudiante registrado', async () => {
+      const student = {
+        id: 'student-1',
+        name: 'Ana Soto',
+        email: submission.studentEmail,
+      };
+      prisma.student.findUnique.mockResolvedValue({ id: student.id });
+      prisma.justificationInbox.upsert.mockResolvedValue({
+        id: 'inbox-1',
+        student,
+      });
+      const result = await service.receiveFormSubmission({
+        ...submission,
+        studentEmail: ' STUDENT@ALUMNOS.UCN.CL ',
+      });
+      expect(prisma.student.findUnique).toHaveBeenCalledWith({
+        where: { email: submission.studentEmail },
+        select: { id: true },
+      });
+      const call = prisma.justificationInbox.upsert.mock.calls[0][0];
+      expect(call.create).toEqual(
+        expect.objectContaining({
+          studentId: student.id,
+          studentEmail: submission.studentEmail,
+        }),
+      );
+      expect(call.update).toEqual(call.create);
+      expect(result.student).toEqual(student);
+    });
+
+    it('acepta correos no registrados sin crear estudiantes ni asociar otra identidad', async () => {
+      await service.receiveFormSubmission(submission);
+      expect(
+        prisma.justificationInbox.upsert.mock.calls[0][0].create.studentId,
+      ).toBeNull();
+    });
     it('usa la asignatura del semestre activo según el NRC y es idempotente por respuesta', async () => {
       prisma.teachingAssignment.findFirst.mockResolvedValue({
         course: { name: 'Biología', code: 'BIO101' },
@@ -404,6 +445,45 @@ describe('JustificationsService flujo completo', () => {
       evidenceContentType: 'application/pdf',
     };
 
+    it('conserva el vínculo por ID aunque el correo del estudiante haya cambiado', async () => {
+      prisma.justificationInbox.findUnique.mockResolvedValue({
+        ...inbox,
+        studentId: 'student-1',
+      });
+      const student = {
+        id: 'student-1',
+        name: 'Ana Soto',
+        email: 'nuevo@alumnos.ucn.cl',
+      };
+      prisma.justification.create.mockImplementation(
+        ({ data }: { data: object }) => Promise.resolve({ ...data, student }),
+      );
+      const result = await service.openInboxEntry('inbox-1', 'coordinator-1');
+      expect(result.student).toEqual(student);
+      expect(prisma.justification.create.mock.calls[0][0].data.studentId).toBe(
+        'student-1',
+      );
+      expect(prisma.student.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('vincula al abrir si el estudiante fue registrado después de la recepción', async () => {
+      prisma.justificationInbox.findUnique.mockResolvedValue({
+        ...inbox,
+        studentId: null,
+      });
+      prisma.student.findUnique.mockResolvedValue({ id: 'student-2' });
+      prisma.justification.create.mockImplementation(
+        ({ data }: { data: object }) => Promise.resolve(data),
+      );
+      await service.openInboxEntry('inbox-1', 'coordinator-1');
+      expect(prisma.justification.create.mock.calls[0][0].data.studentId).toBe(
+        'student-2',
+      );
+      expect(
+        prisma.justificationInbox.update.mock.calls[0][0].data.studentId,
+      ).toBe('student-2');
+    });
+
     it('crea la justificación pendiente, registra el historial y marca la entrada como leída', async () => {
       prisma.justificationInbox.findUnique.mockResolvedValue(inbox);
       prisma.justification.create.mockImplementation(
@@ -436,6 +516,7 @@ describe('JustificationsService flujo completo', () => {
           status: JustificationInboxStatus.READ,
           readAt: expect.any(Date),
           justificationId: data.id,
+          studentId: null,
         },
       });
       expect(result.blocks).toEqual(['C', 'D']);
