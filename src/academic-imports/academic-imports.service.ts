@@ -64,6 +64,8 @@ type HourlyParseResult = {
   totalAmountClp: string;
 };
 
+const IMPORT_TRANSACTION_TIMEOUT_MS = 60_000;
+
 const text = (value: ExcelJS.CellValue | undefined): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object' && 'text' in value)
@@ -349,7 +351,10 @@ export class AcademicImportsService {
       async (tx) => {
         for (const { data } of parsed.valid) await tx.project.create({ data });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: IMPORT_TRANSACTION_TIMEOUT_MS,
+      },
     );
     return {
       imported: parsed.valid.length,
@@ -658,7 +663,10 @@ export class AcademicImportsService {
         for (const { data } of parsed.valid)
           await tx.researchOutput.create({ data });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: IMPORT_TRANSACTION_TIMEOUT_MS,
+      },
     );
     return {
       imported: parsed.valid.length,
@@ -1216,7 +1224,10 @@ export class AcademicImportsService {
           });
         }
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: IMPORT_TRANSACTION_TIMEOUT_MS,
+      },
     );
     return {
       imported: parsed.valid.length,

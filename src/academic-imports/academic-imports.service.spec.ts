@@ -281,6 +281,13 @@ describe('AcademicImportsService', () => {
   it('commits valid rows together and reports skipped records', async () => {
     await service.importProjects(await workbookBase64('Proyecto A'));
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        isolationLevel: 'Serializable',
+        timeout: 60_000,
+      }),
+    );
     expect(projectCreate).toHaveBeenCalledTimes(1);
     const created = projectCreate.mock.calls[0][0].data;
     expect(created.currency).toBe('CLP');
