@@ -87,6 +87,26 @@ describe('Persistencia cifrada y contratos de consulta Prisma', () => {
       codec.where('TeachingAssignment', { teacher: { email: 'p@ucn.cl' } }),
     ).toEqual({ teacher: { emailHash: hash } });
   });
+  it('conserva filtros de ID y versión con el DMMF de Prisma 7 y transforma selectores compuestos', () => {
+    expect(
+      codec.args('User', 'count', { where: { id: 'record', piiVersion: 0 } }),
+    ).toEqual({ where: { id: 'record', piiVersion: 0 } });
+    expect(
+      codec.where('ProjectParticipant', {
+        projectId_name_role: {
+          projectId: 'project',
+          name: 'Nombre',
+          role: 'DIRECTOR',
+        },
+      }),
+    ).toEqual({
+      projectId_nameHash_role: {
+        projectId: 'project',
+        nameHash: crypto.blindIndex('Nombre', 'ProjectParticipant.name'),
+        role: 'DIRECTOR',
+      },
+    });
+  });
   it('rechaza filtros parciales y ordenación SQL de datos cifrados', () => {
     expect(() => codec.where('Teacher', { email: { contains: 'p' } })).toThrow(
       'parciales',

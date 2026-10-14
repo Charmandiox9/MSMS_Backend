@@ -154,14 +154,10 @@ export class PiiStorageCodec {
         );
       }
       // Composite unique selectors containing a protected name.
-      const compound = models
-        .get(model)
-        ?.uniqueFields.find((fields) => fields.join('_') === field);
+      // Prisma 7 runtime DMMF omits uniqueFields; declare protected selectors in the policy.
+      const compound = policy?.compoundLookups?.[field];
       if (compound && object(value)) {
-        const renamed = compound
-          .map((key) => policy?.lookups[key] ?? key)
-          .join('_');
-        result[renamed] = this.where(model, value);
+        result[compound] = this.where(model, value);
       } else result[field] = value;
     }
     return result;

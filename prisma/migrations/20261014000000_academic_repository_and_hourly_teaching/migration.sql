@@ -19,10 +19,14 @@ CREATE TYPE "ProjectStatus" AS ENUM ('REGISTERED', 'AWARDED', 'IN_PROGRESS', 'CO
 CREATE TYPE "ResearchOutputKind" AS ENUM ('ARTICLE', 'BOOK', 'BOOK_CHAPTER', 'INTELLECTUAL_PROPERTY');
 
 -- AlterTable
-ALTER TABLE "Teacher" ADD COLUMN     "academicDegree" "AcademicDegree",
+-- Neon may already contain this nullable legacy TEXT column outside migration history.
+-- Preserve recognized values; an incompatible value aborts the whole transaction.
+ALTER TABLE "Teacher" ADD COLUMN IF NOT EXISTS "academicDegree" "AcademicDegree",
 ADD COLUMN     "academicUnit" TEXT,
 ADD COLUMN     "certification" "TeacherCertification",
 ADD COLUMN     "rut" TEXT;
+ALTER TABLE "Teacher" ALTER COLUMN "academicDegree" TYPE "AcademicDegree"
+USING "academicDegree"::text::"AcademicDegree";
 
 -- CreateTable
 CREATE TABLE "HourlyPayRate" (

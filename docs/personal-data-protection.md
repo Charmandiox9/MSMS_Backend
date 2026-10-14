@@ -99,6 +99,36 @@ las anteriores. `scripts/backfill-pii.ts --apply --rotate` recifra todos los reg
 una ventana de mantenimiento. Conservar las claves hasta convertir registros,
 cachés y respaldos. No cambiar la clave HMAC sin reindexar todo el conjunto.
 
+## Registro de aplicación en Neon — 14 de octubre de 2026
+
+Las migraciones `20261014000000_academic_repository_and_hourly_teaching` y
+`20261014010000_encrypt_personal_data_and_repository_access` se aplicaron al
+proyecto `msms-db` (`green-river-32361484`), rama `main`
+(`br-gentle-forest-auyode57`), base `neondb`, con autorización del usuario.
+Prisma confirmó las 18 migraciones al día, 17 tarifas, 14 modelos con marca de
+conversión y seis asignaciones de permisos para los tres roles.
+
+Se conservó el snapshot previo `snap-cold-union-aug5mqju`
+(`before-academic-pii-migrations-20261014`). La rama aislada
+`validate-academic-pii-20261014` (`br-spring-breeze-au03cmp5`) permitió validar
+las migraciones, la conversión de datos existentes, el inicio del cliente
+Prisma, búsquedas de usuarios y escrituras cifradas transaccionales.
+
+Neon tenía una columna nullable `Teacher.academicDegree` de tipo TEXT,
+fuera de la historia de migraciones, sin valores registrados. La migración
+conserva esa columna y convierte su tipo al enum esperado. Valores no
+compatibles provocarían una reversión completa, sin borrarse silenciosamente.
+La validación real también permitió corregir el manejo de selectores
+compuestos: el DMMF de Prisma 7 no expone `uniqueFields` en ejecución.
+El compute de la rama de prueba quedó deshabilitado al terminar; la rama
+permanece disponible para revisión.
+
+**La conversión de registros de `main` sigue pendiente.** Solo se ejecutó en
+la copia de prueba. Antes de activar la nueva versión hay que configurar las
+claves en el entorno de ejecución y coordinar la ventana de mantenimiento
+descrita arriba. El snapshot previo contiene los datos anteriores y requiere
+los controles de acceso y conservación correspondientes.
+
 ## Ley 21.719
 
 La [ley oficial](https://www.bcn.cl/leychile/navegar?idNorma=1209272) entra en

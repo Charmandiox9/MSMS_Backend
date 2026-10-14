@@ -2,6 +2,7 @@ export interface PiiPolicy {
   fields: readonly string[];
   lookups: Readonly<Record<string, string>>;
   searchable: readonly string[];
+  compoundLookups?: Readonly<Record<string, string>>;
 }
 
 /** Direct identifiers and free text; typed academic/financial data also require encrypted infrastructure. */
@@ -69,12 +70,14 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
   ProjectParticipant: {
     fields: ['name', 'contactEmail', 'gender'],
     lookups: { name: 'nameHash' },
+    compoundLookups: { projectId_name_role: 'projectId_nameHash_role' },
     searchable: ['name', 'contactEmail'],
   },
   Research: { fields: ['description'], lookups: {}, searchable: [] },
   ResearchParticipant: {
     fields: ['name'],
     lookups: { name: 'nameHash' },
+    compoundLookups: { researchId_name_role: 'researchId_nameHash_role' },
     searchable: ['name'],
   },
   ResearchOutput: { fields: ['notes'], lookups: {}, searchable: [] },
