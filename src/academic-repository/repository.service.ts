@@ -48,6 +48,8 @@ export class RepositoryService {
 
   async projects(query: RepositoryQueryDto) {
     const { page, pageSize, search } = query;
+    const sortBy = query.sortBy ?? 'reportingYear';
+    const sortOrder = query.sortOrder ?? 'desc';
     const where: Prisma.ProjectWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.reportingYear ? { reportingYear: query.reportingYear } : {}),
@@ -66,11 +68,7 @@ export class RepositoryService {
       this.prisma.project.findMany({
         where,
         include: projectInclude,
-        orderBy: [
-          { reportingYear: 'desc' },
-          { createdAt: 'desc' },
-          { id: 'asc' },
-        ],
+        orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -90,6 +88,12 @@ export class RepositoryService {
         'Los filtros de año y estado corresponden a proyectos',
       );
     const { page, pageSize, search } = query;
+    const sortBy = query.sortBy ?? 'createdAt';
+    if (!['title', 'startsOn', 'createdAt'].includes(sortBy))
+      throw new BadRequestException(
+        'El criterio de orden no corresponde a investigaciones',
+      );
+    const sortOrder = query.sortOrder ?? 'desc';
     const where: Prisma.ResearchWhereInput = search
       ? {
           OR: [
@@ -105,7 +109,7 @@ export class RepositoryService {
       this.prisma.research.findMany({
         where,
         include: researchInclude,
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

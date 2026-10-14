@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -37,6 +38,23 @@ export class RepositoryQueryDto {
   @Max(2200)
   reportingYear?: number;
   @IsOptional() @IsEnum(ProjectStatus) status?: ProjectStatus;
+  @IsOptional()
+  @IsIn([
+    'title',
+    'reportingYear',
+    'startsOn',
+    'totalAmount',
+    'status',
+    'createdAt',
+  ])
+  sortBy?:
+    | 'title'
+    | 'reportingYear'
+    | 'startsOn'
+    | 'totalAmount'
+    | 'status'
+    | 'createdAt';
+  @IsOptional() @IsIn(['asc', 'desc']) sortOrder?: 'asc' | 'desc';
 }
 
 export class RepositoryVersionDto {

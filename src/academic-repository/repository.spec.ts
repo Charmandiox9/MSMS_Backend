@@ -264,6 +264,8 @@ describe('CRUD del repositorio académico', () => {
       search: '50%_a',
       status: 'IN_PROGRESS',
       reportingYear: '2026',
+      sortBy: 'totalAmount',
+      sortOrder: 'asc',
     });
     await expect(projects.list(query)).resolves.toMatchObject({
       total: 11,
@@ -274,6 +276,7 @@ describe('CRUD del repositorio académico', () => {
       skip: 10,
       take: 10,
       where: { status: 'IN_PROGRESS', reportingYear: 2026 },
+      orderBy: [{ totalAmount: 'asc' }, { id: 'asc' }],
     });
     expect(
       prisma.project.findMany.mock.calls[0][0].where.OR[0].title.contains,
