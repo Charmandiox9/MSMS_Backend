@@ -35,6 +35,38 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+enum AcademicImportType {
+  PROJECTS
+  RESEARCH
+  HOURLY
+}
+
+enum AcademicImportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Durable academic import queue; the workbook payload is application-encrypted.
+model AcademicImportJob {
+  id            String               @id @default(uuid())
+  type          AcademicImportType
+  status        AcademicImportStatus @default(QUEUED)
+  payload       String?              @db.Text
+  result        Json?
+  error         String?              @db.Text
+  requestedById String
+  attempts      Int                  @default(0)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([status, createdAt])
+  @@index([requestedById, createdAt])
+}
+
 enum JustificationStatus {
   PENDING
   ACCEPTED
