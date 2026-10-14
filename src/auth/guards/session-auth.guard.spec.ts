@@ -33,13 +33,11 @@ describe('SessionAuthGuard', () => {
     jwtService = { verifyAsync: jest.fn() };
     sessionService = { get: jest.fn() };
     activeUsers = {
-      findActive: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'user-1',
-          email: 'user@ucn.cl',
-          roles: ['ACADEMIC_SECRETARY'],
-        }),
+      findActive: jest.fn().mockResolvedValue({
+        id: 'user-1',
+        email: 'user@ucn.cl',
+        roles: ['ACADEMIC_SECRETARY'],
+      }),
     };
   });
 
@@ -53,6 +51,18 @@ describe('SessionAuthGuard', () => {
   }
 
   describe('producción', () => {
+    it('devuelve los roles actuales y no los privilegios conservados en la sesión', async () => {
+      sessionService.get.mockResolvedValue({
+        ...session,
+        roles: ['SYSTEM_ADMIN'],
+      });
+      const request: TestRequest = {
+        cookies: { session: 'session-id' },
+        headers: {},
+      };
+      await createGuard('production').canActivate(createContext(request));
+      expect(request.user).toEqual(requestUser);
+    });
     it('adjunta la sesión almacenada al request usando la cookie session', async () => {
       sessionService.get.mockResolvedValue(session);
       const request: TestRequest = {
@@ -119,6 +129,37 @@ describe('SessionAuthGuard', () => {
   });
 
   describe('desarrollo', () => {
+    it.each([null, {}, { sub: 123 }, { sub: '' }])(
+      'rechaza un JWT sin una identidad válida',
+      async (payload) => {
+        jwtService.verifyAsync.mockResolvedValue(payload);
+        const request: TestRequest = { cookies: { token: 'jwt' }, headers: {} };
+        await expect(
+          createGuard('development').canActivate(createContext(request)),
+        ).rejects.toThrow(UnauthorizedException);
+        expect(activeUsers.findActive).not.toHaveBeenCalled();
+      },
+    );
+    it('reconstruye el perfil y roles actuales cuando el JWT solo contiene sub', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: 'user-1',
+        iat: 1,
+        exp: 2,
+      });
+      const request: TestRequest = { cookies: { token: 'jwt' }, headers: {} };
+      await createGuard('development').canActivate(createContext(request));
+      expect(request.user).toEqual(requestUser);
+    });
+    it('ignora correo y privilegios antiguos incluidos en un JWT firmado', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        ...session,
+        email: 'old@example.test',
+        roles: ['SYSTEM_ADMIN'],
+      });
+      const request: TestRequest = { cookies: { token: 'jwt' }, headers: {} };
+      await createGuard('development').canActivate(createContext(request));
+      expect(request.user).toEqual(requestUser);
+    });
     it('verifica el JWT de la cookie token', async () => {
       jwtService.verifyAsync.mockResolvedValue(session);
       const request: TestRequest = { cookies: { token: 'jwt' }, headers: {} };
@@ -148,14 +189,14 @@ describe('SessionAuthGuard', () => {
       ).rejects.toThrow('Token no encontrado');
     });
 
-    it('propaga el error de un JWT inválido', async () => {
+    it('rechaza un JWT inválido con 401 sin exponer errores de verificación', async () => {
       jwtService.verifyAsync.mockRejectedValue(new Error('invalid signature'));
 
       await expect(
         createGuard('development').canActivate(
           createContext({ cookies: { token: 'bad' }, headers: {} }),
         ),
-      ).rejects.toThrow('invalid signature');
+      ).rejects.toThrow('Token no válido o expirado');
     });
   });
 });

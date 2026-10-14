@@ -61,6 +61,9 @@ requieren actualizar el inventario y sus pruebas.
 
 Los cachés de sesiones y usuarios contienen sobres autenticados. Los JWT
 contienen solo `sub`, además de los metadatos propios de firma/expiración.
+`/api/auth/session` reconstruye correo, roles y avatar desde la cuenta activa
+mediante ActiveUserService, con su caché cifrada de 60 segundos. No devuelve
+las claims del JWT ni reutiliza privilegios antiguos de la sesión como permisos.
 Los logs omiten correos, búsquedas en URL, motivos y errores crudos de datos.
 Las respuestas a usuarios autorizados y exportaciones siguen mostrando los
 datos necesarios; requieren HTTPS y almacenamiento seguro por su destinatario.
