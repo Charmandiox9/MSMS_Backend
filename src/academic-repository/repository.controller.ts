@@ -19,6 +19,9 @@ import {
   RepositoryVersionDto,
   UpdateProjectDto,
   UpdateResearchDto,
+  ResearchOutputInputDto,
+  ResearchOutputQueryDto,
+  UpdateResearchOutputDto,
 } from './repository.dto';
 
 // REST matches the existing academic maintenance API and its validation contracts.
@@ -73,5 +76,26 @@ export class ResearchController {
     @Query() input: RepositoryVersionDto,
   ) {
     return this.service.deleteResearch(id, input.expectedUpdatedAt);
+  }
+}
+
+@Controller('academic/research-outputs')
+@Roles(...ACADEMIC_REPOSITORY_ROLES)
+export class ResearchOutputsController {
+  constructor(private readonly service: RepositoryService) {}
+  @Get() list(@Query() query: ResearchOutputQueryDto) {
+    return this.service.researchOutputs(query);
+  }
+  @Get(':id') get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.researchOutput(id);
+  }
+  @Post() create(@Body() input: ResearchOutputInputDto) {
+    return this.service.createResearchOutput(input);
+  }
+  @Put(':id') update(@Param('id', ParseUUIDPipe) id: string, @Body() input: UpdateResearchOutputDto) {
+    return this.service.updateResearchOutput(id, input);
+  }
+  @Delete(':id') remove(@Param('id', ParseUUIDPipe) id: string, @Query() input: RepositoryVersionDto) {
+    return this.service.deleteResearchOutput(id, input.expectedUpdatedAt);
   }
 }

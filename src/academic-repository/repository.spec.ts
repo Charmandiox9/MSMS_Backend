@@ -15,12 +15,14 @@ import { RepositoryService } from './repository.service';
 import {
   ProjectsController,
   ResearchController,
+  ResearchOutputsController,
 } from './repository.controller';
 import {
   ProjectInputDto,
   RepositoryQueryDto,
   ResearchInputDto,
   UpdateProjectDto,
+  ResearchOutputInputDto,
 } from './repository.dto';
 
 const id = '22222222-2222-4222-8222-222222222222';
@@ -52,15 +54,18 @@ describe('CRUD del repositorio académico', () => {
   const prisma = {
     project: delegate(),
     research: delegate(),
+    researchOutput: delegate(),
     teacher: delegate(),
+    student: delegate(),
     $transaction: jest.fn(),
   };
   let service: RepositoryService;
   let projects: ProjectsController;
   let research: ResearchController;
+  let outputs: ResearchOutputsController;
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [ProjectsController, ResearchController],
+      controllers: [ProjectsController, ResearchController, ResearchOutputsController],
       providers: [
         RepositoryService,
         { provide: PrismaService, useValue: prisma },
@@ -69,6 +74,7 @@ describe('CRUD del repositorio académico', () => {
     service = module.get(RepositoryService);
     projects = module.get(ProjectsController);
     research = module.get(ResearchController);
+    outputs = module.get(ResearchOutputsController);
   });
   beforeEach(() => {
     jest.resetAllMocks();
@@ -79,6 +85,15 @@ describe('CRUD del repositorio académico', () => {
     );
     prisma.project.findUnique.mockResolvedValue(row);
     prisma.research.findUnique.mockResolvedValue({ ...row, project: null });
+    prisma.researchOutput.findUnique.mockResolvedValue({ id, updatedAt: new Date(version) });
+    prisma.researchOutput.count.mockResolvedValue(1);
+    prisma.researchOutput.findMany.mockResolvedValue([]);
+    prisma.researchOutput.create.mockResolvedValue({ id, updatedAt: new Date(version) });
+    prisma.researchOutput.update.mockResolvedValue({ id, updatedAt: new Date(version) });
+    prisma.researchOutput.delete.mockResolvedValue({ id });
+    prisma.project.findMany.mockResolvedValue([]);
+    prisma.teacher.findMany.mockResolvedValue([]);
+    prisma.student.findMany.mockResolvedValue([]);
     prisma.project.create.mockResolvedValue(row);
     prisma.project.update.mockResolvedValue(row);
     prisma.research.create.mockResolvedValue({ ...row, project: null });
@@ -256,6 +271,27 @@ describe('CRUD del repositorio académico', () => {
     prisma.research.findUnique.mockResolvedValue(null);
     await expect(research.get(id)).rejects.toThrow(NotFoundException);
   });
+  it('crea resultados enlazados a investigación, valida relaciones y conserva vínculos opcionales en edición', async () => {
+    const input = { researchId: id, kind: 'ARTICLE' as const, reportingYear: 2026, title: 'Artículo científico', authors: [{ name: 'Autora', position: 1 }] };
+    prisma.research.findUnique.mockResolvedValue({ id });
+    await outputs.create(input);
+    expect(prisma.researchOutput.create.mock.calls[0][0].data).toMatchObject({
+      researchId: id, title: 'Artículo científico', authors: { create: [{ name: 'Autora', position: 1, teacherId: null, studentId: null, affiliation: null, isStudent: null }] },
+    });
+    await outputs.update(id, { ...input, authors: undefined, expectedUpdatedAt: version });
+    expect(prisma.researchOutput.update.mock.calls[0][0].data.authors).toBeUndefined();
+    prisma.research.findUnique.mockResolvedValue(null);
+    await expect(outputs.create(input)).rejects.toThrow(BadRequestException);
+  });
+  it('lista resultados asociados con filtros, orden y paginación, y elimina con versión vigente', async () => {
+    await outputs.list(plainToInstance(RepositoryQueryDto, { page: 2, pageSize: 10, sortBy: 'reportingYear', sortOrder: 'asc' }));
+    expect(prisma.researchOutput.findMany.mock.calls[0][0]).toMatchObject({
+      where: {}, skip: 10, take: 10,
+      orderBy: [{ reportingYear: 'asc' }, { id: 'asc' }],
+    });
+    await outputs.remove(id, { expectedUpdatedAt: version });
+    expect(prisma.researchOutput.delete).toHaveBeenCalled();
+  });
   it('pagina y filtra proyectos y evita filtros de estado incompatibles en investigaciones', async () => {
     prisma.project.count.mockResolvedValue(11);
     prisma.project.findMany.mockResolvedValue([row]);
@@ -288,7 +324,7 @@ describe('CRUD del repositorio académico', () => {
     'permite todos los endpoints a %s y bloquea coordinación',
     (role) => {
       const guard = new RolesGuard(new Reflector());
-      for (const controller of [ProjectsController, ResearchController])
+      for (const controller of [ProjectsController, ResearchController, ResearchOutputsController])
         for (const method of [
           'list',
           'get',
@@ -356,5 +392,13 @@ describe('Validación de entradas del repositorio', () => {
     expect(
       (await validate(plainToInstance(UpdateProjectDto, project))).length,
     ).toBeGreaterThan(0);
+  });
+  it('valida el tipo, investigación y año de los resultados académicos', async () => {
+    expect(await validate(plainToInstance(ResearchOutputInputDto, {
+      researchId: id, kind: 'ARTICLE', reportingYear: 2026, title: 'Resultado',
+    }))).toHaveLength(0);
+    expect((await validate(plainToInstance(ResearchOutputInputDto, {
+      researchId: 'invalid', kind: 'OTHER', reportingYear: 1800, title: '',
+    }))).length).toBeGreaterThan(0);
   });
 });

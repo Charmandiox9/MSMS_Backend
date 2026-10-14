@@ -12,8 +12,11 @@ import {
   ResearchInputDto,
   RepositoryInputDto,
   RepositoryQueryDto,
+  ResearchOutputInputDto,
+  ResearchOutputQueryDto,
   UpdateProjectDto,
   UpdateResearchDto,
+  UpdateResearchOutputDto,
 } from './repository.dto';
 
 const projectInclude = {
@@ -26,6 +29,11 @@ const researchInclude = {
   project: { select: { id: true, title: true, code: true } },
   _count: { select: { outputs: true } },
 } satisfies Prisma.ResearchInclude;
+const outputInclude = {
+  research: { select: { id: true, title: true, code: true } },
+  authors: { orderBy: { position: 'asc' as const } },
+  projects: { include: { project: { select: { id: true, title: true, code: true } } } },
+} satisfies Prisma.ResearchOutputInclude;
 const date = (value?: string | null) =>
   value ? new Date(`${value}T00:00:00.000Z`) : null;
 const amountFields = [
@@ -49,6 +57,8 @@ export class RepositoryService {
   async projects(query: RepositoryQueryDto) {
     const { page, pageSize, search } = query;
     const sortBy = query.sortBy ?? 'reportingYear';
+    if (!['title', 'reportingYear', 'startsOn', 'totalAmount', 'status', 'createdAt'].includes(sortBy))
+      throw new BadRequestException('El criterio de orden no corresponde a proyectos');
     const sortOrder = query.sortOrder ?? 'desc';
     const where: Prisma.ProjectWhereInput = {
       ...(query.status ? { status: query.status } : {}),
@@ -121,6 +131,118 @@ export class RepositoryService {
       pageSize,
       totalPages: Math.ceil(total / pageSize),
     };
+  }
+
+  async researchOutputs(query: ResearchOutputQueryDto) {
+    const { page, pageSize, search } = query;
+    const sortBy = query.sortBy ?? 'reportingYear';
+    if (!['title', 'reportingYear', 'publicationDate', 'createdAt', 'kind'].includes(sortBy))
+      throw new BadRequestException('El criterio de orden no corresponde a resultados académicos');
+    const where: Prisma.ResearchOutputWhereInput = {
+      ...(query.researchId ? { researchId: query.researchId } : {}),
+      ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.reportingYear ? { reportingYear: query.reportingYear } : {}),
+      ...(search ? { OR: [{ title: textFilter(search) }, { doi: textFilter(search) }, { journal: textFilter(search) }] } : {}),
+    };
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.researchOutput.count({ where }),
+      this.prisma.researchOutput.findMany({
+        where, include: outputInclude,
+        orderBy: [{ [sortBy]: query.sortOrder ?? 'desc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize, take: pageSize,
+      }),
+    ]);
+    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
+
+  async researchOutput(id: string) {
+    const row = await this.prisma.researchOutput.findUnique({ where: { id }, include: outputInclude });
+    if (!row) throw new NotFoundException('Resultado académico no encontrado');
+    return row;
+  }
+
+  private outputData(input: ResearchOutputInputDto) {
+    if (input.authors?.some((author) => author.teacherId && author.studentId))
+      throw new BadRequestException('Una autoría no puede vincular a un profesor y estudiante simultáneamente');
+    if (input.authors && new Set(input.authors.map(({ position }) => position)).size !== input.authors.length)
+      throw new BadRequestException('Las posiciones de autoría deben ser únicas');
+    return {
+      researchId: input.researchId,
+      kind: input.kind,
+      reportingYear: input.reportingYear,
+      title: input.title,
+      doi: input.doi ?? null,
+      journal: input.journal ?? null,
+      issn: input.issn ?? null,
+      isbn: input.isbn ?? null,
+      quartile: input.quartile ?? null,
+      fiveYearImpactFactor: input.fiveYearImpactFactor == null ? null : new Prisma.Decimal(input.fiveYearImpactFactor),
+      publicationDate: date(input.publicationDate),
+      indexation: input.indexation ?? null,
+      publisher: input.publisher ?? null,
+      publicationPlace: input.publicationPlace ?? null,
+      studentParticipation: input.studentParticipation ?? null,
+      internationalParticipation: input.internationalParticipation ?? null,
+      intellectualPropertyType: input.intellectualPropertyType ?? null,
+      phase: input.phase ?? null,
+      phaseDate: date(input.phaseDate),
+      notes: input.notes ?? null,
+    } satisfies Prisma.ResearchOutputUncheckedCreateInput;
+  }
+
+  private async validateOutputRelations(tx: Prisma.TransactionClient, input: ResearchOutputInputDto) {
+    if (!(await tx.research.findUnique({ where: { id: input.researchId }, select: { id: true } })))
+      throw new BadRequestException('La investigación seleccionada no existe');
+    const projectIds = [...new Set(input.projectIds ?? [])];
+    const teacherIds = [...new Set((input.authors ?? []).flatMap(({ teacherId }) => teacherId ? [teacherId] : []))];
+    const studentIds = [...new Set((input.authors ?? []).flatMap(({ studentId }) => studentId ? [studentId] : []))];
+    const [projects, teachers, students] = await Promise.all([
+      projectIds.length ? tx.project.findMany({ where: { id: { in: projectIds } }, select: { id: true } }) : [],
+      teacherIds.length ? tx.teacher.findMany({ where: { id: { in: teacherIds } }, select: { id: true } }) : [],
+      studentIds.length ? tx.student.findMany({ where: { id: { in: studentIds } }, select: { id: true } }) : [],
+    ]);
+    if (projects.length !== projectIds.length) throw new BadRequestException('Uno o más proyectos seleccionados no existen');
+    if (teachers.length !== teacherIds.length) throw new BadRequestException('Uno o más profesores seleccionados no existen');
+    if (students.length !== studentIds.length) throw new BadRequestException('Uno o más estudiantes seleccionados no existen');
+    return projectIds;
+  }
+
+  createResearchOutput(input: ResearchOutputInputDto) {
+    const data = this.outputData(input);
+    return this.mutate(async (tx) => {
+      const projectIds = await this.validateOutputRelations(tx, input);
+      return tx.researchOutput.create({
+        data: {
+          ...data,
+          authors: { create: (input.authors ?? []).map((author) => ({ ...author, teacherId: author.teacherId ?? null, studentId: author.studentId ?? null, affiliation: author.affiliation ?? null, isStudent: author.isStudent ?? null })) },
+          projects: { create: projectIds.map((projectId) => ({ projectId })) },
+        }, include: outputInclude,
+      });
+    });
+  }
+
+  updateResearchOutput(id: string, input: UpdateResearchOutputDto) {
+    const data = this.outputData(input);
+    return this.mutate(async (tx) => {
+      this.checkVersion(await tx.researchOutput.findUnique({ where: { id }, select: { updatedAt: true } }), input.expectedUpdatedAt);
+      const projectIds = await this.validateOutputRelations(tx, input);
+      return tx.researchOutput.update({
+        where: { id, updatedAt: new Date(input.expectedUpdatedAt) },
+        data: {
+          ...data,
+          ...(input.authors === undefined ? {} : { authors: { deleteMany: {}, create: input.authors.map((author) => ({ ...author, teacherId: author.teacherId ?? null, studentId: author.studentId ?? null, affiliation: author.affiliation ?? null, isStudent: author.isStudent ?? null })) } }),
+          ...(input.projectIds === undefined ? {} : { projects: { deleteMany: {}, create: projectIds.map((projectId) => ({ projectId })) } }),
+        }, include: outputInclude,
+      });
+    });
+  }
+
+  deleteResearchOutput(id: string, expectedUpdatedAt: string) {
+    return this.mutate(async (tx) => {
+      this.checkVersion(await tx.researchOutput.findUnique({ where: { id }, select: { updatedAt: true } }), expectedUpdatedAt);
+      await tx.researchOutput.delete({ where: { id, updatedAt: new Date(expectedUpdatedAt) } });
+      return { success: true };
+    });
   }
 
   async project(id: string) {
@@ -288,7 +410,7 @@ export class RepositoryService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002')
           throw new ConflictException(
-            'El código, el vínculo con proyecto o un participante ya está registrado',
+            'El código, DOI, vínculo con proyecto o participante ya está registrado',
           );
         if (error.code === 'P2003')
           throw new ConflictException(
