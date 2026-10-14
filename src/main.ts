@@ -12,6 +12,10 @@ const CSV_IMPORT_ROUTES = [
   '/api/academic/teachers/import-roster',
   '/api/academic/courses/import-csv',
 ];
+const EXCEL_IMPORT_ROUTES = [
+  '/api/academic/imports/projects/preview',
+  '/api/academic/imports/projects/commit',
+];
 const CSV_IMPORT_BODY_LIMIT = '100mb';
 
 function flattenValidationMessages(errors: ValidationError[]): string[] {
@@ -25,6 +29,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.setGlobalPrefix('api');
   app.use(CSV_IMPORT_ROUTES, json({ limit: CSV_IMPORT_BODY_LIMIT }));
+  app.use(EXCEL_IMPORT_ROUTES, json({ limit: '18mb' }));
   app.use('/api/academic/students/import-csv', json({ limit: '8mb' }));
   app.use(json());
   app.use(urlencoded({ extended: true }));
