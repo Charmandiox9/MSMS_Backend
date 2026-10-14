@@ -22,10 +22,56 @@ La migración `20261014000000_academic_repository_and_hourly_teaching` amplía
   La autoría tiene orden y enlaces opcionales a profesores o estudiantes;
   un resultado puede reconocer varios proyectos.
 
-Los modelos de proyectos/investigación son estructura de persistencia. Esta
-entrega no añade pantallas CRUD para ese repositorio ni importa los registros
-de las planillas. Los errores de fechas y los montos desconocidos detectados en
-los archivos deben resolverse antes de una futura importación.
+Los proyectos e investigaciones tienen pantallas CRUD en
+`/dashboard/projects` y `/dashboard/research`, disponibles para administración,
+secretaría docente y análisis de procesos académicos. La navegación lateral y
+los accesos de Información académica incluyen ambas páginas. No se importan
+automáticamente las planillas: las fechas inválidas y montos desconocidos deben
+resolverse antes de una futura importación.
+
+## CRUD de proyectos e investigaciones
+
+La API REST usa `/api/academic/projects` y `/api/academic/research`: GET para
+listados paginados y GET `/:id` para detalle, POST para crear, PUT `/:id` para
+reemplazar campos editables y DELETE `/:id` para eliminar. Mantiene el contrato
+de mantenimiento académico existente. Todos los endpoints validan sesión y
+los tres roles de repositorio, incluyendo escrituras y eliminación.
+
+Los listados admiten `page`, `pageSize` (máximo 100) y `search` por título,
+código o unidad; investigaciones también busca por área. Proyectos añade
+`reportingYear` y `status`. Descripciones, notas y nombres de participantes
+cifrados no se usan como filtros SQL. El detalle incluye el equipo y vínculos.
+
+El formulario de proyectos cubre identificación, origen, fechas, siete montos
+decimales, moneda, documentación y participantes. Vacío significa desconocido,
+incluyendo montos: no se convierte a cero. Los importes viajan como strings
+decimales de hasta dos cifras decimales; registrar cualquier monto exige moneda.
+Las fechas se validan en el backend. Investigaciones registra descripción,
+área, fechas, equipo y un proyecto opcional; la base asegura un vínculo único.
+
+Un participante puede ser externo o vincularse a un profesor global existente.
+El backend obtiene del padrón el nombre del profesor, valida el equipo completo
+y evita repetir nombre/rol. Proyectos admite correo/género opcional; esos campos
+no pertenecen al participante de investigación. Omitir `participants` en una
+actualización conserva el equipo; `[]` lo vacía explícitamente. Crear o actualizar
+el registro y su equipo es una transacción serializable mediante PrismaService,
+que cifra PII y mantiene los índices de unicidad protegidos.
+
+PUT exige `expectedUpdatedAt`; DELETE lo exige en la query. Una versión obsoleta
+produce 409 para evitar sobrescribir cambios concurrentes. No se elimina un
+proyecto con investigación o resultados vinculados, ni una investigación con
+resultados. Los participantes propios se retiran con el registro; los profesores
+globales se conservan. La interfaz exige confirmación antes de eliminar.
+
+Los estados de carga, vacío, error y reintento, formularios y notificaciones
+usan next-intl en español e inglés. Sonner informa guardado/eliminación pendientes,
+éxitos y errores. Los diálogos conservan el foco del teclado y lo devuelven al
+cerrarse, y las vistas admiten escritorio, móvil y ambos temas.
+
+Este CRUD reutiliza el esquema ya migrado, sin otra migración. Su activación en
+el entorno conectado a `main` requiere completar previamente el procedimiento
+de conversión de datos de `personal-data-protection.md`; no se despliega ni
+convierte la base de producción al generar estas páginas.
 
 ## Perfil y contratos PH
 

@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import {
+  ProjectsController,
+  ResearchController,
+} from '../academic-repository/repository.controller';
 import { AppController } from '../app.controller';
 import { AcademicManagementController } from '../academic/academic-management.controller';
 import { HourlyPaymentsController } from '../academic/hourly-payments.controller';
@@ -22,6 +26,8 @@ import { ROLES_KEY } from './decorators/roles.decorator';
 type Access = 'PUBLIC' | 'AUTHENTICATED' | string[];
 
 const controllers: Type[] = [
+  ProjectsController,
+  ResearchController,
   HourlyPaymentsController,
   StudentsController,
   AcademicManagementController,
@@ -85,6 +91,16 @@ const ACADEMIC_READERS = [
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
     expect(routeMatrix()).toEqual({
+      'ProjectsController.list': REPOSITORY,
+      'ProjectsController.get': REPOSITORY,
+      'ProjectsController.create': REPOSITORY,
+      'ProjectsController.update': REPOSITORY,
+      'ProjectsController.remove': REPOSITORY,
+      'ResearchController.list': REPOSITORY,
+      'ResearchController.get': REPOSITORY,
+      'ResearchController.create': REPOSITORY,
+      'ResearchController.update': REPOSITORY,
+      'ResearchController.remove': REPOSITORY,
       'HourlyPaymentsController.catalog': REPOSITORY,
       'HourlyPaymentsController.teacherContracts': REPOSITORY,
       'HourlyPaymentsController.setRate': REPOSITORY,
