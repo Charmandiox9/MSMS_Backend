@@ -34,36 +34,58 @@ let currentModel = 'inicio';
 
 async function diagnoseUserEmailHashCollisions(): Promise<void> {
   const users = await client.user.findMany({
-    select: { id: true, email: true, emailHash: true },
+    select: {
+      id: true,
+      email: true,
+      emailHash: true,
+      googleId: true,
+      googleIdHash: true,
+    },
     orderBy: { id: 'asc' },
   });
-  const idsByHash = new Map<string, string[]>();
+  const idsByFieldAndHash = new Map<string, Map<string, string[]>>();
 
   for (const user of users) {
-    const storedEmail = user.email;
-    if (typeof storedEmail !== 'string') continue;
-    const email = crypto.isEncrypted(storedEmail)
-      ? crypto.decrypt(storedEmail, 'User.email')
-      : storedEmail;
-    const hash =
-      typeof user.emailHash === 'string'
-        ? user.emailHash
-        : crypto.blindIndex(normalizePiiLookup('email', email), 'User.email');
-    const ids = idsByHash.get(hash) ?? [];
-    ids.push(String(user.id));
-    idsByHash.set(hash, ids);
+    for (const [field, hashField] of [
+      ['email', 'emailHash'],
+      ['googleId', 'googleIdHash'],
+    ] as const) {
+      const storedValue = user[field];
+      if (typeof storedValue !== 'string') continue;
+      const context = `User.${field}`;
+      const value = crypto.isEncrypted(storedValue)
+        ? crypto.decrypt(storedValue, context)
+        : storedValue;
+      const storedHash = user[hashField];
+      const hash =
+        typeof storedHash === 'string'
+          ? storedHash
+          : crypto.blindIndex(normalizePiiLookup(field, value), context);
+      const idsByHash =
+        idsByFieldAndHash.get(field) ?? new Map<string, string[]>();
+      const ids = idsByHash.get(hash) ?? [];
+      ids.push(String(user.id));
+      idsByHash.set(hash, ids);
+      idsByFieldAndHash.set(field, idsByHash);
+    }
   }
 
-  const collisions = [...idsByHash.values()].filter((ids) => ids.length > 1);
-  if (collisions.length === 0) {
-    console.log('Diagnóstico User.emailHash: no se encontraron colisiones.');
+  const collisions = [...idsByFieldAndHash.entries()].flatMap(
+    ([field, idsByHash]) =>
+      [...idsByHash.values()]
+        .filter((ids) => ids.length > 1)
+        .map((ids) => ({ field, ids })),
+  );
+  if (!collisions.length) {
+    console.log('Diagnóstico PII de User: no se encontraron colisiones.');
     return;
   }
 
-  console.log(
-    `Diagnóstico User.emailHash: ${collisions.length} grupo(s) colisionado(s). IDs opacos por grupo:`,
-  );
-  for (const ids of collisions) console.log(ids.join(', '));
+  for (const { field, ids } of collisions) {
+    console.log(
+      `Diagnóstico User.${field}: ${ids.length} cuentas comparten el mismo identificador normalizado. IDs opacos: ${ids.join(', ')}`,
+    );
+  }
 }
 
 function safeErrorCode(error: unknown): string {
