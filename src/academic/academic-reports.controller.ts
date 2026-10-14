@@ -9,7 +9,17 @@ import {
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
 import { getRequestFromContext } from '../common/utils/execution-context.util';
 import { AcademicReportsService } from './academic-reports.service';
@@ -23,9 +33,19 @@ export class AcademicReportQuery {
     'assistants',
     'assistantships',
     'semesters',
+    'projects',
+    'research',
+    'researchOutputs',
+    'hourlyContracts',
   ])
   dataset: AcademicDataset = 'assistantships';
   @IsOptional() @IsUUID() semesterId?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(2200)
+  reportingYear?: number;
   @IsOptional() @IsString() @MaxLength(200) search?: string;
 }
 
@@ -64,10 +84,20 @@ export class AcademicReportsController {
   constructor(private readonly reports: AcademicReportsService) {}
   @Get()
   list(@Query() query: AcademicReportQuery) {
-    return this.reports.data(query.dataset, query.semesterId, query.search);
+    return this.reports.data(
+      query.dataset,
+      query.semesterId,
+      query.search,
+      query.reportingYear,
+    );
   }
   @Get('export')
   exportReport(@Query() query: AcademicReportQuery) {
-    return this.reports.data(query.dataset, query.semesterId, query.search);
+    return this.reports.data(
+      query.dataset,
+      query.semesterId,
+      query.search,
+      query.reportingYear,
+    );
   }
 }

@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ExecutionContext } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicReportsService } from './academic-reports.service';
 import {
@@ -18,6 +19,10 @@ describe('Academic reports', () => {
     teachingAssistant: { findMany: jest.fn() },
     assistantship: { findMany: jest.fn() },
     academicSemester: { findMany: jest.fn() },
+    project: { findMany: jest.fn() },
+    research: { findMany: jest.fn() },
+    researchOutput: { findMany: jest.fn() },
+    hourlyTeachingContract: { findMany: jest.fn() },
     user: { findFirst: jest.fn() },
   };
   let reports: AcademicReportsService;
@@ -164,6 +169,94 @@ describe('Academic reports', () => {
       expect((await reports.data(dataset)).rows).toEqual([]);
     },
   );
+  it('exports projects with financial fields filtered by reporting year', async () => {
+    prisma.project.findMany.mockResolvedValue([
+      {
+        reportingYear: 2026,
+        title: 'Proyecto marino',
+        code: 'PM-26',
+        academicUnit: 'Oceanografía',
+        status: 'ACTIVE',
+        classification: null,
+        fundingSource: 'ANID',
+        program: null,
+        currency: 'CLP',
+        totalAmount: { toString: () => '227700000' },
+        vraContribution: null,
+        vridtContribution: null,
+        recoveryAmount: null,
+        facultyContribution: null,
+        depreciationAmount: null,
+        profitabilityAmount: null,
+        startsOn: null,
+        endsOn: null,
+        closedOn: null,
+      },
+    ]);
+    const result = await reports.data('projects', undefined, undefined, 2026);
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { reportingYear: 2026 } }),
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Proyecto marino',
+      totalAmount: '227700000',
+      currency: 'CLP',
+    });
+  });
+  it('exports research outputs including outputs without a linked research record', async () => {
+    prisma.researchOutput.findMany.mockResolvedValue([
+      {
+        reportingYear: 2026,
+        kind: 'ARTICLE',
+        title: 'Artículo',
+        research: null,
+        journal: null,
+        publisher: null,
+        quartile: null,
+        indexation: null,
+        publicationDate: null,
+        _count: { authors: 2, projects: 0 },
+      },
+    ]);
+    const result = await reports.data(
+      'researchOutputs',
+      undefined,
+      undefined,
+      2026,
+    );
+    expect(result.rows[0]).toMatchObject({
+      research: null,
+      authorCount: 2,
+      projectCount: 0,
+    });
+  });
+  it('calculates estimated PH amounts and filters by semester', async () => {
+    prisma.hourlyTeachingContract.findMany.mockResolvedValue([
+      {
+        hourlyRateClp: new Prisma.Decimal(10000),
+        directHours: new Prisma.Decimal(3),
+        startsOn: new Date('2026-08-01T00:00:00.000Z'),
+        endsOn: new Date('2026-08-30T00:00:00.000Z'),
+        component: 'LECTURE',
+        parallel: 'A',
+        teachingAssignment: {
+          semester: { name: '2026-2' },
+          course: { name: 'Biología' },
+          teacher: { name: 'Ana' },
+          nrc: '10001',
+        },
+      },
+    ]);
+    const result = await reports.data('hourlyContracts', 'semester');
+    expect(prisma.hourlyTeachingContract.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { semesterId: 'semester' } }),
+    );
+    expect(result.rows[0]).toMatchObject({
+      teacher: 'Ana',
+      course: 'Biología',
+      monthlyAmountClp: '30000.00',
+    });
+  });
   const context = (name: string, authenticated = true) =>
     ({
       getType: () => 'http',
@@ -198,8 +291,11 @@ describe('Academic reports', () => {
         plainToInstance(AcademicReportQuery, {
           dataset: 'users',
           semesterId: 'bad',
+          reportingYear: 1800,
         }),
       ).map((error) => error.property),
-    ).toEqual(expect.arrayContaining(['dataset', 'semesterId']));
+    ).toEqual(
+      expect.arrayContaining(['dataset', 'semesterId', 'reportingYear']),
+    );
   });
 });
