@@ -18,4 +18,24 @@ export class AcademicImportsController {
   importProjects(@Body() input: WorkbookImportDto) {
     return this.service.importProjects(input.fileBase64);
   }
+
+  @Post('research/preview')
+  previewResearch(@Body() input: WorkbookImportDto) {
+    return this.service.previewResearch(input.fileBase64);
+  }
+
+  @Post('research/commit')
+  importResearch(@Body() input: WorkbookImportDto) {
+    return this.service.importResearch(input.fileBase64);
+  }
+
+  @Post('hourly/preview')
+  previewHourly(@Body() input: WorkbookImportDto) {
+    return this.service.previewHourly(input.fileBase64, input.teacherEmails);
+  }
+
+  @Post('hourly/commit')
+  importHourly(@Body() input: WorkbookImportDto) {
+    return this.service.importHourly(input.fileBase64, input.teacherEmails);
+  }
 }

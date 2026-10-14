@@ -15,6 +15,10 @@ const CSV_IMPORT_ROUTES = [
 const EXCEL_IMPORT_ROUTES = [
   '/api/academic/imports/projects/preview',
   '/api/academic/imports/projects/commit',
+  '/api/academic/imports/research/preview',
+  '/api/academic/imports/research/commit',
+  '/api/academic/imports/hourly/preview',
+  '/api/academic/imports/hourly/commit',
 ];
 const CSV_IMPORT_BODY_LIMIT = '100mb';
 
