@@ -13,6 +13,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { AcademicManagementController } from './academic-management.controller';
 import { AcademicManagementService } from './academic-management.service';
+import { HourlyPaymentsService } from './hourly-payments.service';
 import {
   CourseTeachersDto,
   CreateCourseDto,
@@ -39,6 +40,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
   const prisma = {
     academicSemester: { findFirst: jest.fn() },
     teacher: {
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       findUnique: jest.fn(),
@@ -54,14 +56,21 @@ describe('Gestión individual de docentes y asignaturas', () => {
     },
     studentEnrollment: { findMany: jest.fn() },
     assistantship: { count: jest.fn() },
+    hourlyTeachingContract: { count: jest.fn() },
     $transaction: jest.fn(),
   };
   let service: AcademicManagementService;
+  let hourlyPayments: { sync: jest.Mock; removeOmitted: jest.Mock };
   let controller: AcademicManagementController;
   beforeAll(async () => {
+    hourlyPayments = { sync: jest.fn(), removeOmitted: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
         AcademicManagementService,
+        {
+          provide: HourlyPaymentsService,
+          useValue: hourlyPayments,
+        },
         { provide: PrismaService, useValue: prisma },
       ],
       controllers: [AcademicManagementController],
@@ -81,6 +90,10 @@ describe('Gestión individual de docentes y asignaturas', () => {
     });
     prisma.teacher.create.mockResolvedValue({ id: teacherId, ...profile });
     prisma.teacher.findUnique.mockResolvedValue({ id: teacherId, ...profile });
+    prisma.teacher.findFirst.mockResolvedValue({
+      id: teacherId,
+      rut: '12345678-5',
+    });
     prisma.teacher.findUniqueOrThrow.mockResolvedValue({
       id: teacherId,
       ...profile,
@@ -93,6 +106,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
     prisma.teachingAssignment.findMany.mockResolvedValue([]);
     prisma.studentEnrollment.findMany.mockResolvedValue([]);
     prisma.assistantship.count.mockResolvedValue(0);
+    prisma.hourlyTeachingContract.count.mockResolvedValue(0);
     prisma.course.findFirst.mockResolvedValue(null);
     prisma.course.create.mockResolvedValue(course);
   });
@@ -210,6 +224,96 @@ describe('Gestión individual de docentes y asignaturas', () => {
       NotFoundException,
     );
     expect(prisma.teacher.update).not.toHaveBeenCalled();
+  });
+  it('normaliza y valida el RUT y conserva los campos omitidos en una edición', async () => {
+    await service.createTeacher({
+      ...profile,
+      rut: '12.345.678-5',
+      academicDegree: 'MASTER',
+      certification: 'LEVEL_1',
+      academicUnit: 'EPRYMA',
+    });
+    expect(prisma.teacher.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        rut: '12345678-5',
+        academicDegree: 'MASTER',
+        certification: 'LEVEL_1',
+      }),
+    });
+    await expect(
+      service.createTeacher({ ...profile, rut: '12345678-0' }),
+    ).rejects.toThrow(BadRequestException);
+    await service.updateTeacher(teacherId, profile);
+    expect(prisma.teacher.update).toHaveBeenLastCalledWith({
+      where: { id: teacherId },
+      data: profile,
+    });
+  });
+  it('rechaza una fecha de salida anterior al ingreso guardado', async () => {
+    prisma.teacher.findUnique.mockResolvedValue({
+      id: teacherId,
+      ...profile,
+      joinedOn: new Date('2026-08-01'),
+      leftOn: null,
+    });
+    await expect(
+      service.updateTeacher(teacherId, { ...profile, leftOn: '2026-07-31' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.teacher.update).not.toHaveBeenCalled();
+  });
+  it('guarda perfil, asignaturas y contratos PH en la misma transacción', async () => {
+    const contracts = [
+      {
+        nrc: '10001',
+        payRateId: '33333333-3333-4333-8333-333333333333',
+        component: 'LABORATORY' as const,
+        parallel: 'L3',
+        directHours: 3,
+        startsOn: '2026-08-17',
+        endsOn: '2026-12-19',
+      },
+    ];
+    await service.createTeacher({
+      ...profile,
+      rut: '12345678-5',
+      semesterId,
+      nrcs: ['10001'],
+      hourlyContracts: contracts,
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(hourlyPayments.sync).toHaveBeenCalledWith(
+      prisma,
+      teacherId,
+      semesterId,
+      contracts,
+    );
+    prisma.teacher.findFirst.mockResolvedValue(null);
+    await expect(
+      service.updateTeacher(teacherId, {
+        ...profile,
+        semesterId,
+        nrcs: ['10001'],
+        hourlyContracts: contracts,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+  it('protege las asignaturas con contratos PH cuando no se solicita retirarlos', async () => {
+    prisma.teachingAssignment.findMany.mockResolvedValue([
+      {
+        id: 'assignment',
+        teacherId,
+        courseId: course.id,
+        course,
+        teacher: { id: teacherId, ...profile },
+        nrc: '10001',
+      },
+    ]);
+    prisma.hourlyTeachingContract.count.mockResolvedValue(1);
+    await expect(
+      service.updateTeacher(teacherId, { ...profile, semesterId, nrcs: [] }),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.teachingAssignment.deleteMany).not.toHaveBeenCalled();
+    expect(hourlyPayments.removeOmitted).not.toHaveBeenCalled();
   });
   it('crea NRC y horarios y reutiliza el registro del catálogo sin modificar el pasado', async () => {
     prisma.courseSchedule.findMany.mockResolvedValue([]);

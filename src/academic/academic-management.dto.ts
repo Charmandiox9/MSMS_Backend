@@ -1,16 +1,22 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsEmail,
+  IsEnum,
+  IsDateString,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   ValidateIf,
+  ValidateNested,
+  Matches,
 } from 'class-validator';
+import { AcademicDegree, TeacherCertification } from '@prisma/client';
+import { HourlyContractDto } from './hourly-payments.dto';
 import { UpdateCourseDto } from './update-course.dto';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -35,6 +41,46 @@ export class TeacherInputDto {
   @IsString()
   @MaxLength(50)
   employeeCode?: string | null;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.replace(/\./g, '').replace(/\s/g, '').toUpperCase() || null
+      : value,
+  )
+  @Matches(/^\d{7,8}-[\dK]$/)
+  rut?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  academicUnit?: string | null;
+
+  @IsOptional()
+  @IsEnum(AcademicDegree)
+  academicDegree?: AcademicDegree | null;
+
+  @IsOptional()
+  @IsEnum(TeacherCertification)
+  certification?: TeacherCertification | null;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  joinedOn?: string | null;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  leftOn?: string | null;
+
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => HourlyContractDto)
+  hourlyContracts?: HourlyContractDto[];
 
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsUUID()

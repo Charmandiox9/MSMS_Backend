@@ -6,6 +6,8 @@ import {
   AcademicSemestersController,
 } from './academic.controller';
 import { AcademicService } from './academic.service';
+import { HourlyPaymentsController } from './hourly-payments.controller';
+import { HourlyPaymentsService } from './hourly-payments.service';
 import { AcademicManagementService } from './academic-management.service';
 import { AcademicManagementController } from './academic-management.controller';
 import { AcademicReportsService } from './academic-reports.service';
@@ -17,6 +19,7 @@ import {
 @Module({
   imports: [PrismaModule],
   controllers: [
+    HourlyPaymentsController,
     AcademicManagementController,
     AcademicController,
     AcademicCoursesController,
@@ -24,6 +27,7 @@ import {
     AcademicReportsController,
   ],
   providers: [
+    HourlyPaymentsService,
     AcademicService,
     AcademicManagementService,
     AcademicReportsService,

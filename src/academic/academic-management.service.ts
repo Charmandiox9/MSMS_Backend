@@ -7,6 +7,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadCurrentCourses } from './current-courses';
+import { HourlyPaymentsService } from './hourly-payments.service';
+import { contractDate } from './hourly-payment-calculator';
 import {
   CourseTeachersDto,
   CreateCourseDto,
@@ -15,7 +17,10 @@ import {
 
 @Injectable()
 export class AcademicManagementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hourlyPayments: HourlyPaymentsService,
+  ) {}
 
   /** A semester offering is identified by NRC, not by a global course alone. */
   async currentCourses() {
@@ -74,10 +79,42 @@ export class AcademicManagementService {
   }
 
   private profile(input: TeacherInputDto) {
+    this.validateTeacherDates(input);
+    const rut =
+      input.rut?.replace(/\./g, '').replace(/\s/g, '').toUpperCase() || null;
+    if (rut) {
+      const [body, digit] = rut.split('-');
+      let factor = 2,
+        sum = 0;
+      for (const number of [...body].reverse()) {
+        sum += Number(number) * factor;
+        factor = factor === 7 ? 2 : factor + 1;
+      }
+      const rest = 11 - (sum % 11);
+      const expected = rest === 11 ? '0' : rest === 10 ? 'K' : String(rest);
+      if (!/^\d{7,8}-[\dK]$/.test(rut) || digit !== expected)
+        throw new BadRequestException('El RUT del docente no es válido');
+    }
     return {
       name: input.name.trim(),
       email: input.email.trim().toLowerCase(),
       employeeCode: input.employeeCode?.trim() || null,
+      ...(input.rut === undefined ? {} : { rut }),
+      ...(input.academicUnit === undefined
+        ? {}
+        : { academicUnit: input.academicUnit?.trim() || null }),
+      ...(input.academicDegree === undefined
+        ? {}
+        : { academicDegree: input.academicDegree }),
+      ...(input.certification === undefined
+        ? {}
+        : { certification: input.certification }),
+      ...(input.joinedOn === undefined
+        ? {}
+        : { joinedOn: input.joinedOn ? contractDate(input.joinedOn) : null }),
+      ...(input.leftOn === undefined
+        ? {}
+        : { leftOn: input.leftOn ? contractDate(input.leftOn) : null }),
     };
   }
 
@@ -85,6 +122,7 @@ export class AcademicManagementService {
     return this.write(async (tx) => {
       const teacher = await tx.teacher.create({ data: this.profile(input) });
       await this.assignTeacher(tx, teacher.id, input);
+      await this.saveHourlyContracts(tx, teacher.id, input);
       return tx.teacher.findUniqueOrThrow({
         where: { id: teacher.id },
         include: {
@@ -99,10 +137,24 @@ export class AcademicManagementService {
 
   updateTeacher(id: string, input: TeacherInputDto) {
     return this.write(async (tx) => {
-      if (!(await tx.teacher.findUnique({ where: { id } })))
-        throw new NotFoundException('El docente no existe');
+      const current = await tx.teacher.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('El docente no existe');
+      this.validateTeacherDates(input, current);
       await tx.teacher.update({ where: { id }, data: this.profile(input) });
+      if (input.hourlyContracts !== undefined) {
+        if (!input.semesterId)
+          throw new BadRequestException(
+            'Debes indicar el semestre para guardar contratos PH',
+          );
+        await this.hourlyPayments.removeOmitted(
+          tx,
+          id,
+          input.semesterId,
+          input.hourlyContracts,
+        );
+      }
       await this.assignTeacher(tx, id, input);
+      await this.saveHourlyContracts(tx, id, input);
       return tx.teacher.findUniqueOrThrow({
         where: { id },
         include: {
@@ -113,6 +165,28 @@ export class AcademicManagementService {
         },
       });
     });
+  }
+
+  private validateTeacherDates(
+    input: TeacherInputDto,
+    current?: { joinedOn: Date | null; leftOn: Date | null },
+  ) {
+    const joinedOn =
+      input.joinedOn === undefined
+        ? current?.joinedOn
+        : input.joinedOn
+          ? contractDate(input.joinedOn)
+          : null;
+    const leftOn =
+      input.leftOn === undefined
+        ? current?.leftOn
+        : input.leftOn
+          ? contractDate(input.leftOn)
+          : null;
+    if (joinedOn && leftOn && leftOn < joinedOn)
+      throw new BadRequestException(
+        'La fecha de salida no puede ser anterior a la de ingreso',
+      );
   }
 
   private async assignTeacher(
@@ -160,6 +234,33 @@ export class AcademicManagementService {
     }
   }
 
+  private async saveHourlyContracts(
+    tx: Prisma.TransactionClient,
+    teacherId: string,
+    input: TeacherInputDto,
+  ) {
+    if (input.hourlyContracts === undefined) return;
+    if (!input.semesterId)
+      throw new BadRequestException(
+        'Debes indicar el semestre para guardar contratos PH',
+      );
+    if (
+      input.hourlyContracts.length &&
+      !(await tx.teacher.findFirst({
+        where: { id: teacherId, rut: { not: null } },
+      }))
+    )
+      throw new BadRequestException(
+        'Registra un RUT válido antes de crear contratos PH',
+      );
+    await this.hourlyPayments.sync(
+      tx,
+      teacherId,
+      input.semesterId,
+      input.hourlyContracts,
+    );
+  }
+
   private async removeAssignments(tx: Prisma.TransactionClient, ids: string[]) {
     if (!ids.length) return;
     if (
@@ -169,6 +270,14 @@ export class AcademicManagementService {
     )
       throw new ConflictException(
         'No puedes desvincular una asignatura con ayudantías asociadas',
+      );
+    if (
+      await tx.hourlyTeachingContract.count({
+        where: { teachingAssignmentId: { in: ids } },
+      })
+    )
+      throw new ConflictException(
+        'Elimina primero los contratos PH de la asignatura',
       );
     await tx.teachingAssignment.deleteMany({ where: { id: { in: ids } } });
   }

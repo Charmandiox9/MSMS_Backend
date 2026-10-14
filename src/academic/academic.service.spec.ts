@@ -694,10 +694,12 @@ describe('AcademicService', () => {
       expect(sql).toContain('unaccent(t."name") ILIKE unaccent(?)');
       expect(sql).toContain('unaccent(t."email")');
       expect(sql).toContain('"employeeCode"');
+      expect(sql).toContain('"rut"');
       expect(sql).toContain('a."nrc" ILIKE ?');
       expect(sql).toContain('s."isActive"');
       // El término viaja como parámetro, nunca concatenado en el SQL.
       expect(rawQueryValues()).toEqual([
+        '%álvaro%',
         '%álvaro%',
         '%álvaro%',
         '%álvaro%',

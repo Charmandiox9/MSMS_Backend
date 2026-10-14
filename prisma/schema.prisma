@@ -50,6 +50,7 @@ model AcademicSemester {
   assignments        TeachingAssignment[]
   courseSchedules    CourseSchedule[]
   studentEnrollments StudentEnrollment[]
+  hourlyPayRates     HourlyPayRate[]
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
@@ -58,16 +59,23 @@ model AcademicSemester {
 }
 
 model Teacher {
-  id           String               @id @default(uuid())
-  name         String
-  email        String               @unique
-  employeeCode String?              @unique
-  isActive     Boolean              @default(true)
-  joinedOn     DateTime?            @db.Date
-  leftOn       DateTime?            @db.Date
-  assignments  TeachingAssignment[]
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id                     String                 @id @default(uuid())
+  name                   String
+  email                  String                 @unique
+  employeeCode           String?                @unique
+  rut                    String?                @unique
+  academicUnit           String?
+  academicDegree         AcademicDegree?
+  certification          TeacherCertification?
+  projectParticipations  ProjectParticipant[]
+  researchParticipations ResearchParticipant[]
+  outputAuthorships      ResearchOutputAuthor[]
+  isActive               Boolean                @default(true)
+  joinedOn               DateTime?              @db.Date
+  leftOn                 DateTime?              @db.Date
+  assignments            TeachingAssignment[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
 }
 
 model Course {
@@ -86,14 +94,15 @@ model Course {
 
 /// Academic students are independent from administrative login accounts.
 model Student {
-  id                 String               @id @default(uuid())
+  id                 String                 @id @default(uuid())
   name               String
-  email              String               @unique
+  email              String                 @unique
   enrollments        StudentEnrollment[]
   justificationInbox JustificationInbox[]
   justifications     Justification[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  outputAuthorships  ResearchOutputAuthor[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 }
 
 /// A student attends an NRC in a semester, independently of teachers or time slots.
@@ -114,21 +123,23 @@ model StudentEnrollment {
 }
 
 model TeachingAssignment {
-  id             String           @id @default(uuid())
-  semesterId     String
-  teacherId      String
-  courseId       String
-  nrc            String           @default("")
+  id              String                   @id @default(uuid())
+  semesterId      String
+  teacherId       String
+  courseId        String
+  nrc             String                   @default("")
   /// Deprecated: retained only for historical data. New imports use nrc.
-  parallel       String           @default("")
-  semester       AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
-  teacher        Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  createdAt      DateTime         @default(now())
-  assistantships Assistantship[]
+  parallel        String                   @default("")
+  semester        AcademicSemester         @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  teacher         Teacher                  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt       DateTime                 @default(now())
+  assistantships  Assistantship[]
+  hourlyContracts HourlyTeachingContract[]
 
   // Composite reference ensures an assistantship uses this assignment's course.
   @@unique([id, courseId])
+  @@unique([id, semesterId])
   @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
@@ -358,4 +369,239 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
+}
+
+enum AcademicDegree {
+  PROFESSIONAL
+  MASTER
+  DOCTOR
+  NOT_APPLICABLE
+}
+
+enum TeacherCertification {
+  NONE
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+}
+
+enum HourlyTeacherCategory {
+  NEW
+  EXISTING
+  DIVING_PRINCIPAL
+  DIVING_SECONDARY
+}
+
+enum TeachingComponent {
+  LECTURE
+  WORKSHOP
+  LABORATORY
+  FIELDWORK
+  ASSISTANTSHIP
+}
+
+/// Configurable CLP monthly payment per direct teaching hour, per semester.
+model HourlyPayRate {
+  id             String                   @id @default(uuid())
+  semesterId     String
+  category       HourlyTeacherCategory
+  academicDegree AcademicDegree
+  certification  TeacherCertification
+  hourlyRateClp  Decimal                  @db.Decimal(12, 2)
+  semester       AcademicSemester         @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  contracts      HourlyTeachingContract[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([id, semesterId])
+  @@unique([semesterId, category, academicDegree, certification])
+}
+
+/// A component/parallel of a semester assignment. Snapshots preserve historical pay.
+model HourlyTeachingContract {
+  id                   String             @id @default(uuid())
+  semesterId           String
+  teachingAssignmentId String
+  payRateId            String
+  component            TeachingComponent
+  parallel             String
+  directHours          Decimal            @db.Decimal(5, 2)
+  startsOn             DateTime           @db.Date
+  endsOn               DateTime           @db.Date
+  hourlyRateClp        Decimal            @db.Decimal(12, 2)
+  teachingAssignment   TeachingAssignment @relation(fields: [teachingAssignmentId, semesterId], references: [id, semesterId], onDelete: Restrict)
+  payRate              HourlyPayRate      @relation(fields: [payRateId, semesterId], references: [id, semesterId], onDelete: Restrict)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([teachingAssignmentId, component, parallel])
+  @@index([semesterId])
+  @@index([payRateId, semesterId])
+}
+
+enum ProjectStatus {
+  REGISTERED
+  AWARDED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+/// General register: research, training, services, agreements and academic programs.
+model Project {
+  id                  String                  @id @default(uuid())
+  reportingYear       Int
+  academicUnit        String
+  faculty             String?
+  resolution          String?
+  code                String?                 @unique
+  title               String
+  classification      String?
+  fundingSource       String?
+  program             String?
+  competition         String?
+  applicationArea     String?
+  participationScope  String?
+  status              ProjectStatus           @default(REGISTERED)
+  officialized        Boolean?
+  startsOn            DateTime?               @db.Date
+  endsOn              DateTime?               @db.Date
+  revisedEndsOn       DateTime?               @db.Date
+  closedOn            DateTime?               @db.Date
+  currency            String?
+  totalAmount         Decimal?                @db.Decimal(18, 2)
+  vraContribution     Decimal?                @db.Decimal(18, 2)
+  vridtContribution   Decimal?                @db.Decimal(18, 2)
+  recoveryAmount      Decimal?                @db.Decimal(18, 2)
+  facultyContribution Decimal?                @db.Decimal(18, 2)
+  depreciationAmount  Decimal?                @db.Decimal(18, 2)
+  profitabilityAmount Decimal?                @db.Decimal(18, 2)
+  folderUrl           String?
+  notes               String?
+  participants        ProjectParticipant[]
+  research            Research?
+  outputs             ResearchOutputProject[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([reportingYear, academicUnit])
+  @@index([status])
+}
+
+/// Named external participants can be recorded without creating a teacher account.
+model ProjectParticipant {
+  id           String   @id @default(uuid())
+  projectId    String
+  teacherId    String?
+  name         String
+  role         String
+  contactEmail String?
+  gender       String?
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  teacher      Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, name, role])
+  @@index([teacherId])
+}
+
+/// Research activity can be linked to a funded project or registered independently.
+model Research {
+  id           String                @id @default(uuid())
+  projectId    String?               @unique
+  code         String?               @unique
+  title        String
+  description  String?
+  academicUnit String
+  researchArea String?
+  startsOn     DateTime?             @db.Date
+  endsOn       DateTime?             @db.Date
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  participants ResearchParticipant[]
+  outputs      ResearchOutput[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([academicUnit])
+}
+
+model ResearchParticipant {
+  id         String   @id @default(uuid())
+  researchId String
+  teacherId  String?
+  name       String
+  role       String
+  research   Research @relation(fields: [researchId], references: [id], onDelete: Cascade)
+  teacher    Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([researchId, name, role])
+  @@index([teacherId])
+}
+
+enum ResearchOutputKind {
+  ARTICLE
+  BOOK
+  BOOK_CHAPTER
+  INTELLECTUAL_PROPERTY
+}
+
+model ResearchOutput {
+  id                         String                  @id @default(uuid())
+  researchId                 String?
+  kind                       ResearchOutputKind
+  reportingYear              Int
+  title                      String
+  doi                        String?                 @unique
+  journal                    String?
+  issn                       String?
+  isbn                       String?
+  quartile                   String?
+  fiveYearImpactFactor       Decimal?                @db.Decimal(10, 4)
+  publicationDate            DateTime?               @db.Date
+  indexation                 String?
+  publisher                  String?
+  publicationPlace           String?
+  studentParticipation       Boolean?
+  internationalParticipation Boolean?
+  intellectualPropertyType   String?
+  phase                      String?
+  phaseDate                  DateTime?               @db.Date
+  notes                      String?
+  research                   Research?               @relation(fields: [researchId], references: [id], onDelete: Restrict)
+  authors                    ResearchOutputAuthor[]
+  projects                   ResearchOutputProject[]
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+
+  @@index([reportingYear, kind])
+  @@index([researchId])
+}
+
+model ResearchOutputAuthor {
+  id          String         @id @default(uuid())
+  outputId    String
+  teacherId   String?
+  studentId   String?
+  name        String
+  position    Int
+  affiliation String?
+  isStudent   Boolean?
+  output      ResearchOutput @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  teacher     Teacher?       @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student     Student?       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([outputId, position])
+  @@index([teacherId])
+  @@index([studentId])
+}
+
+/// A publication can acknowledge several projects, as in the EPRYMA workbook.
+model ResearchOutputProject {
+  outputId  String
+  projectId String
+  output    ResearchOutput @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@id([outputId, projectId])
+  @@index([projectId])
 }

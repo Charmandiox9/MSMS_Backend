@@ -342,6 +342,7 @@ export class AcademicService {
       WHERE unaccent(t."name") ILIKE unaccent(${pattern})
         OR unaccent(t."email") ILIKE unaccent(${pattern})
         OR unaccent(COALESCE(t."employeeCode", '')) ILIKE unaccent(${pattern})
+        OR unaccent(COALESCE(t."rut", '')) ILIKE unaccent(${pattern})
         OR EXISTS (
           SELECT 1
           FROM "TeachingAssignment" a

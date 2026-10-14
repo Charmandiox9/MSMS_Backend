@@ -4,6 +4,7 @@ import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppController } from '../app.controller';
 import { AcademicManagementController } from '../academic/academic-management.controller';
+import { HourlyPaymentsController } from '../academic/hourly-payments.controller';
 import { StudentsController } from '../students/students.controller';
 import {
   AcademicController,
@@ -21,6 +22,7 @@ import { ROLES_KEY } from './decorators/roles.decorator';
 type Access = 'PUBLIC' | 'AUTHENTICATED' | string[];
 
 const controllers: Type[] = [
+  HourlyPaymentsController,
   StudentsController,
   AcademicManagementController,
   AppController,
@@ -78,6 +80,16 @@ const ACADEMIC_READERS = [
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
     expect(routeMatrix()).toEqual({
+      'HourlyPaymentsController.catalog': [
+        'ACADEMIC_PROCESS_ANALYST',
+        'ACADEMIC_SECRETARY',
+      ],
+      'HourlyPaymentsController.teacherContracts': [
+        'ACADEMIC_PROCESS_ANALYST',
+        'ACADEMIC_SECRETARY',
+      ],
+      'HourlyPaymentsController.setRate': SECRETARY,
+      'HourlyPaymentsController.preview': SECRETARY,
       'StudentsController.list': ACADEMIC_READERS,
       'StudentsController.get': ACADEMIC_READERS,
       'StudentsController.create': SECRETARY,
