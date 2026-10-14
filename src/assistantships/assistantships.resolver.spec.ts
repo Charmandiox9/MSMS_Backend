@@ -17,6 +17,7 @@ import {
 describe('AssistantshipsResolver contract', () => {
   const service = {
     list: jest.fn(),
+    get: jest.fn(),
     options: jest.fn(),
     assignments: jest.fn(),
     register: jest.fn(),
@@ -44,6 +45,10 @@ describe('AssistantshipsResolver contract', () => {
   it('supplies pagination defaults when filters are absent', () => {
     void resolver.assistantships();
     expect(service.list).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
+  });
+  it('delegates single assistantship lookup to the service', () => {
+    void resolver.assistantship({ id: 'assistantship-123' });
+    expect(service.get).toHaveBeenCalledWith('assistantship-123');
   });
   it('delegates registration and assignment queries to the service', () => {
     const input = new RegisterAssistantshipInput();
@@ -105,6 +110,7 @@ describe('Assistantships GraphQL schema', () => {
     expect(Object.keys(schema.getQueryType()!.getFields())).toEqual(
       expect.arrayContaining([
         'assistantships',
+        'assistantship',
         'assistantshipOptions',
         'assistantshipAssignments',
       ]),

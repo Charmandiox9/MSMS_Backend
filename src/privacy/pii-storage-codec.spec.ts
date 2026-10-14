@@ -11,8 +11,12 @@ describe('Persistencia cifrada y contratos de consulta Prisma', () => {
       email: ' PERSONA@UCN.CL ',
       rut: '12.345.678-5',
       employeeCode: null,
+      professionalTitle: 'Bióloga Marina',
+      institution: 'Universidad Católica del Norte',
     }) as Record<string, unknown>;
     expect(JSON.stringify(row)).not.toContain('Álvaro');
+    expect(JSON.stringify(row)).not.toContain('Bióloga Marina');
+    expect(JSON.stringify(row)).not.toContain('Universidad Católica del Norte');
     expect(row.emailHash).toBe(
       crypto.blindIndex('persona@ucn.cl', 'Teacher.email'),
     );
@@ -25,6 +29,8 @@ describe('Persistencia cifrada y contratos de consulta Prisma', () => {
       email: ' PERSONA@UCN.CL ',
       rut: '12.345.678-5',
       employeeCode: null,
+      professionalTitle: 'Bióloga Marina',
+      institution: 'Universidad Católica del Norte',
     });
   });
   it('preserva transacciones: prepara createMany, upserts y escrituras anidadas sin texto en claro', () => {

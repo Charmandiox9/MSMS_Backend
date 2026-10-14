@@ -18,7 +18,15 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
     searchable: ['email'],
   },
   Teacher: {
-    fields: ['name', 'email', 'employeeCode', 'rut', 'academicUnit'],
+    fields: [
+      'name',
+      'email',
+      'employeeCode',
+      'rut',
+      'academicUnit',
+      'professionalTitle',
+      'institution',
+    ],
     lookups: {
       email: 'emailHash',
       employeeCode: 'employeeCodeHash',

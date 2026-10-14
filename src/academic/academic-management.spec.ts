@@ -18,6 +18,7 @@ import {
   CourseTeachersDto,
   CreateCourseDto,
   TeacherInputDto,
+  ToggleTeacherStatusDto,
 } from './academic-management.dto';
 
 const semesterId = '11111111-1111-4111-8111-111111111111';
@@ -225,6 +226,27 @@ describe('Gestión individual de docentes y asignaturas', () => {
     );
     expect(prisma.teacher.update).not.toHaveBeenCalled();
   });
+  it('cambia el estado del profesor y conserva sus vínculos del semestre', async () => {
+    prisma.teacher.update.mockResolvedValue({
+      id: teacherId,
+      ...profile,
+      isActive: false,
+      assignments: [],
+    });
+    await expect(
+      service.setTeacherStatus(teacherId, { isActive: false }),
+    ).resolves.toMatchObject({ id: teacherId, isActive: false });
+    expect(prisma.teacher.update).toHaveBeenCalledWith({
+      where: { id: teacherId },
+      data: { isActive: false },
+      include: {
+        assignments: {
+          where: { semester: { isActive: true } },
+          include: { course: true, semester: true },
+        },
+      },
+    });
+  });
   it('normaliza y valida el RUT y conserva los campos omitidos en una edición', async () => {
     await service.createTeacher({
       ...profile,
@@ -232,12 +254,16 @@ describe('Gestión individual de docentes y asignaturas', () => {
       academicDegree: 'MASTER',
       certification: 'LEVEL_1',
       academicUnit: 'EPRYMA',
+      professionalTitle: 'Bióloga Marina',
+      institution: 'Universidad Católica del Norte',
     });
     expect(prisma.teacher.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         rut: '12345678-5',
         academicDegree: 'MASTER',
         certification: 'LEVEL_1',
+        professionalTitle: 'Bióloga Marina',
+        institution: 'Universidad Católica del Norte',
       }),
     });
     await expect(
@@ -455,6 +481,16 @@ describe('Gestión individual de docentes y asignaturas', () => {
   it('valida perfiles, UUID, NRC y horarios en los DTO', async () => {
     expect(
       await validate(
+        plainToInstance(ToggleTeacherStatusDto, { isActive: false }),
+      ),
+    ).toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(ToggleTeacherStatusDto, { isActive: 'false' }),
+      ),
+    ).not.toHaveLength(0);
+    expect(
+      await validate(
         plainToInstance(TeacherInputDto, {
           ...profile,
           semesterId,
@@ -496,9 +532,10 @@ describe('Gestión individual de docentes y asignaturas', () => {
   it.each([
     'createTeacher',
     'updateTeacher',
+    'setTeacherStatus',
     'createCourse',
     'setCourseTeachers',
-  ] as const)('protege %s para administración y secretaría', (method) => {
+  ] as const)('protege %s según el rol correspondiente', (method) => {
     const guard = new RolesGuard(new Reflector());
     for (const role of [
       'SYSTEM_ADMIN',
@@ -516,7 +553,9 @@ describe('Gestión individual de docentes y asignaturas', () => {
       } as unknown as ExecutionContext;
       if (
         ['SYSTEM_ADMIN', 'ACADEMIC_SECRETARY'].includes(role) ||
-        (['createTeacher', 'updateTeacher'].includes(method) &&
+        (['createTeacher', 'updateTeacher', 'setTeacherStatus'].includes(
+          method,
+        ) &&
           role === 'ACADEMIC_PROCESS_ANALYST')
       )
         expect(guard.canActivate(context)).toBe(true);

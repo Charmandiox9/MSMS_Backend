@@ -113,6 +113,7 @@ describe('Matriz de permisos por endpoint', () => {
       'AcademicManagementController.currentCourses': ACADEMIC_READERS,
       'AcademicManagementController.createTeacher': REPOSITORY,
       'AcademicManagementController.updateTeacher': REPOSITORY,
+      'AcademicManagementController.setTeacherStatus': REPOSITORY,
       'AcademicManagementController.createCourse': SECRETARY,
       'AcademicManagementController.setCourseTeachers': SECRETARY,
       'AppController.getHello': 'PUBLIC',

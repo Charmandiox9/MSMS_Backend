@@ -17,17 +17,17 @@ No se descifra en SQL y no se admite una lectura alternativa en claro.
 
 `src/privacy/pii-policy.ts` contiene el inventario de campos protegido:
 
-| Registros | Campos con cifrado de aplicación |
-| --- | --- |
-| Usuarios y precargas | Nombre, correo, identificador Google, avatar |
-| Profesores | Nombre, correo, código de funcionario, RUT, unidad |
-| Estudiantes | Nombre, correo |
-| Ayudantes | Nombre, correo, código estudiantil |
-| Justificaciones y bandeja | Correo, motivo, categoría, rechazo, clave de evidencia, identificador de respuesta |
-| Historial de justificaciones | Notas |
-| Proyectos y participantes | Notas, carpeta, nombres, contacto y género |
-| Investigaciones y participantes | Descripción, nombres |
-| Resultados académicos y autoría | Notas, nombres, afiliación |
+| Registros                       | Campos con cifrado de aplicación                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Usuarios y precargas            | Nombre, correo, identificador Google, avatar                                                   |
+| Profesores                      | Nombre, correo, código de funcionario, RUT, unidad, título profesional e institución de egreso |
+| Estudiantes                     | Nombre, correo                                                                                 |
+| Ayudantes                       | Nombre, correo, código estudiantil                                                             |
+| Justificaciones y bandeja       | Correo, motivo, categoría, rechazo, clave de evidencia, identificador de respuesta             |
+| Historial de justificaciones    | Notas                                                                                          |
+| Proyectos y participantes       | Notas, carpeta, nombres, contacto y género                                                     |
+| Investigaciones y participantes | Descripción, nombres                                                                           |
+| Resultados académicos y autoría | Notas, nombres, afiliación                                                                     |
 
 Otros datos vinculados a personas, incluyendo fechas, grado/certificación,
 horas, relaciones y pagos, conservan tipos nativos para las reglas académicas

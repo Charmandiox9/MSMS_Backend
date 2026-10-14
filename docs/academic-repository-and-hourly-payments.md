@@ -77,8 +77,12 @@ automáticamente el backend ni el frontend.
 ## Perfil y contratos PH
 
 El perfil global añade RUT normalizado con dígito verificador, unidad académica,
-grado y certificación. Las fechas de ingreso/salida ya existentes se exponen en
-el formulario. Email continúa siendo obligatorio para mantener la identidad y
+grado, certificación, título profesional e institución de egreso. Los campos
+de título e institución también se cifran como PII en la base. La migración
+`20261014020000_add_teacher_accreditation_details` agrega esas dos columnas.
+Los profesores se pueden activar o desactivar sin borrar sus vínculos ni
+contratos históricos. Las fechas de
+ingreso/salida ya existentes se exponen en el formulario. Email continúa siendo obligatorio para mantener la identidad y
 los flujos actuales; el Excel de PH no lo proporciona.
 
 `HourlyPayRate` configura por semestre el valor mensual por hora directa.
@@ -118,14 +122,14 @@ El caso fuente de 3 horas, tarifa 52.000 y fechas 17/08/2026–19/12/2026 produc
 
 Se usa REST para conservar el contrato de mantenimiento docente existente:
 
-| Endpoint | Función | Acceso |
-| --- | --- | --- |
-| `GET /api/academic/hourly-payments/rates` | Semestre activo y tarifas | Secretaría, analista, administración |
-| `POST /api/academic/hourly-payments/rates` | Crear/actualizar una combinación de tarifa | Secretaría, analista, administración |
-| `POST /api/academic/hourly-payments/preview` | Calcular contratos sin guardar | Secretaría, analista, administración |
-| `GET /api/academic/hourly-payments/teachers/:id` | Contratos activos de un docente con cálculo | Secretaría, analista, administración |
-| `POST /api/academic/teachers` | Crear perfil, vínculos y contratos en una transacción | Secretaría, analista, administración |
-| `PATCH /api/academic/teachers/:id` | Actualizar perfil, vínculos y contratos en una transacción | Secretaría, analista, administración |
+| Endpoint                                         | Función                                                    | Acceso                               |
+| ------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------ |
+| `GET /api/academic/hourly-payments/rates`        | Semestre activo y tarifas                                  | Secretaría, analista, administración |
+| `POST /api/academic/hourly-payments/rates`       | Crear/actualizar una combinación de tarifa                 | Secretaría, analista, administración |
+| `POST /api/academic/hourly-payments/preview`     | Calcular contratos sin guardar                             | Secretaría, analista, administración |
+| `GET /api/academic/hourly-payments/teachers/:id` | Contratos activos de un docente con cálculo                | Secretaría, analista, administración |
+| `POST /api/academic/teachers`                    | Crear perfil, vínculos y contratos en una transacción      | Secretaría, analista, administración |
+| `PATCH /api/academic/teachers/:id`               | Actualizar perfil, vínculos y contratos en una transacción | Secretaría, analista, administración |
 
 `hourlyContracts` es opcional en los endpoints docentes. Si se omite, se preservan
 todos los contratos. Si se envía, representa el conjunto completo de contratos

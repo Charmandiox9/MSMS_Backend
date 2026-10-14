@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsDateString,
@@ -66,6 +67,18 @@ export class TeacherInputDto {
   certification?: TeacherCertification | null;
 
   @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  professionalTitle?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(150)
+  institution?: string | null;
+
+  @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsDateString({ strict: true })
   joinedOn?: string | null;
@@ -117,4 +130,9 @@ export class CourseTeachersDto {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   teacherIds!: string[];
+}
+
+export class ToggleTeacherStatusDto {
+  @IsBoolean()
+  isActive!: boolean;
 }

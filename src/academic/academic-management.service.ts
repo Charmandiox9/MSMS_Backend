@@ -13,6 +13,7 @@ import {
   CourseTeachersDto,
   CreateCourseDto,
   TeacherInputDto,
+  ToggleTeacherStatusDto,
 } from './academic-management.dto';
 
 @Injectable()
@@ -109,6 +110,12 @@ export class AcademicManagementService {
       ...(input.certification === undefined
         ? {}
         : { certification: input.certification }),
+      ...(input.professionalTitle === undefined
+        ? {}
+        : { professionalTitle: input.professionalTitle?.trim() || null }),
+      ...(input.institution === undefined
+        ? {}
+        : { institution: input.institution?.trim() || null }),
       ...(input.joinedOn === undefined
         ? {}
         : { joinedOn: input.joinedOn ? contractDate(input.joinedOn) : null }),
@@ -157,6 +164,23 @@ export class AcademicManagementService {
       await this.saveHourlyContracts(tx, id, input);
       return tx.teacher.findUniqueOrThrow({
         where: { id },
+        include: {
+          assignments: {
+            where: { semester: { isActive: true } },
+            include: { course: true, semester: true },
+          },
+        },
+      });
+    });
+  }
+
+  setTeacherStatus(id: string, input: ToggleTeacherStatusDto) {
+    return this.write(async (tx) => {
+      const teacher = await tx.teacher.findUnique({ where: { id } });
+      if (!teacher) throw new NotFoundException('El docente no existe');
+      return tx.teacher.update({
+        where: { id },
+        data: { isActive: input.isActive },
         include: {
           assignments: {
             where: { semester: { isActive: true } },

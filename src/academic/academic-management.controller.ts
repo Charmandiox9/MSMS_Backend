@@ -15,6 +15,7 @@ import {
   CourseTeachersDto,
   CreateCourseDto,
   TeacherInputDto,
+  ToggleTeacherStatusDto,
 } from './academic-management.dto';
 
 // REST keeps manual maintenance consistent with the existing academic endpoints.
@@ -46,6 +47,15 @@ export class AcademicManagementController {
     @Body() input: TeacherInputDto,
   ) {
     return this.service.updateTeacher(id, input);
+  }
+
+  @Patch('teachers/:id/status')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
+  setTeacherStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: ToggleTeacherStatusDto,
+  ) {
+    return this.service.setTeacherStatus(id, input);
   }
 
   @Post('courses')
