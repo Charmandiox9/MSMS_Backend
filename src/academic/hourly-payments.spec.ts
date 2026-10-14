@@ -259,9 +259,14 @@ describe('Contratos y tarifas PH', () => {
     const guard = new RolesGuard(new Reflector());
     expect(() =>
       guard.canActivate(
-        context(['ACADEMIC_PROCESS_ANALYST'], controller.setRate),
+        context(['TEACHING_SUPPORT_COORDINATOR'], controller.setRate),
       ),
     ).toThrow(ForbiddenException);
+    expect(
+      guard.canActivate(
+        context(['ACADEMIC_PROCESS_ANALYST'], controller.setRate),
+      ),
+    ).toBe(true);
     expect(
       guard.canActivate(context(['ACADEMIC_SECRETARY'], controller.preview)),
     ).toBe(true);

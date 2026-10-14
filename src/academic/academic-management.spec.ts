@@ -514,7 +514,11 @@ describe('Gestión individual de docentes y asignaturas', () => {
           getRequest: () => ({ user: { roles: [role] } }),
         }),
       } as unknown as ExecutionContext;
-      if (['SYSTEM_ADMIN', 'ACADEMIC_SECRETARY'].includes(role))
+      if (
+        ['SYSTEM_ADMIN', 'ACADEMIC_SECRETARY'].includes(role) ||
+        (['createTeacher', 'updateTeacher'].includes(method) &&
+          role === 'ACADEMIC_PROCESS_ANALYST')
+      )
         expect(guard.canActivate(context)).toBe(true);
       else expect(() => guard.canActivate(context)).toThrow();
     }

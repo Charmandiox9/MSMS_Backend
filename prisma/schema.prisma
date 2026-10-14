@@ -10,6 +10,11 @@ datasource db {
 }
 
 model User {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion   Int     @default(0)
+  emailHash    String? @unique
+  googleIdHash String? @unique
+
   id        String  @id @default(uuid())
   email     String  @unique
   name      String
@@ -59,6 +64,12 @@ model AcademicSemester {
 }
 
 model Teacher {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion       Int     @default(0)
+  emailHash        String? @unique
+  employeeCodeHash String? @unique
+  rutHash          String? @unique
+
   id                     String                 @id @default(uuid())
   name                   String
   email                  String                 @unique
@@ -94,6 +105,10 @@ model Course {
 
 /// Academic students are independent from administrative login accounts.
 model Student {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  emailHash  String? @unique
+
   id                 String                 @id @default(uuid())
   name               String
   email              String                 @unique
@@ -147,6 +162,11 @@ model TeachingAssignment {
 
 /// Academic student record; independent from administrative login accounts.
 model TeachingAssistant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion      Int     @default(0)
+  emailHash       String? @unique
+  studentCodeHash String? @unique
+
   id          String                    @id @default(uuid())
   name        String
   email       String                    @unique
@@ -231,6 +251,11 @@ model CourseSchedule {
 }
 
 model JustificationInbox {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion             Int     @default(0)
+  externalResponseIdHash String? @unique
+  studentEmailHash       String?
+
   id                  String                   @id @default(uuid())
   externalResponseId  String                   @unique
   studentEmail        String
@@ -254,11 +279,17 @@ model JustificationInbox {
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
 
+  @@index([studentEmailHash])
   @@index([status, createdAt])
   @@index([studentId])
 }
 
 model Justification {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion           Int     @default(0)
+  sourceResponseIdHash String? @unique
+  studentEmailHash     String?
+
   id                  String                       @id @default(uuid())
   sourceResponseId    String                       @unique
   studentEmail        String
@@ -288,12 +319,16 @@ model Justification {
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
 
+  @@index([studentEmailHash])
   @@index([status, createdAt])
   @@index([studentEmail])
   @@index([studentId])
 }
 
 model JustificationStatusHistory {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
   id              String               @id @default(uuid())
   justificationId String
   fromStatus      JustificationStatus?
@@ -342,6 +377,10 @@ model UserRole {
 }
 
 model PreloadedUser {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  emailHash  String? @unique
+
   id        String              @id @default(uuid())
   email     String              @unique
   createdAt DateTime            @default(now())
@@ -450,6 +489,9 @@ enum ProjectStatus {
 
 /// General register: research, training, services, agreements and academic programs.
 model Project {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
   id                  String                  @id @default(uuid())
   reportingYear       Int
   academicUnit        String
@@ -491,6 +533,10 @@ model Project {
 
 /// Named external participants can be recorded without creating a teacher account.
 model ProjectParticipant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  nameHash   String?
+
   id           String   @id @default(uuid())
   projectId    String
   teacherId    String?
@@ -501,12 +547,17 @@ model ProjectParticipant {
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   teacher      Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 
+  @@unique([projectId, nameHash, role])
   @@unique([projectId, name, role])
+  @@index([nameHash])
   @@index([teacherId])
 }
 
 /// Research activity can be linked to a funded project or registered independently.
 model Research {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
   id           String                @id @default(uuid())
   projectId    String?               @unique
   code         String?               @unique
@@ -526,6 +577,10 @@ model Research {
 }
 
 model ResearchParticipant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  nameHash   String?
+
   id         String   @id @default(uuid())
   researchId String
   teacherId  String?
@@ -534,7 +589,9 @@ model ResearchParticipant {
   research   Research @relation(fields: [researchId], references: [id], onDelete: Cascade)
   teacher    Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 
+  @@unique([researchId, nameHash, role])
   @@unique([researchId, name, role])
+  @@index([nameHash])
   @@index([teacherId])
 }
 
@@ -546,6 +603,9 @@ enum ResearchOutputKind {
 }
 
 model ResearchOutput {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
   id                         String                  @id @default(uuid())
   researchId                 String?
   kind                       ResearchOutputKind
@@ -578,6 +638,9 @@ model ResearchOutput {
 }
 
 model ResearchOutputAuthor {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
   id          String         @id @default(uuid())
   outputId    String
   teacherId   String?

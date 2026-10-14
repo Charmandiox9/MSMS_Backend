@@ -309,7 +309,7 @@ export class AcademicService {
       this.prisma.teacher.count({ where }),
       this.prisma.teacher.findMany({
         where,
-        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
@@ -334,23 +334,26 @@ export class AcademicService {
   // buscan con unaccent + ILIKE ("alvaro" encuentra "Álvaro"). Cubre nombre,
   // correo, código y los NRC del semestre activo, que son los del listado.
   private async findTeacherIdsMatching(search: string): Promise<string[]> {
-    // Los comodines que escriba el usuario (% y _) se buscan literalmente.
-    const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
-    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT t."id"
-      FROM "Teacher" t
-      WHERE unaccent(t."name") ILIKE unaccent(${pattern})
-        OR unaccent(t."email") ILIKE unaccent(${pattern})
-        OR unaccent(COALESCE(t."employeeCode", '')) ILIKE unaccent(${pattern})
-        OR unaccent(COALESCE(t."rut", '')) ILIKE unaccent(${pattern})
-        OR EXISTS (
-          SELECT 1
-          FROM "TeachingAssignment" a
-          JOIN "AcademicSemester" s ON s."id" = a."semesterId"
-          WHERE a."teacherId" = t."id"
-            AND s."isActive"
-            AND a."nrc" ILIKE ${pattern}
-        )`;
+    const identities = await this.prisma.findPiiIds('Teacher', search);
+    const rows = await this.prisma.teacher.findMany({
+      where: {
+        OR: [
+          { id: { in: identities } },
+          {
+            assignments: {
+              some: {
+                semester: { isActive: true },
+                nrc: {
+                  contains: search.replace(/[\\%_]/g, '\\$&'),
+                  mode: 'insensitive',
+                },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
     return rows.map((row) => row.id);
   }
 

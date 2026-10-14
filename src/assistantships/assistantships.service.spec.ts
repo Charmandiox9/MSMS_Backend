@@ -68,6 +68,7 @@ describe('AssistantshipsService', () => {
     },
   };
   const prisma = {
+    findPiiIds: jest.fn(),
     $transaction: jest.fn(),
     assistantship: {
       count: jest.fn(),
@@ -83,6 +84,7 @@ describe('AssistantshipsService', () => {
   };
   beforeEach(async () => {
     jest.resetAllMocks();
+    prisma.findPiiIds.mockResolvedValue([]);
     jest.useFakeTimers({ now: new Date('2026-10-04T15:00:00Z') });
     prisma.$transaction.mockImplementation(
       (callback: (client: typeof transaction) => Promise<unknown>) =>

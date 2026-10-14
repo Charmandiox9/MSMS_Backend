@@ -74,11 +74,11 @@ Se usa REST para conservar el contrato de mantenimiento docente existente:
 | Endpoint | Función | Acceso |
 | --- | --- | --- |
 | `GET /api/academic/hourly-payments/rates` | Semestre activo y tarifas | Secretaría, analista, administración |
-| `POST /api/academic/hourly-payments/rates` | Crear/actualizar una combinación de tarifa | Secretaría, administración |
-| `POST /api/academic/hourly-payments/preview` | Calcular contratos sin guardar | Secretaría, administración |
+| `POST /api/academic/hourly-payments/rates` | Crear/actualizar una combinación de tarifa | Secretaría, analista, administración |
+| `POST /api/academic/hourly-payments/preview` | Calcular contratos sin guardar | Secretaría, analista, administración |
 | `GET /api/academic/hourly-payments/teachers/:id` | Contratos activos de un docente con cálculo | Secretaría, analista, administración |
-| `POST /api/academic/teachers` | Crear perfil, vínculos y contratos en una transacción | Secretaría, administración |
-| `PATCH /api/academic/teachers/:id` | Actualizar perfil, vínculos y contratos en una transacción | Secretaría, administración |
+| `POST /api/academic/teachers` | Crear perfil, vínculos y contratos en una transacción | Secretaría, analista, administración |
+| `PATCH /api/academic/teachers/:id` | Actualizar perfil, vínculos y contratos en una transacción | Secretaría, analista, administración |
 
 `hourlyContracts` es opcional en los endpoints docentes. Si se omite, se preservan
 todos los contratos. Si se envía, representa el conjunto completo de contratos
@@ -103,3 +103,5 @@ No se ejecuta ningún reset.
 Aplicar en la base autorizada con `prisma migrate deploy`; generar el cliente
 con `prisma generate`. El estado de aplicación se informa por separado en la
 entrega: disponer del SQL no significa que esté aplicado.
+
+La protección de datos y el procedimiento de activación se describen en [Protección de datos personales](personal-data-protection.md). Los tres roles del repositorio pueden consultar, crear y editar.

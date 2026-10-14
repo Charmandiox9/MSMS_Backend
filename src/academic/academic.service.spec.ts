@@ -6,6 +6,7 @@ describe('AcademicService', () => {
   let service: AcademicService;
 
   const prisma = {
+    findPiiIds: jest.fn().mockResolvedValue([]),
     assistantship: { findMany: jest.fn().mockResolvedValue([]) },
     academicSemester: {
       findMany: jest.fn(),
@@ -677,34 +678,17 @@ describe('AcademicService', () => {
       expect(prisma.teacher.count).toHaveBeenCalledWith({ where: {} });
     });
 
-    // $queryRaw se usa como tagged template: (strings, ...valores).
-    const rawQuerySql = () =>
-      (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
-    const rawQueryValues = () =>
-      prisma.$queryRaw.mock.calls[0].slice(1) as unknown[];
-
     it('busca sin tildes por nombre, correo, código y NRC del semestre activo', async () => {
-      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-1' }]);
-      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.findPiiIds.mockResolvedValue(['teacher-1']);
+      prisma.teacher.findMany
+        .mockResolvedValueOnce([{ id: 'teacher-1' }])
+        .mockResolvedValueOnce([]);
       prisma.teacher.count.mockResolvedValue(0);
 
       await service.listTeachers({ ...firstPage, search: 'álvaro' });
 
-      const sql = rawQuerySql();
-      expect(sql).toContain('unaccent(t."name") ILIKE unaccent(?)');
-      expect(sql).toContain('unaccent(t."email")');
-      expect(sql).toContain('"employeeCode"');
-      expect(sql).toContain('"rut"');
-      expect(sql).toContain('a."nrc" ILIKE ?');
-      expect(sql).toContain('s."isActive"');
-      // El término viaja como parámetro, nunca concatenado en el SQL.
-      expect(rawQueryValues()).toEqual([
-        '%álvaro%',
-        '%álvaro%',
-        '%álvaro%',
-        '%álvaro%',
-        '%álvaro%',
-      ]);
+      expect(prisma.findPiiIds).toHaveBeenCalledWith('Teacher', 'álvaro');
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
       const where = { id: { in: ['teacher-1'] } };
       expect(prisma.teacher.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where }),
@@ -719,12 +703,30 @@ describe('AcademicService', () => {
 
       await service.listTeachers({ ...firstPage, search: '50%_a\\b' });
 
-      expect(rawQueryValues()[0]).toBe('%50\\%\\_a\\\\b%');
+      expect(prisma.findPiiIds).toHaveBeenCalledWith('Teacher', '50%_a\\b');
+      expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              {
+                assignments: {
+                  some: {
+                    semester: { isActive: true },
+                    nrc: { contains: '50\\%\\_a\\\\b', mode: 'insensitive' },
+                  },
+                },
+              },
+            ]),
+          }),
+        }),
+      );
     });
 
     it('combina la búsqueda con el filtro de estado', async () => {
-      prisma.$queryRaw.mockResolvedValue([{ id: 'teacher-2' }]);
-      prisma.teacher.findMany.mockResolvedValue([]);
+      prisma.findPiiIds.mockResolvedValue(['teacher-2']);
+      prisma.teacher.findMany
+        .mockResolvedValueOnce([{ id: 'teacher-2' }])
+        .mockResolvedValueOnce([]);
       prisma.teacher.count.mockResolvedValue(0);
 
       await service.listTeachers({

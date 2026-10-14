@@ -14,6 +14,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicService } from './academic.service';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { UpdateCourseDto } from './update-course.dto';
+import { ACADEMIC_REPOSITORY_ROLES } from './repository-access';
 
 // ACADEMIC_RECORDS_VIEW (matriz RBAC): consulta de docentes, asignaturas y
 // semestres. Las importaciones siguen reservadas a secretaría académica.
@@ -50,30 +51,32 @@ class SemesterDto {
 export class AcademicController {
   constructor(private readonly service: AcademicService) {}
 
-  @Roles(...ACADEMIC_READERS)
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   @Get()
   listTeachers(@Query() query: ListTeachersQueryDto) {
     return this.service.listTeachers(query);
   }
 
-  @Roles(...ACADEMIC_READERS)
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   @Get(':id')
   getTeacher(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.getTeacher(id);
   }
 
-  @Roles(...ACADEMIC_READERS)
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   @Get(':id/schedule')
   getTeacherSchedule(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.getTeacherSchedule(id);
   }
 
   @Post('import-csv')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   importCsv(@Body() body: CsvImportDto) {
     return this.service.importCsv(body.csv);
   }
 
   @Post('import-roster')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   importRoster(@Body() body: CsvImportDto) {
     return this.service.importTeacherRoster(body.csv);
   }

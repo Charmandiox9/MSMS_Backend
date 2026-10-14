@@ -293,7 +293,7 @@ export class JustificationsService {
       );
     } else {
       this.logger.log(
-        `Destinatarios de aprobación nrc=${justification.nrc ?? '<none>'} teacherCount=${teachers.length} teacherEmails=${teachers.map((teacher) => teacher.email).join(',')}`,
+        `Destinatarios de aprobación teacherCount=${teachers.length}`,
       );
     }
 
@@ -330,12 +330,8 @@ export class JustificationsService {
     );
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        const reason =
-          result.reason instanceof Error
-            ? result.reason.message
-            : String(result.reason);
         this.logger.error(
-          `No se pudo notificar la decisión a ${messages[index].to}: ${reason}`,
+          `No se pudo enviar una notificación de decisión (posición ${index})`,
         );
       }
     });
@@ -491,10 +487,8 @@ export class JustificationsService {
           (active.length > 0 ? active : forKey).map(({ block }) => block),
         );
       }
-    } catch (error) {
-      this.logger.warn(
-        `No se pudieron cargar los bloques de horario: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    } catch {
+      this.logger.warn('No se pudieron cargar los bloques de horario');
       byKey.clear();
     }
     return lookup;

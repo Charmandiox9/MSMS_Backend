@@ -5,8 +5,11 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActiveUserService } from '../active-user.service';
+import { PiiCryptoService } from '../../privacy/pii-crypto.service';
+import { testPiiCrypto } from '../../privacy/pii-test-config';
 
 describe('JwtStrategy', () => {
+  const crypto = testPiiCrypto();
   let strategy: JwtStrategy;
   let prisma: { user: { findUnique: jest.Mock } };
   let cache: { get: jest.Mock; set: jest.Mock };
@@ -27,6 +30,7 @@ describe('JwtStrategy', () => {
       providers: [
         JwtStrategy,
         ActiveUserService,
+        { provide: PiiCryptoService, useValue: crypto },
         { provide: ConfigService, useValue: { get: () => 'secret' } },
         { provide: PrismaService, useValue: prisma },
         { provide: CACHE_MANAGER, useValue: cache },
@@ -52,10 +56,16 @@ describe('JwtStrategy', () => {
       include: { userRoles: { include: { role: true } } },
     });
     expect(cache.set).toHaveBeenCalledWith(
-      `user:${mockUser.id}`,
-      result,
+      `user:pii:v1:${mockUser.id}`,
+      expect.stringMatching(/^pii:v1:/),
       60 * 1000,
     );
+    expect(
+      crypto.decrypt(
+        cache.set.mock.calls[0][1] as string,
+        `user:pii:v1:${mockUser.id}`,
+      ),
+    ).toBe(JSON.stringify(result));
   });
 
   it('retorna el usuario desde el caché sin consultar la base de datos', async () => {
@@ -64,7 +74,9 @@ describe('JwtStrategy', () => {
       email: mockUser.email,
       roles: ['ACADEMIC_SECRETARY'],
     };
-    cache.get.mockResolvedValue(cachedUser);
+    cache.get.mockResolvedValue(
+      crypto.encrypt(JSON.stringify(cachedUser), `user:pii:v1:${mockUser.id}`),
+    );
 
     const result = await strategy.validate({ sub: mockUser.id });
 

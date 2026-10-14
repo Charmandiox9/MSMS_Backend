@@ -29,10 +29,7 @@ export class StudentsService {
     const where: Prisma.StudentWhereInput = {
       ...(search
         ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { email: { contains: search, mode: 'insensitive' as const } },
-            ],
+            id: { in: await this.prisma.findPiiIds('Student', search) },
           }
         : {}),
       ...(nrc
@@ -43,7 +40,7 @@ export class StudentsService {
       [
         this.prisma.student.findMany({
           where,
-          orderBy: [{ name: 'asc' }, { email: 'asc' }],
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
           include: { enrollments: currentEnrollments },

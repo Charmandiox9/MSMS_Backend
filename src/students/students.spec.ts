@@ -26,6 +26,7 @@ const course = { id: 'course', name: 'Biología marina', code: 'BM' };
 
 describe('Módulo de estudiantes', () => {
   const prisma = {
+    findPiiIds: jest.fn(),
     academicSemester: { findFirst: jest.fn() },
     courseSchedule: { findMany: jest.fn() },
     teachingAssignment: { findMany: jest.fn() },
@@ -60,6 +61,7 @@ describe('Módulo de estudiantes', () => {
   });
   beforeEach(() => {
     jest.resetAllMocks();
+    prisma.findPiiIds.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(
       (
         operation:

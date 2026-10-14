@@ -90,6 +90,12 @@ export class AssistantshipsService {
     const today = this.today();
     const search = filters.search?.trim();
     const text = { contains: search, mode: 'insensitive' as const };
+    const assistantIds = search
+      ? await this.prisma.findPiiIds('TeachingAssistant', search)
+      : [];
+    const teacherIds = search
+      ? await this.prisma.findPiiIds('Teacher', search)
+      : [];
     const where: Prisma.AssistantshipWhereInput = {
       teachingAssignment: {
         ...(filters.semesterId ? { semesterId: filters.semesterId } : {}),
@@ -113,11 +119,7 @@ export class AssistantshipsService {
               {
                 approval: {
                   assistant: {
-                    OR: [
-                      { name: text },
-                      { email: text },
-                      { studentCode: text },
-                    ],
+                    id: { in: assistantIds },
                   },
                 },
               },
@@ -126,7 +128,7 @@ export class AssistantshipsService {
                   OR: [
                     { nrc: text },
                     { course: { OR: [{ name: text }, { code: text }] } },
-                    { teacher: { name: text } },
+                    { teacherId: { in: teacherIds } },
                   ],
                 },
               },
@@ -174,7 +176,7 @@ export class AssistantshipsService {
       }),
       this.prisma.teacher.findMany({
         where: { assignments: { some: {} } },
-        orderBy: { name: 'asc' },
+        orderBy: { id: 'asc' },
         select: { id: true, name: true },
       }),
     ]);
@@ -184,7 +186,7 @@ export class AssistantshipsService {
         startsOn: isoDate(semester.startsOn),
         endsOn: isoDate(semester.endsOn),
       })),
-      teachers,
+      teachers: teachers.sort((a, b) => a.name.localeCompare(b.name, 'es')),
       blocks: academicScheduleBlocks,
     };
   }

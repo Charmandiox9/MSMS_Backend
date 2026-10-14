@@ -33,7 +33,7 @@ const devProviders =
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.development', '.env'],
+      envFilePath: ['.env.pii', '.env.development', '.env'],
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,

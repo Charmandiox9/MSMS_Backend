@@ -20,7 +20,7 @@ export class NotificationsService {
 
     if (!apiKey || !from) {
       this.logger.warn(
-        `Notificación no enviada: configura RESEND_API_KEY y NOTIFICATIONS_FROM. Destinatario: ${message.to}`,
+        'Notificación no enviada: configura RESEND_API_KEY y NOTIFICATIONS_FROM.',
       );
       return;
     }
@@ -47,13 +47,13 @@ export class NotificationsService {
 
     if (!response.ok) {
       this.logger.error(
-        `Notificación rechazada por Resend: destinatario=${message.to} status=${response.status} motivo=${responseBody?.message ?? 'desconocido'}`,
+        `Notificación rechazada por Resend: status=${response.status}`,
       );
       throw new Error(`No se pudo enviar la notificación (${response.status})`);
     }
 
     this.logger.log(
-      `Notificación enviada: destinatario=${message.to} resendId=${responseBody?.id ?? 'sin-id'}`,
+      `Notificación enviada: resendId=${responseBody?.id ?? 'sin-id'}`,
     );
   }
 }

@@ -35,7 +35,7 @@ export class AcademicReportsService {
                 include: { course: true, semester: true },
               },
             },
-            orderBy: { name: 'asc' },
+            orderBy: { id: 'asc' },
           })
         ).map((item) => ({
           name: item.name,
@@ -68,7 +68,7 @@ export class AcademicReportsService {
                 include: { semester: true },
               },
             },
-            orderBy: { name: 'asc' },
+            orderBy: { id: 'asc' },
           })
         ).map((item) => ({
           code: item.code,
@@ -116,7 +116,7 @@ export class AcademicReportsService {
                 }
               : {},
             include: { approvals: { include: { course: true } } },
-            orderBy: { name: 'asc' },
+            orderBy: { id: 'asc' },
           })
         ).map((item) => ({
           name: item.name,
@@ -186,6 +186,10 @@ export class AcademicReportsService {
         break;
     }
     const needle = search?.trim().toLocaleLowerCase();
+    if (['teachers', 'assistants', 'courses'].includes(dataset))
+      rows.sort((a, b) =>
+        String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es'),
+      );
     return {
       columns,
       rows: needle

@@ -12,15 +12,16 @@ import {
   HourlyPayRateDto,
 } from './hourly-payments.dto';
 import { HourlyPaymentsService } from './hourly-payments.service';
+import { ACADEMIC_REPOSITORY_ROLES } from './repository-access';
 
 // REST matches teacher maintenance and keeps the payment calculation in one backend.
 @Controller('academic/hourly-payments')
-@Roles('ACADEMIC_SECRETARY')
+@Roles(...ACADEMIC_REPOSITORY_ROLES)
 export class HourlyPaymentsController {
   constructor(private readonly service: HourlyPaymentsService) {}
 
   @Get('rates')
-  @Roles('ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   catalog() {
     return this.service.catalog();
   }
@@ -36,7 +37,7 @@ export class HourlyPaymentsController {
   }
 
   @Get('teachers/:id')
-  @Roles('ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   teacherContracts(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.teacherContracts(id);
   }

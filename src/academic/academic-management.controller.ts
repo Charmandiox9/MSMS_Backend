@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AcademicManagementService } from './academic-management.service';
+import { ACADEMIC_REPOSITORY_ROLES } from './repository-access';
 import {
   CourseTeachersDto,
   CreateCourseDto,
@@ -33,11 +34,13 @@ export class AcademicManagementController {
   }
 
   @Post('teachers')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   createTeacher(@Body() input: TeacherInputDto) {
     return this.service.createTeacher(input);
   }
 
   @Patch('teachers/:id')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
   updateTeacher(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: TeacherInputDto,

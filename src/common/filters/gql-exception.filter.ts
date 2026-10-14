@@ -32,7 +32,7 @@ export class GqlExceptionFilter implements NestGqlExceptionFilter {
           ? (response as Record<string, unknown>).message
           : exception.message;
 
-      this.logger.warn(`[GraphQL] ${status} - ${JSON.stringify(message)}`);
+      this.logger.warn(`[GraphQL] ${status}`);
 
       return new GraphQLError(
         Array.isArray(message) ? message.join(', ') : String(message),
@@ -45,7 +45,7 @@ export class GqlExceptionFilter implements NestGqlExceptionFilter {
       );
     }
 
-    this.logger.error('[GraphQL] Unhandled exception', exception);
+    this.logger.error('[GraphQL] Unhandled exception');
 
     return new GraphQLError('Internal server error', {
       extensions: { code: 'INTERNAL_SERVER_ERROR', status: 500 },
