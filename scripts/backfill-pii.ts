@@ -24,6 +24,35 @@ const client = new PrismaClient({
   }),
 });
 const rotate = process.argv.includes('--rotate');
+let currentModel = 'inicio';
+
+function safeErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'ERROR';
+  if ('code' in error && typeof error.code === 'string') {
+    if (!/^(P\d{4}|[A-Z_]+)$/.test(error.code)) return error.name;
+    if (error.code !== 'P2002' || !('meta' in error) || !error.meta) {
+      return error.code;
+    }
+
+    const meta = error.meta as { target?: unknown };
+    const target = Array.isArray(meta.target)
+      ? meta.target
+      : typeof meta.target === 'string'
+        ? [meta.target]
+        : [];
+    const safeTargets = new Set(['emailHash', 'googleIdHash']);
+    const matched = target.flatMap((value) =>
+      typeof value === 'string'
+        ? [...safeTargets].filter((field) => value.includes(field))
+        : [],
+    );
+    const uniqueTargets = [...new Set(matched)];
+    return uniqueTargets.length
+      ? `${error.code}:${uniqueTargets.join(',')}`
+      : error.code;
+  }
+  return error.name;
+}
 
 interface Delegate {
   findMany(args: Record<string, unknown>): Promise<Record<string, unknown>[]>;
@@ -37,6 +66,7 @@ function delegate(tx: Prisma.TransactionClient, model: string): Delegate {
 
 async function main() {
   for (const [model, policy] of Object.entries(piiPolicies)) {
+    currentModel = model;
     let cursor: string | undefined;
     let converted = 0;
     while (true) {
@@ -90,10 +120,10 @@ async function main() {
   }
 }
 main()
-  .catch(() => {
+  .catch((error: unknown) => {
     // Prisma errors may contain original values. Do not print error objects.
     console.error(
-      'La conversión PII falló. Conserva las claves y revisa las restricciones, posibles duplicados y conectividad en el entorno autorizado.',
+      `La conversión PII falló en ${currentModel} (${safeErrorCode(error)}). Conserva las claves y revisa las restricciones, posibles duplicados y conectividad en el entorno autorizado.`,
     );
     process.exitCode = 1;
   })
