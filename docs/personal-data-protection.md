@@ -123,11 +123,27 @@ compuestos: el DMMF de Prisma 7 no expone `uniqueFields` en ejecución.
 El compute de la rama de prueba quedó deshabilitado al terminar; la rama
 permanece disponible para revisión.
 
-**La conversión de registros de `main` sigue pendiente.** Solo se ejecutó en
-la copia de prueba. Antes de activar la nueva versión hay que configurar las
-claves en el entorno de ejecución y coordinar la ventana de mantenimiento
-descrita arriba. El snapshot previo contiene los datos anteriores y requiere
-los controles de acceso y conservación correspondientes.
+La conversión de `main` se completó el **14 de octubre de 2026**, con autorización
+explícita del usuario, usando las mismas claves de `.env.pii`. Antes de convertir,
+la comprobación mostró 61 registros pendientes, claves válidas y ninguna otra
+conexión activa. Se convirtieron 3 usuarios, 2 profesores, 1 ayudante, 14 entradas
+de bandeja, 14 justificaciones y 27 entradas de historial. Los otros modelos
+estaban vacíos. No se eliminaron registros ni se reemplazaron las claves.
+
+Como la cuenta no permitió otro snapshot por su límite, se conservó una rama
+de respaldo previa sin compute: `before-pii-conversion-20261014`
+(`br-shiny-violet-aufx41r2`). Las claves tienen una copia local adicional en
+`.env.pii.backup.20261014`; ambos archivos están excluidos de Git. La rama previa
+y el snapshot anterior requieren los controles de acceso y conservación
+correspondientes.
+
+La verificación posterior confirmó cero filas pendientes en los 14 modelos,
+inicialización completa de Nest, descifrado autenticado de los 61 registros
+y búsqueda de usuarios mediante el índice HMAC. Las URLs locales de `.env` y
+`.env.development` usan `sslmode=verify-full` para mantener verificación TLS
+explícita y eliminar el aviso de `pg-connection-string`. Los demás entornos
+que accedan a esta base deben configurar las **mismas claves**, y los clientes
+anteriores que escribían texto claro deben permanecer detenidos hasta actualizarse.
 
 ## Ley 21.719
 

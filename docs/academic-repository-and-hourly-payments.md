@@ -68,10 +68,11 @@ usan next-intl en español e inglés. Sonner informa guardado/eliminación pendi
 éxitos y errores. Los diálogos conservan el foco del teclado y lo devuelven al
 cerrarse, y las vistas admiten escritorio, móvil y ambos temas.
 
-Este CRUD reutiliza el esquema ya migrado, sin otra migración. Su activación en
-el entorno conectado a `main` requiere completar previamente el procedimiento
-de conversión de datos de `personal-data-protection.md`; no se despliega ni
-convierte la base de producción al generar estas páginas.
+Este CRUD reutiliza el esquema ya migrado, sin otra migración. La conversión PII
+de `main` se completó el 14 de octubre de 2026 con autorización explícita;
+el registro de verificación figura en `personal-data-protection.md`. Cada entorno
+que use esta base requiere las mismas claves. Generar estas páginas no despliega
+automáticamente el backend ni el frontend.
 
 ## Perfil y contratos PH
 
