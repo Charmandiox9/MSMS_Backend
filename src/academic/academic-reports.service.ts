@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { calculateHourlyPayment } from './hourly-payment-calculator';
@@ -27,7 +28,13 @@ export class AcademicReportsService {
     semesterId?: string,
     search?: string,
     reportingYear?: number,
+    startsOn?: string,
+    endsOn?: string,
   ) {
+    if (startsOn && endsOn && startsOn > endsOn)
+      throw new BadRequestException(
+        'La fecha inicial debe ser anterior a la fecha final',
+      );
     let rows: ReportRow[];
     let columns: string[];
     const assignmentFilter = semesterId ? { semesterId } : {};
@@ -218,7 +225,27 @@ export class AcademicReportsService {
         ];
         rows = (
           await this.prisma.project.findMany({
-            where: reportingYear ? { reportingYear } : {},
+            where: {
+              ...(reportingYear ? { reportingYear } : {}),
+              ...(startsOn || endsOn
+                ? {
+                    ...(endsOn
+                      ? {
+                          startsOn: {
+                            lte: new Date(`${endsOn}T23:59:59.999Z`),
+                          },
+                        }
+                      : {}),
+                    ...(startsOn
+                      ? {
+                          endsOn: {
+                            gte: new Date(`${startsOn}T00:00:00.000Z`),
+                          },
+                        }
+                      : {}),
+                  }
+                : {}),
+            },
             orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }],
           })
         ).map((project) => ({

@@ -203,6 +203,35 @@ describe('Academic reports', () => {
       currency: 'CLP',
     });
   });
+  it('filters project budgets by date overlap and rejects inverted ranges', async () => {
+    prisma.project.findMany.mockResolvedValue([]);
+    await reports.data(
+      'projects',
+      undefined,
+      undefined,
+      undefined,
+      '2025-03-01',
+      '2025-09-30',
+    );
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          startsOn: { lte: new Date('2025-09-30T23:59:59.999Z') },
+          endsOn: { gte: new Date('2025-03-01T00:00:00.000Z') },
+        },
+      }),
+    );
+    await expect(
+      reports.data(
+        'projects',
+        undefined,
+        undefined,
+        undefined,
+        '2025-10-01',
+        '2025-09-30',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
   it('exports research outputs including outputs without a linked research record', async () => {
     prisma.researchOutput.findMany.mockResolvedValue([
       {
@@ -292,10 +321,16 @@ describe('Academic reports', () => {
           dataset: 'users',
           semesterId: 'bad',
           reportingYear: 1800,
+          startsOn: 'not-a-date',
         }),
       ).map((error) => error.property),
     ).toEqual(
-      expect.arrayContaining(['dataset', 'semesterId', 'reportingYear']),
+      expect.arrayContaining([
+        'dataset',
+        'semesterId',
+        'reportingYear',
+        'startsOn',
+      ]),
     );
   });
 });

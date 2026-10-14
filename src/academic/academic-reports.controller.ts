@@ -12,6 +12,7 @@ import {
 import {
   IsIn,
   IsInt,
+  IsDateString,
   IsOptional,
   IsString,
   IsUUID,
@@ -47,6 +48,8 @@ export class AcademicReportQuery {
   @Max(2200)
   reportingYear?: number;
   @IsOptional() @IsString() @MaxLength(200) search?: string;
+  @IsOptional() @IsDateString({ strict: true }) startsOn?: string;
+  @IsOptional() @IsDateString({ strict: true }) endsOn?: string;
 }
 
 @Injectable()
@@ -89,6 +92,8 @@ export class AcademicReportsController {
       query.semesterId,
       query.search,
       query.reportingYear,
+      query.startsOn,
+      query.endsOn,
     );
   }
   @Get('export')
@@ -98,6 +103,8 @@ export class AcademicReportsController {
       query.semesterId,
       query.search,
       query.reportingYear,
+      query.startsOn,
+      query.endsOn,
     );
   }
 }
