@@ -5,11 +5,17 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PiiCryptoService } from '../src/privacy/pii-crypto.service';
 import { PiiStorageCodec } from '../src/privacy/pii-storage-codec';
-import { piiPolicies } from '../src/privacy/pii-policy';
+import {
+  normalizePiiLookup,
+  piiPolicies,
+} from '../src/privacy/pii-policy';
 
-if (!process.argv.includes('--apply')) {
+const apply = process.argv.includes('--apply');
+const diagnose = process.argv.includes('--diagnose');
+
+if (!apply && !diagnose) {
   throw new Error(
-    'Conversión no ejecutada: exige --apply y autorización sobre la base seleccionada',
+    'Usa --apply para convertir o --diagnose para revisar colisiones sin escribir',
   );
 }
 
@@ -25,6 +31,40 @@ const client = new PrismaClient({
 });
 const rotate = process.argv.includes('--rotate');
 let currentModel = 'inicio';
+
+async function diagnoseUserEmailHashCollisions(): Promise<void> {
+  const users = await client.user.findMany({
+    select: { id: true, email: true, emailHash: true },
+    orderBy: { id: 'asc' },
+  });
+  const idsByHash = new Map<string, string[]>();
+
+  for (const user of users) {
+    const storedEmail = user.email;
+    if (typeof storedEmail !== 'string') continue;
+    const email = crypto.isEncrypted(storedEmail)
+      ? crypto.decrypt(storedEmail, 'User.email')
+      : storedEmail;
+    const hash =
+      typeof user.emailHash === 'string'
+        ? user.emailHash
+        : crypto.blindIndex(normalizePiiLookup('email', email), 'User.email');
+    const ids = idsByHash.get(hash) ?? [];
+    ids.push(String(user.id));
+    idsByHash.set(hash, ids);
+  }
+
+  const collisions = [...idsByHash.values()].filter((ids) => ids.length > 1);
+  if (collisions.length === 0) {
+    console.log('Diagnóstico User.emailHash: no se encontraron colisiones.');
+    return;
+  }
+
+  console.log(
+    `Diagnóstico User.emailHash: ${collisions.length} grupo(s) colisionado(s). IDs opacos por grupo:`,
+  );
+  for (const ids of collisions) console.log(ids.join(', '));
+}
 
 function safeErrorCode(error: unknown): string {
   if (!(error instanceof Error)) return 'ERROR';
@@ -73,6 +113,12 @@ function delegate(tx: Prisma.TransactionClient, model: string): Delegate {
 }
 
 async function main() {
+  if (diagnose) {
+    currentModel = 'User';
+    await diagnoseUserEmailHashCollisions();
+    return;
+  }
+
   for (const [model, policy] of Object.entries(piiPolicies)) {
     currentModel = model;
     let cursor: string | undefined;
