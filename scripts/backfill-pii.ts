@@ -34,19 +34,27 @@ function safeErrorCode(error: unknown): string {
       return error.code;
     }
 
-    const meta = error.meta as { target?: unknown };
-    const target = Array.isArray(meta.target)
-      ? meta.target
-      : typeof meta.target === 'string'
-        ? [meta.target]
-        : [];
     const safeTargets = new Set(['emailHash', 'googleIdHash']);
-    const matched = target.flatMap((value) =>
-      typeof value === 'string'
-        ? [...safeTargets].filter((field) => value.includes(field))
-        : [],
-    );
-    const uniqueTargets = [...new Set(matched)];
+    const matched = new Set<string>();
+    const inspect = (value: unknown, depth = 0): void => {
+      if (depth > 6 || value === null || value === undefined) return;
+      if (typeof value === 'string') {
+        for (const field of safeTargets)
+          if (value.includes(field)) matched.add(field);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) inspect(item, depth + 1);
+        return;
+      }
+      if (typeof value === 'object')
+        for (const [key, item] of Object.entries(value)) {
+          inspect(key, depth + 1);
+          inspect(item, depth + 1);
+        }
+    };
+    inspect(error.meta);
+    const uniqueTargets = [...matched];
     return uniqueTargets.length
       ? `${error.code}:${uniqueTargets.join(',')}`
       : error.code;
