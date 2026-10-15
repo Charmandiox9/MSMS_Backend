@@ -28,6 +28,13 @@ const reportTextFilter = (value: string) => ({
 export class AcademicReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  semesterOptions() {
+    return this.prisma.academicSemester.findMany({
+      select: { id: true, name: true },
+      orderBy: [{ startsOn: 'desc' }, { id: 'asc' }],
+    });
+  }
+
   async data(
     dataset: AcademicDataset,
     semesterId?: string,
@@ -242,7 +249,28 @@ export class AcademicReportsService {
         rows = (
           await this.prisma.project.findMany({
             where: projectWhere,
-            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }],
+            select: {
+              reportingYear: true,
+              title: true,
+              code: true,
+              academicUnit: true,
+              status: true,
+              classification: true,
+              fundingSource: true,
+              program: true,
+              currency: true,
+              totalAmount: true,
+              vraContribution: true,
+              vridtContribution: true,
+              recoveryAmount: true,
+              facultyContribution: true,
+              depreciationAmount: true,
+              profitabilityAmount: true,
+              startsOn: true,
+              endsOn: true,
+              closedOn: true,
+            },
+            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }, { id: 'asc' }],
             ...(usesDatabasePagination
               ? { skip: ((page ?? 1) - 1) * pageSize }
               : {}),
@@ -290,11 +318,17 @@ export class AcademicReportsService {
         rows = (
           await this.prisma.research.findMany({
             where: researchWhere,
-            include: {
+            select: {
+              title: true,
+              code: true,
+              academicUnit: true,
+              researchArea: true,
+              startsOn: true,
+              endsOn: true,
               project: { select: { title: true } },
               _count: { select: { outputs: true } },
             },
-            orderBy: [{ startsOn: 'desc' }, { title: 'asc' }],
+            orderBy: [{ startsOn: 'desc' }, { title: 'asc' }, { id: 'asc' }],
             ...(usesDatabasePagination
               ? { skip: ((page ?? 1) - 1) * pageSize }
               : {}),
@@ -334,11 +368,19 @@ export class AcademicReportsService {
         rows = (
           await this.prisma.researchOutput.findMany({
             where: outputWhere,
-            include: {
+            select: {
+              reportingYear: true,
+              kind: true,
+              title: true,
+              journal: true,
+              publisher: true,
+              quartile: true,
+              indexation: true,
+              publicationDate: true,
               research: { select: { title: true } },
               _count: { select: { authors: true, projects: true } },
             },
-            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }],
+            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }, { id: 'asc' }],
             ...(usesDatabasePagination
               ? { skip: ((page ?? 1) - 1) * pageSize }
               : {}),

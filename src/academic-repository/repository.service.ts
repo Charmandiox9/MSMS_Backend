@@ -54,6 +54,32 @@ const textFilter = (search: string) => ({
 export class RepositoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async projectOptions(query: { page: number; pageSize: number }) {
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.project.count(),
+      this.prisma.project.findMany({
+        select: {
+          id: true,
+          title: true,
+          code: true,
+          research: { select: { id: true } },
+        },
+        orderBy: [{ title: 'asc' }, { id: 'asc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+    ]);
+    return {
+      items: rows.map(({ research, ...row }) => ({
+        ...row,
+        researchId: research?.id ?? null,
+      })),
+      total,
+      ...query,
+      totalPages: Math.ceil(total / query.pageSize),
+    };
+  }
+
   async projects(query: RepositoryQueryDto) {
     const { page, pageSize, search } = query;
     const sortBy = query.sortBy ?? 'reportingYear';

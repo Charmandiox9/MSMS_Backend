@@ -23,6 +23,8 @@ import {
   ResearchOutputListRecord,
   ResearchOutputListFilters,
   ResearchOutputListPage,
+  RepositoryProjectOptionFilters,
+  RepositoryProjectOptionPage,
 } from './repository.graphql';
 
 @Resolver(() => RepositoryListRecord)
@@ -47,6 +49,19 @@ export class ResearchOutputListRecordResolver {
 @Roles(...ACADEMIC_REPOSITORY_ROLES)
 export class RepositoryResolver {
   constructor(private readonly service: RepositoryService) {}
+
+  @Query(() => RepositoryProjectOptionPage)
+  repositoryProjectOptions(
+    @Args('filters', {
+      nullable: true,
+      type: () => RepositoryProjectOptionFilters,
+    })
+    filters?: RepositoryProjectOptionFilters,
+  ) {
+    return this.service.projectOptions(
+      filters ?? new RepositoryProjectOptionFilters(),
+    );
+  }
 
   @Query(() => RepositoryProjectDetail)
   async repositoryProject(@Args() args: RepositoryIdArgs) {

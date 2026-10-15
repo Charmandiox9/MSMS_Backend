@@ -97,6 +97,30 @@ export class RepositoryListPage {
 }
 
 @InputType()
+export class RepositoryProjectOptionFilters {
+  @Field(() => Int, { defaultValue: 1 }) @IsInt() @Min(1) page = 1;
+  @Field(() => Int, { defaultValue: 100 }) @IsInt() @Min(1) @Max(100) pageSize =
+    100;
+}
+
+@ObjectType()
+export class RepositoryProjectOption {
+  @Field(() => ID) id!: string;
+  @Field(() => String) title!: string;
+  @Field(() => String, { nullable: true }) code!: string | null;
+  @Field(() => ID, { nullable: true }) researchId!: string | null;
+}
+
+@ObjectType()
+export class RepositoryProjectOptionPage {
+  @Field(() => [RepositoryProjectOption]) items!: RepositoryProjectOption[];
+  @Field(() => Int) total!: number;
+  @Field(() => Int) page!: number;
+  @Field(() => Int) pageSize!: number;
+  @Field(() => Int) totalPages!: number;
+}
+
+@InputType()
 export class ResearchOutputListFilters {
   @Field(() => Int, { defaultValue: 1 }) @IsInt() @Min(1) page = 1;
   @Field(() => Int, { defaultValue: 10 }) @IsInt() @Min(1) @Max(100) pageSize =

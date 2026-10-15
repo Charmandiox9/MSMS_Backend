@@ -11,6 +11,8 @@ import { HourlyPaymentsService } from './hourly-payments.service';
 import { AcademicManagementService } from './academic-management.service';
 import { AcademicManagementController } from './academic-management.controller';
 import { AcademicReportsService } from './academic-reports.service';
+import { AcademicReportsResolver } from './academic-reports.resolver';
+import { AcademicChartsService } from './academic-charts.service';
 import {
   AcademicReportsController,
   AcademicReportsGuard,
@@ -32,6 +34,8 @@ import {
     AcademicManagementService,
     AcademicReportsService,
     AcademicReportsGuard,
+    AcademicReportsResolver,
+    AcademicChartsService,
   ],
 })
 export class AcademicModule {}

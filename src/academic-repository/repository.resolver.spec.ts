@@ -25,10 +25,23 @@ describe('consultas GraphQL del repositorio académico', () => {
     project: jest.fn(),
     research: jest.fn(),
     researchOutput: jest.fn(),
+    projectOptions: jest.fn(),
   } as unknown as RepositoryService;
   const resolver = new RepositoryResolver(service);
 
   beforeEach(() => jest.clearAllMocks());
+
+  it('delega opciones paginadas con valores por defecto acotados', async () => {
+    (service.projectOptions as jest.Mock).mockResolvedValue({
+      items: [],
+      total: 0,
+    });
+    await resolver.repositoryProjectOptions();
+    expect(service.projectOptions).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 100,
+    });
+  });
 
   it.each([
     ['repositoryProject', 'project'],
