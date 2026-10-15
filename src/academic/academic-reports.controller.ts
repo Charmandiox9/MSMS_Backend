@@ -41,6 +41,13 @@ export class AcademicReportQuery {
   ])
   dataset: AcademicDataset = 'assistantships';
   @IsOptional() @IsUUID() semesterId?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -94,6 +101,8 @@ export class AcademicReportsController {
       query.reportingYear,
       query.startsOn,
       query.endsOn,
+      query.page,
+      query.pageSize,
     );
   }
   @Get('export')

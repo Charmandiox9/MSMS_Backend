@@ -19,9 +19,9 @@ describe('Academic reports', () => {
     teachingAssistant: { findMany: jest.fn() },
     assistantship: { findMany: jest.fn() },
     academicSemester: { findMany: jest.fn() },
-    project: { findMany: jest.fn() },
-    research: { findMany: jest.fn() },
-    researchOutput: { findMany: jest.fn() },
+    project: { findMany: jest.fn(), count: jest.fn() },
+    research: { findMany: jest.fn(), count: jest.fn() },
+    researchOutput: { findMany: jest.fn(), count: jest.fn() },
     hourlyTeachingContract: { findMany: jest.fn() },
     user: { findFirst: jest.fn() },
   };
@@ -249,11 +249,40 @@ describe('Academic reports', () => {
       }),
     );
   });
+  it('paginates repository report rows in Prisma while preserving the total', async () => {
+    prisma.project.findMany.mockResolvedValue([{ title: 'Proyecto 11' }]);
+    prisma.project.count.mockResolvedValue(31);
+    const result = await reports.data(
+      'projects',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      2,
+      10,
+    );
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 10 }),
+    );
+    expect(prisma.project.count).toHaveBeenCalledWith({ where: {} });
+    expect(result).toMatchObject({
+      rows: [{ title: 'Proyecto 11' }],
+      totalRows: 31,
+      page: 2,
+      pageSize: 10,
+    });
+  });
   it('applies report date ranges to research and publication dates in the database', async () => {
     prisma.research.findMany.mockResolvedValue([]);
     prisma.researchOutput.findMany.mockResolvedValue([]);
     await reports.data(
-      'research', undefined, undefined, undefined, '2025-01-01', '2025-12-31',
+      'research',
+      undefined,
+      undefined,
+      undefined,
+      '2025-01-01',
+      '2025-12-31',
     );
     expect(prisma.research.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -271,7 +300,12 @@ describe('Academic reports', () => {
       }),
     );
     await reports.data(
-      'researchOutputs', undefined, undefined, undefined, '2025-01-01', '2025-12-31',
+      'researchOutputs',
+      undefined,
+      undefined,
+      undefined,
+      '2025-01-01',
+      '2025-12-31',
     );
     expect(prisma.researchOutput.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

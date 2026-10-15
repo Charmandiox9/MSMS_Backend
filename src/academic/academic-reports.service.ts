@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { calculateHourlyPayment } from './hourly-payment-calculator';
@@ -34,6 +35,8 @@ export class AcademicReportsService {
     reportingYear?: number,
     startsOn?: string,
     endsOn?: string,
+    page?: number,
+    pageSize = 20,
   ) {
     if (startsOn && endsOn && startsOn > endsOn)
       throw new BadRequestException(
@@ -41,6 +44,9 @@ export class AcademicReportsService {
       );
     let rows: ReportRow[];
     let columns: string[];
+    const usesDatabasePagination =
+      page !== undefined &&
+      ['projects', 'research', 'researchOutputs'].includes(dataset);
     const assignmentFilter = semesterId ? { semesterId } : {};
     switch (dataset) {
       case 'teachers':
@@ -227,44 +233,20 @@ export class AcademicReportsService {
           'endsOn',
           'closedOn',
         ];
-        const projectSearch = search?.trim();
+        const projectWhere = this.projectWhere({
+          search,
+          reportingYear,
+          startsOn,
+          endsOn,
+        });
         rows = (
           await this.prisma.project.findMany({
-            where: {
-              ...(projectSearch
-                ? {
-                    OR: [
-                      { title: reportTextFilter(projectSearch) },
-                      { code: reportTextFilter(projectSearch) },
-                      { academicUnit: reportTextFilter(projectSearch) },
-                      { classification: reportTextFilter(projectSearch) },
-                      { fundingSource: reportTextFilter(projectSearch) },
-                      { program: reportTextFilter(projectSearch) },
-                      { currency: reportTextFilter(projectSearch) },
-                    ],
-                  }
-                : {}),
-              ...(reportingYear ? { reportingYear } : {}),
-              ...(startsOn || endsOn
-                ? {
-                    ...(endsOn
-                      ? {
-                          startsOn: {
-                            lte: new Date(`${endsOn}T23:59:59.999Z`),
-                          },
-                        }
-                      : {}),
-                    ...(startsOn
-                      ? {
-                          endsOn: {
-                            gte: new Date(`${startsOn}T00:00:00.000Z`),
-                          },
-                        }
-                      : {}),
-                  }
-                : {}),
-            },
+            where: projectWhere,
             orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }],
+            ...(usesDatabasePagination
+              ? { skip: ((page ?? 1) - 1) * pageSize }
+              : {}),
+            ...(usesDatabasePagination ? { take: pageSize } : {}),
           })
         ).map((project) => ({
           reportingYear: project.reportingYear,
@@ -299,48 +281,24 @@ export class AcademicReportsService {
           'endsOn',
           'outputCount',
         ];
-        const researchSearch = search?.trim();
+        const researchWhere = this.researchWhere({
+          search,
+          reportingYear,
+          startsOn,
+          endsOn,
+        });
         rows = (
           await this.prisma.research.findMany({
-            where: {
-              AND: [
-                ...(researchSearch
-                  ? [{
-                    OR: [
-                      { title: reportTextFilter(researchSearch) },
-                      { code: reportTextFilter(researchSearch) },
-                      { academicUnit: reportTextFilter(researchSearch) },
-                      { researchArea: reportTextFilter(researchSearch) },
-                      { project: { is: { title: reportTextFilter(researchSearch) } } },
-                    ],
-                  }]
-                  : []),
-                ...(reportingYear
-                  ? [{
-                      startsOn: {
-                        gte: new Date(`${reportingYear}-01-01T00:00:00.000Z`),
-                        lt: new Date(`${reportingYear + 1}-01-01T00:00:00.000Z`),
-                      },
-                    }]
-                  : []),
-                ...(endsOn
-                  ? [{ startsOn: { lte: new Date(`${endsOn}T23:59:59.999Z`) } }]
-                  : []),
-                ...(startsOn
-                  ? [{
-                      OR: [
-                        { endsOn: { gte: new Date(`${startsOn}T00:00:00.000Z`) } },
-                        { endsOn: null },
-                      ],
-                    }]
-                  : []),
-              ],
-            },
+            where: researchWhere,
             include: {
               project: { select: { title: true } },
               _count: { select: { outputs: true } },
             },
             orderBy: [{ startsOn: 'desc' }, { title: 'asc' }],
+            ...(usesDatabasePagination
+              ? { skip: ((page ?? 1) - 1) * pageSize }
+              : {}),
+            ...(usesDatabasePagination ? { take: pageSize } : {}),
           })
         ).map((research) => ({
           title: research.title,
@@ -367,41 +325,24 @@ export class AcademicReportsService {
           'authorCount',
           'projectCount',
         ];
-        const outputSearch = search?.trim();
+        const outputWhere = this.outputWhere({
+          search,
+          reportingYear,
+          startsOn,
+          endsOn,
+        });
         rows = (
           await this.prisma.researchOutput.findMany({
-            where: {
-              ...(outputSearch
-                ? {
-                    OR: [
-                      { title: reportTextFilter(outputSearch) },
-                      { doi: reportTextFilter(outputSearch) },
-                      { journal: reportTextFilter(outputSearch) },
-                      { publisher: reportTextFilter(outputSearch) },
-                      { indexation: reportTextFilter(outputSearch) },
-                      { research: { is: { title: reportTextFilter(outputSearch) } } },
-                    ],
-                  }
-                : {}),
-              ...(reportingYear ? { reportingYear } : {}),
-              ...(startsOn || endsOn
-                ? {
-                    publicationDate: {
-                      ...(startsOn
-                        ? { gte: new Date(`${startsOn}T00:00:00.000Z`) }
-                        : {}),
-                      ...(endsOn
-                        ? { lte: new Date(`${endsOn}T23:59:59.999Z`) }
-                        : {}),
-                    },
-                  }
-                : {}),
-            },
+            where: outputWhere,
             include: {
               research: { select: { title: true } },
               _count: { select: { authors: true, projects: true } },
             },
             orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }],
+            ...(usesDatabasePagination
+              ? { skip: ((page ?? 1) - 1) * pageSize }
+              : {}),
+            ...(usesDatabasePagination ? { take: pageSize } : {}),
           })
         ).map((output) => ({
           reportingYear: output.reportingYear,
@@ -487,17 +428,181 @@ export class AcademicReportsService {
       rows.sort((a, b) =>
         String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es'),
       );
+    if (!usesDatabasePagination)
+      return {
+        columns,
+        rows: needle
+          ? rows.filter((row) =>
+              Object.values(row).some((value) =>
+                String(value ?? '')
+                  .toLocaleLowerCase()
+                  .includes(needle),
+              ),
+            )
+          : rows,
+      };
+    const filters = {
+      search,
+      reportingYear,
+      startsOn,
+      endsOn,
+    };
+    const totalRows =
+      dataset === 'projects'
+        ? await this.prisma.project.count({
+            where: this.projectWhere(filters),
+          })
+        : dataset === 'research'
+          ? await this.prisma.research.count({
+              where: this.researchWhere(filters),
+            })
+          : await this.prisma.researchOutput.count({
+              where: this.outputWhere(filters),
+            });
+    return { columns, rows, totalRows, page, pageSize };
+  }
+
+  private projectWhere(filters: {
+    search?: string;
+    reportingYear?: number;
+    startsOn?: string;
+    endsOn?: string;
+  }): Prisma.ProjectWhereInput {
+    const search = filters.search?.trim();
     return {
-      columns,
-      rows: needle
-        ? rows.filter((row) =>
-            Object.values(row).some((value) =>
-              String(value ?? '')
-                .toLocaleLowerCase()
-                .includes(needle),
-            ),
-          )
-        : rows,
+      ...(search
+        ? {
+            OR: [
+              { title: reportTextFilter(search) },
+              { code: reportTextFilter(search) },
+              { academicUnit: reportTextFilter(search) },
+              { classification: reportTextFilter(search) },
+              { fundingSource: reportTextFilter(search) },
+              { program: reportTextFilter(search) },
+              { currency: reportTextFilter(search) },
+            ],
+          }
+        : {}),
+      ...(filters.reportingYear
+        ? { reportingYear: filters.reportingYear }
+        : {}),
+      ...(filters.startsOn || filters.endsOn
+        ? {
+            ...(filters.endsOn
+              ? {
+                  startsOn: {
+                    lte: new Date(`${filters.endsOn}T23:59:59.999Z`),
+                  },
+                }
+              : {}),
+            ...(filters.startsOn
+              ? {
+                  endsOn: {
+                    gte: new Date(`${filters.startsOn}T00:00:00.000Z`),
+                  },
+                }
+              : {}),
+          }
+        : {}),
+    };
+  }
+
+  private researchWhere(filters: {
+    search?: string;
+    reportingYear?: number;
+    startsOn?: string;
+    endsOn?: string;
+  }): Prisma.ResearchWhereInput {
+    const search = filters.search?.trim();
+    return {
+      AND: [
+        ...(search
+          ? [
+              {
+                OR: [
+                  { title: reportTextFilter(search) },
+                  { code: reportTextFilter(search) },
+                  { academicUnit: reportTextFilter(search) },
+                  { researchArea: reportTextFilter(search) },
+                  { project: { is: { title: reportTextFilter(search) } } },
+                ],
+              },
+            ]
+          : []),
+        ...(filters.reportingYear
+          ? [
+              {
+                startsOn: {
+                  gte: new Date(`${filters.reportingYear}-01-01T00:00:00.000Z`),
+                  lt: new Date(
+                    `${filters.reportingYear + 1}-01-01T00:00:00.000Z`,
+                  ),
+                },
+              },
+            ]
+          : []),
+        ...(filters.endsOn
+          ? [
+              {
+                startsOn: {
+                  lte: new Date(`${filters.endsOn}T23:59:59.999Z`),
+                },
+              },
+            ]
+          : []),
+        ...(filters.startsOn
+          ? [
+              {
+                OR: [
+                  {
+                    endsOn: {
+                      gte: new Date(`${filters.startsOn}T00:00:00.000Z`),
+                    },
+                  },
+                  { endsOn: null },
+                ],
+              },
+            ]
+          : []),
+      ],
+    };
+  }
+
+  private outputWhere(filters: {
+    search?: string;
+    reportingYear?: number;
+    startsOn?: string;
+    endsOn?: string;
+  }): Prisma.ResearchOutputWhereInput {
+    const search = filters.search?.trim();
+    return {
+      ...(search
+        ? {
+            OR: [
+              { title: reportTextFilter(search) },
+              { doi: reportTextFilter(search) },
+              { journal: reportTextFilter(search) },
+              { publisher: reportTextFilter(search) },
+              { indexation: reportTextFilter(search) },
+              { research: { is: { title: reportTextFilter(search) } } },
+            ],
+          }
+        : {}),
+      ...(filters.reportingYear
+        ? { reportingYear: filters.reportingYear }
+        : {}),
+      ...(filters.startsOn || filters.endsOn
+        ? {
+            publicationDate: {
+              ...(filters.startsOn
+                ? { gte: new Date(`${filters.startsOn}T00:00:00.000Z`) }
+                : {}),
+              ...(filters.endsOn
+                ? { lte: new Date(`${filters.endsOn}T23:59:59.999Z`) }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 }
