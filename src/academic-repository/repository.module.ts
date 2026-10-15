@@ -9,6 +9,7 @@ import { RepositoryService } from './repository.service';
 import {
   RepositoryResolver,
   RepositoryListRecordResolver,
+  ResearchOutputListRecordResolver,
 } from './repository.resolver';
 @Module({
   imports: [PrismaModule],
@@ -21,6 +22,7 @@ import {
     RepositoryService,
     RepositoryResolver,
     RepositoryListRecordResolver,
+    ResearchOutputListRecordResolver,
   ],
 })
 export class AcademicRepositoryModule {}

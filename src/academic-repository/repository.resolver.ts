@@ -6,14 +6,18 @@ import {
   ResolveField,
   Resolver,
 } from '@nestjs/graphql';
+import { Prisma } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ACADEMIC_REPOSITORY_ROLES } from '../academic/repository-access';
-import { RepositoryQueryDto } from './repository.dto';
+import { RepositoryQueryDto, ResearchOutputQueryDto } from './repository.dto';
 import { RepositoryService } from './repository.service';
 import {
   RepositoryListFilters,
   RepositoryListPage,
   RepositoryListRecord,
+  ResearchOutputListRecord,
+  ResearchOutputListFilters,
+  ResearchOutputListPage,
 } from './repository.graphql';
 
 @Resolver(() => RepositoryListRecord)
@@ -21,6 +25,16 @@ export class RepositoryListRecordResolver {
   @ResolveField(() => Int)
   outputCount(@Parent() record: { _count?: { outputs?: number } }) {
     return record._count?.outputs ?? 0;
+  }
+}
+
+@Resolver(() => ResearchOutputListRecord)
+export class ResearchOutputListRecordResolver {
+  @ResolveField(() => String, { nullable: true })
+  fiveYearImpactFactor(
+    @Parent() record: { fiveYearImpactFactor: Prisma.Decimal | null },
+  ) {
+    return record.fiveYearImpactFactor?.toString() ?? null;
   }
 }
 
@@ -59,6 +73,24 @@ export class RepositoryResolver {
       search,
       sortBy: sortBy as RepositoryQueryDto['sortBy'],
       sortOrder,
+    });
+  }
+
+  @Query(() => ResearchOutputListPage)
+  repositoryResearchOutputs(
+    @Args('filters', { nullable: true, type: () => ResearchOutputListFilters })
+    filters?: ResearchOutputListFilters,
+  ) {
+    const value = filters ?? new ResearchOutputListFilters();
+    return this.service.researchOutputs({
+      page: value.page,
+      pageSize: value.pageSize,
+      search: value.search,
+      researchId: value.researchId,
+      kind: value.kind,
+      reportingYear: value.reportingYear,
+      sortBy: value.sortBy as ResearchOutputQueryDto['sortBy'],
+      sortOrder: value.sortOrder,
     });
   }
 }
