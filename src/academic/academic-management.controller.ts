@@ -1,0 +1,73 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AcademicManagementService } from './academic-management.service';
+import { ACADEMIC_REPOSITORY_ROLES } from './repository-access';
+import {
+  CourseTeachersDto,
+  CreateCourseDto,
+  TeacherInputDto,
+  ToggleTeacherStatusDto,
+} from './academic-management.dto';
+
+// REST keeps manual maintenance consistent with the existing academic endpoints.
+@Controller('academic')
+@Roles('ACADEMIC_SECRETARY')
+export class AcademicManagementController {
+  constructor(private readonly service: AcademicManagementService) {}
+
+  @Get('courses/current')
+  @Roles(
+    'ACADEMIC_SECRETARY',
+    'ACADEMIC_PROCESS_ANALYST',
+    'TEACHING_SUPPORT_COORDINATOR',
+  )
+  currentCourses() {
+    return this.service.currentCourses();
+  }
+
+  @Post('teachers')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
+  createTeacher(@Body() input: TeacherInputDto) {
+    return this.service.createTeacher(input);
+  }
+
+  @Patch('teachers/:id')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
+  updateTeacher(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: TeacherInputDto,
+  ) {
+    return this.service.updateTeacher(id, input);
+  }
+
+  @Patch('teachers/:id/status')
+  @Roles(...ACADEMIC_REPOSITORY_ROLES)
+  setTeacherStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: ToggleTeacherStatusDto,
+  ) {
+    return this.service.setTeacherStatus(id, input);
+  }
+
+  @Post('courses')
+  createCourse(@Body() input: CreateCourseDto) {
+    return this.service.createCourse(input);
+  }
+
+  @Put('courses/:nrc/teachers')
+  setCourseTeachers(
+    @Param('nrc') nrc: string,
+    @Body() input: CourseTeachersDto,
+  ) {
+    return this.service.setCourseTeachers(nrc, input);
+  }
+}

@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import {
+  ProjectsController,
+  ResearchController,
+} from '../academic-repository/repository.controller';
 import { AppController } from '../app.controller';
+import { AcademicManagementController } from '../academic/academic-management.controller';
+import { HourlyPaymentsController } from '../academic/hourly-payments.controller';
+import { StudentsController } from '../students/students.controller';
 import {
   AcademicController,
   AcademicCoursesController,
@@ -19,6 +26,11 @@ import { ROLES_KEY } from './decorators/roles.decorator';
 type Access = 'PUBLIC' | 'AUTHENTICATED' | string[];
 
 const controllers: Type[] = [
+  ProjectsController,
+  ResearchController,
+  HourlyPaymentsController,
+  StudentsController,
+  AcademicManagementController,
   AppController,
   AuthController,
   UsersController,
@@ -65,6 +77,11 @@ function routeMatrix(): Record<string, Access> {
 
 const SECRETARY = ['ACADEMIC_SECRETARY'];
 const COORDINATOR = ['TEACHING_SUPPORT_COORDINATOR'];
+const REPOSITORY = [
+  'ACADEMIC_PROCESS_ANALYST',
+  'ACADEMIC_SECRETARY',
+  'SYSTEM_ADMIN',
+];
 const ACADEMIC_READERS = [
   'ACADEMIC_PROCESS_ANALYST',
   'ACADEMIC_SECRETARY',
@@ -74,6 +91,31 @@ const ACADEMIC_READERS = [
 describe('Matriz de permisos por endpoint', () => {
   it('cada endpoint declara exactamente el acceso esperado', () => {
     expect(routeMatrix()).toEqual({
+      'ProjectsController.list': REPOSITORY,
+      'ProjectsController.get': REPOSITORY,
+      'ProjectsController.create': REPOSITORY,
+      'ProjectsController.update': REPOSITORY,
+      'ProjectsController.remove': REPOSITORY,
+      'ResearchController.list': REPOSITORY,
+      'ResearchController.get': REPOSITORY,
+      'ResearchController.create': REPOSITORY,
+      'ResearchController.update': REPOSITORY,
+      'ResearchController.remove': REPOSITORY,
+      'HourlyPaymentsController.catalog': REPOSITORY,
+      'HourlyPaymentsController.teacherContracts': REPOSITORY,
+      'HourlyPaymentsController.setRate': REPOSITORY,
+      'HourlyPaymentsController.preview': REPOSITORY,
+      'StudentsController.list': ACADEMIC_READERS,
+      'StudentsController.get': ACADEMIC_READERS,
+      'StudentsController.create': SECRETARY,
+      'StudentsController.update': SECRETARY,
+      'StudentsController.importCsv': SECRETARY,
+      'AcademicManagementController.currentCourses': ACADEMIC_READERS,
+      'AcademicManagementController.createTeacher': REPOSITORY,
+      'AcademicManagementController.updateTeacher': REPOSITORY,
+      'AcademicManagementController.setTeacherStatus': REPOSITORY,
+      'AcademicManagementController.createCourse': SECRETARY,
+      'AcademicManagementController.setCourseTeachers': SECRETARY,
       'AppController.getHello': 'PUBLIC',
 
       'AuthController.googleAuth': 'PUBLIC',
@@ -90,11 +132,14 @@ describe('Matriz de permisos por endpoint', () => {
       'UsersController.setActive': ['SYSTEM_ADMIN'],
       'UsersController.permanentlyDelete': ['SYSTEM_ADMIN'],
 
-      'AcademicController.listTeachers': ACADEMIC_READERS,
-      'AcademicController.getTeacher': ACADEMIC_READERS,
-      'AcademicController.importCsv': SECRETARY,
-      'AcademicController.importRoster': SECRETARY,
+      'AcademicController.listTeachers': REPOSITORY,
+      'AcademicController.getTeacher': REPOSITORY,
+      'AcademicController.getTeacherSchedule': REPOSITORY,
+      'AcademicController.importCsv': REPOSITORY,
+      'AcademicController.importRoster': REPOSITORY,
       'AcademicCoursesController.listCourseSchedules': ACADEMIC_READERS,
+      'AcademicCoursesController.scheduleOptions': ACADEMIC_READERS,
+      'AcademicCoursesController.updateCourse': SECRETARY,
       'AcademicCoursesController.importCourseSchedules': SECRETARY,
       'AcademicSemestersController.listSemesters': ACADEMIC_READERS,
       'AcademicSemestersController.activateSemester': SECRETARY,
@@ -120,7 +165,7 @@ describe('Matriz de permisos por endpoint', () => {
         'TEACHING_SUPPORT_COORDINATOR',
       ],
 
-      'StorageController.createPresignedUpload': 'AUTHENTICATED',
+      'StorageController.createPresignedUpload': COORDINATOR,
       'StorageController.createFormsPresignedUpload': 'PUBLIC',
     });
   });
@@ -152,24 +197,50 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
       permission,
     }),
   );
+  const repositoryMigration = readFileSync(
+    join(
+      process.cwd(),
+      'prisma/migrations/20261014010000_encrypt_personal_data_and_repository_access/migration.sql',
+    ),
+    'utf8',
+  );
+  const repositoryRoles = [
+    ...(
+      repositoryMigration.match(/WHERE r\."code" IN \(([^)]+)\)/)?.[1] ?? ''
+    ).matchAll(/'([A-Z_]+)'/g),
+  ]
+    .map(([, role]) => role)
+    .sort();
   const rolesWith = (permission: string) =>
-    grants
-      .filter((grant) => grant.permission === permission)
-      .map(({ role }) => role);
+    permission.startsWith('ACADEMIC_REPOSITORY_')
+      ? repositoryRoles
+      : grants
+          .filter((grant) => grant.permission === permission)
+          .map(({ role }) => role);
 
   function rolesAllowed(route: string): string[] {
     const access = routeMatrix()[route];
     return Array.isArray(access) ? [...access, 'SYSTEM_ADMIN'] : [];
   }
+  it('la migración concede consulta y edición exactamente a los tres roles del repositorio', () => {
+    expect(repositoryRoles).toEqual(REPOSITORY);
+    expect(repositoryMigration).toContain(
+      "AND p.\"code\" IN ('ACADEMIC_REPOSITORY_VIEW', 'ACADEMIC_REPOSITORY_MANAGE')",
+    );
+  });
 
   it.each([
     ['JUSTIFICATIONS_VIEW', 'JustificationsController.list'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.listInbox'],
     ['JUSTIFICATIONS_CREATE', 'JustificationsController.open'],
-    ['ACADEMIC_RECORDS_VIEW', 'AcademicController.listTeachers'],
+    ['JUSTIFICATIONS_CREATE', 'StorageController.createPresignedUpload'],
+    ['ACADEMIC_REPOSITORY_VIEW', 'AcademicController.listTeachers'],
+    ['ACADEMIC_RECORDS_VIEW', 'StudentsController.list'],
+    ['ACADEMIC_RECORDS_MANAGE', 'StudentsController.create'],
+    ['ACADEMIC_REPOSITORY_VIEW', 'AcademicController.getTeacherSchedule'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicCoursesController.listCourseSchedules'],
     ['ACADEMIC_RECORDS_VIEW', 'AcademicSemestersController.listSemesters'],
-    ['ACADEMIC_RECORDS_MANAGE', 'AcademicController.importCsv'],
+    ['ACADEMIC_REPOSITORY_MANAGE', 'AcademicController.importCsv'],
     ['USERS_MANAGE', 'UsersController.list'],
     ['ROLES_MANAGE', 'UsersController.assign'],
   ])('todo rol con %s puede usar %s', (permission, route) => {

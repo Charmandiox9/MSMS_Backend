@@ -37,7 +37,8 @@ describe('AuthService', () => {
       $transaction: jest.fn(),
     };
     prisma.$transaction.mockImplementation(
-      (callback: (transactionClient: typeof transaction) => Promise<unknown>) => callback(transaction),
+      (callback: (transactionClient: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
     );
     jest.clearAllMocks();
 
@@ -56,7 +57,7 @@ describe('AuthService', () => {
     expect(service).toBeDefined();
   });
 
-  it('includes role codes in the JWT payload', () => {
+  it('minimiza el JWT para incluir solo el identificador opaco del usuario', () => {
     service.generateJwtToken({
       id: 'user-id',
       email: 'user@ucn.cl',
@@ -65,8 +66,6 @@ describe('AuthService', () => {
 
     expect(jwtService.sign).toHaveBeenCalledWith({
       sub: 'user-id',
-      email: 'user@ucn.cl',
-      roles: ['SYSTEM_ADMIN'],
     });
   });
 
@@ -166,7 +165,10 @@ describe('AuthService', () => {
       ],
     });
 
-    const result = await service.validateGoogleUser({ ...googleUser, email: '  TEST@UCN.CL ' });
+    const result = await service.validateGoogleUser({
+      ...googleUser,
+      email: '  TEST@UCN.CL ',
+    });
 
     expect(transaction.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -176,7 +178,9 @@ describe('AuthService', () => {
         }),
       }),
     );
-    expect(transaction.preloadedUser.delete).toHaveBeenCalledWith({ where: { id: 'preload-1' } });
+    expect(transaction.preloadedUser.delete).toHaveBeenCalledWith({
+      where: { id: 'preload-1' },
+    });
     expect(result.userRoles).toHaveLength(2);
   });
 

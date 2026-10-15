@@ -2,6 +2,25 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { ValidationError } from 'class-validator';
+import { json, urlencoded } from 'express';
+
+// Las importaciones envían el CSV completo como texto dentro del JSON. Solo esas
+// rutas aceptan cuerpos grandes; el resto mantiene el límite por defecto (100 KB)
+// porque el cuerpo se lee antes de validar la sesión.
+const CSV_IMPORT_ROUTES = [
+  '/api/academic/teachers/import-csv',
+  '/api/academic/teachers/import-roster',
+  '/api/academic/courses/import-csv',
+];
+const EXCEL_IMPORT_ROUTES = [
+  '/api/academic/imports/projects/preview',
+  '/api/academic/imports/projects/commit',
+  '/api/academic/imports/research/preview',
+  '/api/academic/imports/research/commit',
+  '/api/academic/imports/hourly/preview',
+  '/api/academic/imports/hourly/commit',
+];
+const CSV_IMPORT_BODY_LIMIT = '100mb';
 
 function flattenValidationMessages(errors: ValidationError[]): string[] {
   return errors.flatMap((error) => [
@@ -11,8 +30,13 @@ function flattenValidationMessages(errors: ValidationError[]): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.setGlobalPrefix('api');
+  app.use(CSV_IMPORT_ROUTES, json({ limit: CSV_IMPORT_BODY_LIMIT }));
+  app.use(EXCEL_IMPORT_ROUTES, json({ limit: '18mb' }));
+  app.use('/api/academic/students/import-csv', json({ limit: '8mb' }));
+  app.use(json());
+  app.use(urlencoded({ extended: true }));
 
   const allowedOrigins = [
     process.env.FRONTEND_URL,
@@ -23,7 +47,10 @@ async function bootstrap() {
   ];
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
@@ -57,4 +84,4 @@ async function bootstrap() {
   console.log(`🚀 API: ${host}/api`);
   console.log(`📊 GraphQL: ${host}/api/graphql`);
 }
-bootstrap();
+void bootstrap();

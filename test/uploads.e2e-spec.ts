@@ -75,6 +75,17 @@ describe('Carga de archivos (e2e)', () => {
         .expect(401);
     });
 
+    it.each([['secretary'], ['analyst'], ['noRole']] as const)(
+      'solo coordinación sube evidencias: %s recibe 403',
+      async (user) => {
+        await http()
+          .post('/api/storage/presigned-upload')
+          .set('Cookie', ctx.cookieFor(user))
+          .send({ fileName: 'a.pdf', contentType: 'application/pdf' })
+          .expect(403);
+      },
+    );
+
     it.each([
       [{ contentType: 'application/pdf' }, 'fileName should not be empty'],
       [
@@ -246,9 +257,18 @@ describe('Carga de archivos (e2e)', () => {
 
     it('responde 404 para una justificación inexistente', async () => {
       await http()
-        .get('/api/justifications/no-existe/evidence-url')
+        .get(
+          '/api/justifications/00000000-0000-0000-0000-000000000099/evidence-url',
+        )
         .set('Cookie', ctx.cookieFor('coordinator'))
         .expect(404);
+    });
+
+    it('rechaza un id que no es UUID con 400', async () => {
+      await http()
+        .get('/api/justifications/no-existe/evidence-url')
+        .set('Cookie', ctx.cookieFor('coordinator'))
+        .expect(400);
     });
   });
 });

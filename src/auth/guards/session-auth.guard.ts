@@ -15,8 +15,10 @@ import { getRequestFromContext } from '../../common/utils/execution-context.util
 // entrega JwtStrategy ({ id, ... }) en cualquier entorno.
 export type SessionUser = AuthSession & { id: string };
 
-type RequestWithUser = Omit<Request, 'user'> & { user?: SessionUser };
-type CookieRequest = Omit<Request, 'user'>;
+type CookieRequest = Omit<Request, 'user' | 'cookies'> & {
+  cookies?: Record<string, unknown>;
+};
+type RequestWithUser = CookieRequest & { user?: SessionUser };
 
 const getCookie = (
   request: CookieRequest,
@@ -62,17 +64,33 @@ export class SessionAuthGuard implements CanActivate {
     if (!token) {
       throw new UnauthorizedException('Token no encontrado');
     }
-    const payload = await this.jwtService.verifyAsync<AuthSession>(token);
+    let payload: unknown;
+    try {
+      payload =
+        await this.jwtService.verifyAsync<Record<string, unknown>>(token);
+    } catch {
+      throw new UnauthorizedException('Token no válido o expirado');
+    }
     request.user = await this.toActiveUser(payload);
     return true;
   }
 
   // La sesión dura 24 h; se revalida que la cuenta siga activa para que una
   // desactivación tenga efecto sin esperar a que expire.
-  private async toActiveUser(session: AuthSession): Promise<SessionUser> {
-    if (!(await this.activeUsers.findActive(session.sub))) {
+  private async toActiveUser(identity: unknown): Promise<SessionUser> {
+    if (
+      !identity ||
+      typeof identity !== 'object' ||
+      !('sub' in identity) ||
+      typeof identity.sub !== 'string' ||
+      !identity.sub.trim()
+    ) {
+      throw new UnauthorizedException('Identidad de sesión no válida');
+    }
+    const user = await this.activeUsers.findActive(identity.sub);
+    if (!user) {
       throw new UnauthorizedException('Usuario inválido o inactivo');
     }
-    return { ...session, id: session.sub };
+    return { ...user, sub: user.id };
   }
 }

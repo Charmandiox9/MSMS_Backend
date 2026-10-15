@@ -68,6 +68,15 @@ También están disponibles `pnpm test:watch`, `pnpm test:cov` y `pnpm lint`. Lo
 - `src/auth`: OAuth, sesión, JWT y autorización.
 - `src/users`: cuentas, roles y permisos.
 - `src/academic`: semestres, docentes, asignaturas y horarios.
+  - `GET /academic/courses/options` entrega días y bloques institucionales.
+  - `PATCH /academic/courses/:nrc` permite a administrador y secretaría editar nombre, código, NRC y horarios del semestre activo, con `location` opcional por horario. Conserva las asignaciones docentes y las ayudantías vinculadas; rechaza NRC ocupados y bloques duplicados.
+  - El nombre y código se actualizan en el catálogo compartido entre semestres. Los horarios y el NRC se actualizan solo en el semestre activo.
+  - El código de asignatura es opcional (`null` si no se conoce), independiente del NRC. Las importaciones de carga docente permiten omitir `courseCode`; los CSV de horarios nunca deducen el código a partir del NRC. Al editar, omitir `code` conserva su valor y enviar `null` o una cadena vacía lo elimina.
+  - El CSV de horarios admite `nrc;asignatura;dia;bloque;sala`; omitir `sala` conserva las ubicaciones existentes y una celda vacía las elimina. Las salas se incluyen también en los reportes de asignaturas.
 - `src/justifications`: justificaciones y recepción de formularios.
+  - Las aprobaciones de justificaciones envían un mensaje por rol (alumno, profesor y ayudante), incluso cuando comparten correo. Se deduplican direcciones dentro de cada rol; los rechazos se notifican solo al alumno.
 - `src/dashboard`: datos agregados para los paneles.
 - `prisma/schema.prisma` y `prisma/migrations`: modelo de datos e historial de cambios.
+
+El modelo de profesores, estudiantes ayudantes y ayudantías, sus reglas de
+integridad y sus pruebas SQL se documentan en [la guía académica](docs/academic/assistantships.md).

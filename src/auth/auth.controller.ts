@@ -48,8 +48,8 @@ export class AuthController {
     res.cookie(name, value, this.getCookieOptions());
 
     // El backend calcula la ruta destino según el rol; el frontend solo la
-    // lee y redirige. Los roles completos no van en la URL (quedan en el
-    // JWT de la cookie, que el frontend no puede leer al ser httpOnly).
+    // lee y redirige. El JWT contiene solo la identidad; /auth/session
+    // reconstruye el perfil y los roles desde la cuenta activa.
     const route = resolveRedirectRoute(sessionPayload.roles);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const params = new URLSearchParams({ route });

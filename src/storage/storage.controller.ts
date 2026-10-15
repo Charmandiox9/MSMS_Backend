@@ -1,6 +1,7 @@
 import { Body, Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { StorageService } from './storage.service';
 
 class CreatePresignedUploadDto {
@@ -19,6 +20,9 @@ class CreatePresignedUploadDto {
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 
+  // JUSTIFICATIONS_CREATE (matriz RBAC): solo quien registra justificaciones
+  // sube evidencias.
+  @Roles('TEACHING_SUPPORT_COORDINATOR')
   @Post('presigned-upload')
   createPresignedUpload(@Body() dto: CreatePresignedUploadDto) {
     return this.storageService.createPresignedUpload(

@@ -2,6 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
+import { PiiCryptoService } from '../privacy/pii-crypto.service';
 
 const USER_CACHE_TTL_MS = 60 * 1000;
 
@@ -14,20 +15,35 @@ export type AuthenticatedUser = {
 
 /**
  * Resuelve un usuario activo con sus roles, cacheado por 60 s. La clave
- * `user:<id>` se invalida al activar, desactivar o eliminar la cuenta.
+ * `user:pii:v1:<id>` se invalida al activar, desactivar o eliminar la cuenta.
  */
 @Injectable()
 export class ActiveUserService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly crypto: PiiCryptoService,
   ) {}
 
   async findActive(id: string): Promise<AuthenticatedUser | null> {
-    const cacheKey = `user:${id}`;
-    const cachedUser = await this.cache.get<AuthenticatedUser>(cacheKey);
-    if (cachedUser) {
-      return cachedUser;
+    const cacheKey = `user:pii:v1:${id}`;
+    const cachedUser = await this.cache.get<string>(cacheKey);
+    if (typeof cachedUser === 'string') {
+      const result: unknown = JSON.parse(
+        this.crypto.decrypt(cachedUser, cacheKey),
+      );
+      if (
+        result &&
+        typeof result === 'object' &&
+        'id' in result &&
+        result.id === id &&
+        'email' in result &&
+        typeof result.email === 'string' &&
+        'roles' in result &&
+        Array.isArray(result.roles) &&
+        result.roles.every((role: unknown) => typeof role === 'string')
+      )
+        return result as AuthenticatedUser;
     }
 
     const user = await this.prisma.user.findUnique({
@@ -46,7 +62,11 @@ export class ActiveUserService {
       ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
     };
 
-    await this.cache.set(cacheKey, authenticatedUser, USER_CACHE_TTL_MS);
+    await this.cache.set(
+      cacheKey,
+      this.crypto.encrypt(JSON.stringify(authenticatedUser), cacheKey),
+      USER_CACHE_TTL_MS,
+    );
     return authenticatedUser;
   }
 }

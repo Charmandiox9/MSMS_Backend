@@ -6,6 +6,8 @@ describe('DashboardService', () => {
   let service: DashboardService;
 
   const prisma = {
+    assistantship: { count: jest.fn().mockResolvedValue(3) },
+    teachingAssistant: { count: jest.fn().mockResolvedValue(2) },
     user: { count: jest.fn() },
     role: { count: jest.fn() },
     teacher: { count: jest.fn() },
@@ -28,6 +30,8 @@ describe('DashboardService', () => {
 
     await expect(service.systemAdmin()).resolves.toEqual({
       users: 12,
+      assistantships: 3,
+      assistants: 2,
       activeUsers: 10,
       roles: 4,
       pendingJustifications: 3,
@@ -48,6 +52,8 @@ describe('DashboardService', () => {
 
     await expect(service.academicSecretary()).resolves.toEqual({
       teachers: 8,
+      assistantships: 3,
+      assistants: 2,
       activeCourses: 20,
       activeSchedules: 60,
       pendingJustifications: 2,
@@ -69,6 +75,8 @@ describe('DashboardService', () => {
     await expect(service.academicProcessAnalyst()).resolves.toEqual({
       teachers: 8,
       activeCourses: 21,
+      assistantships: 3,
+      assistants: 2,
       activeAssignments: 30,
       justifications: 45,
     });
@@ -83,6 +91,8 @@ describe('DashboardService', () => {
 
     await expect(service.teachingSupportCoordinator()).resolves.toEqual({
       unreadInbox: 5,
+      assistantships: 3,
+      assistants: 2,
       pendingJustifications: 2,
       activeAssignments: 30,
       activeSchedules: 60,

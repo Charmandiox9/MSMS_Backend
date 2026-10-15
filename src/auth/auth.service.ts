@@ -25,10 +25,12 @@ type UserSessionData = {
 export class AuthService {
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
   ) {}
 
-  async validateGoogleUser(googleUser: GoogleUserProfile): Promise<UserWithRoles> {
+  async validateGoogleUser(
+    googleUser: GoogleUserProfile,
+  ): Promise<UserWithRoles> {
     const email = googleUser.email.trim().toLowerCase();
     let user = await this.prisma.user.findUnique({
       where: { email },
@@ -43,7 +45,10 @@ export class AuthService {
       if (!user.googleId) {
         user = await this.prisma.user.update({
           where: { email },
-          data: { googleId: googleUser.googleId, avatarUrl: googleUser.avatarUrl },
+          data: {
+            googleId: googleUser.googleId,
+            avatarUrl: googleUser.avatarUrl,
+          },
           include: { userRoles: { include: { role: true } } },
         });
       }
@@ -58,9 +63,15 @@ export class AuthService {
             email,
             name: googleUser.name,
             googleId: googleUser.googleId,
-            ...(googleUser.avatarUrl ? { avatarUrl: googleUser.avatarUrl } : {}),
+            ...(googleUser.avatarUrl
+              ? { avatarUrl: googleUser.avatarUrl }
+              : {}),
             ...(preload
-              ? { userRoles: { create: preload.roles.map(({ roleId }) => ({ roleId })) } }
+              ? {
+                  userRoles: {
+                    create: preload.roles.map(({ roleId }) => ({ roleId })),
+                  },
+                }
               : {}),
           },
           include: { userRoles: { include: { role: true } } },
@@ -77,7 +88,7 @@ export class AuthService {
   }
 
   generateJwtToken(user: UserSessionData) {
-    return this.jwtService.sign(this.getSessionPayload(user));
+    return this.jwtService.sign({ sub: user.id });
   }
 
   getSessionPayload(user: UserSessionData) {

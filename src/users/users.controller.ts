@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsString, Matches } from 'class-validator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -45,7 +45,7 @@ export class UsersController {
   preload(@Body() body: PreloadUserDto) { return this.users.preloadUser(body.email, body.roleIds); }
 
   @Delete('preloads/:id')
-  cancelPreload(@Param('id') id: string) { return this.users.cancelPreload(id); }
+  cancelPreload(@Param('id', ParseUUIDPipe) id: string) { return this.users.cancelPreload(id); }
 
   @Get()
   list(@Query('page', new ParseIntPipe({ optional: true })) page = 1, @Query('pageSize', new ParseIntPipe({ optional: true })) pageSize = 10, @Query('search') search = '', @Query('role') role = '') {
@@ -53,18 +53,18 @@ export class UsersController {
   }
 
   @Post(':id/roles')
-  assign(@Param('id') userId: string, @Body() body: AssignRoleDto) { return this.users.assignRole(userId, body.roleId); }
+  assign(@Param('id', ParseUUIDPipe) userId: string, @Body() body: AssignRoleDto) { return this.users.assignRole(userId, body.roleId); }
 
   @Delete(':id/roles/:roleId')
-  revoke(@Param('id') userId: string, @Param('roleId') roleId: string) { return this.users.revokeRole(userId, roleId); }
+  revoke(@Param('id', ParseUUIDPipe) userId: string, @Param('roleId', ParseUUIDPipe) roleId: string) { return this.users.revokeRole(userId, roleId); }
 
   @Patch(':id/status')
-  setActive(@Param('id') userId: string, @Body() body: UserStatusDto, @CurrentUser() actor: { id: string }) {
+  setActive(@Param('id', ParseUUIDPipe) userId: string, @Body() body: UserStatusDto, @CurrentUser() actor: { id: string }) {
     return this.users.setActive(userId, body.isActive, actor.id);
   }
 
   @Delete(':id')
-  permanentlyDelete(@Param('id') userId: string, @CurrentUser() actor: { id: string }) {
+  permanentlyDelete(@Param('id', ParseUUIDPipe) userId: string, @CurrentUser() actor: { id: string }) {
     return this.users.permanentlyDelete(userId, actor.id);
   }
 }
