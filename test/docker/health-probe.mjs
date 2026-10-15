@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 const expected = Number(process.argv[2] ?? 200);
-const base = 'http://localhost:18080';
+const base = 'http://localhost';
 let ready;
 for (let attempt = 0; attempt < 30; attempt++) {
   try {
