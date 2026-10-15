@@ -12,6 +12,11 @@ import { ACADEMIC_REPOSITORY_ROLES } from '../academic/repository-access';
 import { RepositoryQueryDto, ResearchOutputQueryDto } from './repository.dto';
 import { RepositoryService } from './repository.service';
 import {
+  RepositoryIdArgs,
+  RepositoryProjectDetail,
+  RepositoryResearchDetail,
+} from './repository-detail.graphql';
+import {
   RepositoryListFilters,
   RepositoryListPage,
   RepositoryListRecord,
@@ -32,7 +37,7 @@ export class RepositoryListRecordResolver {
 export class ResearchOutputListRecordResolver {
   @ResolveField(() => String, { nullable: true })
   fiveYearImpactFactor(
-    @Parent() record: { fiveYearImpactFactor: Prisma.Decimal | null },
+    @Parent() record: { fiveYearImpactFactor: Prisma.Decimal | string | null },
   ) {
     return record.fiveYearImpactFactor?.toString() ?? null;
   }
@@ -42,6 +47,37 @@ export class ResearchOutputListRecordResolver {
 @Roles(...ACADEMIC_REPOSITORY_ROLES)
 export class RepositoryResolver {
   constructor(private readonly service: RepositoryService) {}
+
+  @Query(() => RepositoryProjectDetail)
+  async repositoryProject(@Args() args: RepositoryIdArgs) {
+    const row = await this.service.project(args.id);
+    return {
+      ...row,
+      outputCount: row._count.outputs,
+      totalAmount: row.totalAmount?.toString() ?? null,
+      vraContribution: row.vraContribution?.toString() ?? null,
+      vridtContribution: row.vridtContribution?.toString() ?? null,
+      recoveryAmount: row.recoveryAmount?.toString() ?? null,
+      facultyContribution: row.facultyContribution?.toString() ?? null,
+      depreciationAmount: row.depreciationAmount?.toString() ?? null,
+      profitabilityAmount: row.profitabilityAmount?.toString() ?? null,
+    };
+  }
+
+  @Query(() => RepositoryResearchDetail)
+  async repositoryResearchDetail(@Args() args: RepositoryIdArgs) {
+    const row = await this.service.research(args.id);
+    return { ...row, outputCount: row._count.outputs };
+  }
+
+  @Query(() => ResearchOutputListRecord)
+  async repositoryResearchOutput(@Args() args: RepositoryIdArgs) {
+    const row = await this.service.researchOutput(args.id);
+    return {
+      ...row,
+      fiveYearImpactFactor: row.fiveYearImpactFactor?.toString() ?? null,
+    };
+  }
 
   @Query(() => RepositoryListPage)
   repositoryProjects(
