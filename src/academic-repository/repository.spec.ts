@@ -101,6 +101,30 @@ describe('CRUD del repositorio académico', () => {
     prisma.teacher.findMany.mockResolvedValue([]);
   });
 
+  it('pagina opciones con el vínculo de investigación sin cargar participantes ni metadatos', async () => {
+    prisma.project.count.mockResolvedValue(150);
+    prisma.project.findMany.mockResolvedValue([
+      { id, title: 'Proyecto', code: null, research: { id: 'research-1' } },
+    ]);
+    const result = await service.projectOptions({ page: 2, pageSize: 100 });
+    expect(result).toMatchObject({
+      total: 150,
+      totalPages: 2,
+      items: [{ id, title: 'Proyecto', researchId: 'research-1' }],
+    });
+    expect(prisma.project.findMany).toHaveBeenCalledWith({
+      select: {
+        id: true,
+        title: true,
+        code: true,
+        research: { select: { id: true } },
+      },
+      orderBy: [{ title: 'asc' }, { id: 'asc' }],
+      skip: 100,
+      take: 100,
+    });
+  });
+
   it('registra proyectos con importes desconocidos en NULL y cero explícito en Decimal', async () => {
     await projects.create(project);
     expect(prisma.project.create.mock.calls[0][0].data).toMatchObject({

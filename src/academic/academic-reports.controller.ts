@@ -9,48 +9,12 @@ import {
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
-import {
-  IsIn,
-  IsInt,
-  IsDateString,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { getRequestFromContext } from '../common/utils/execution-context.util';
 import { AcademicReportsService } from './academic-reports.service';
-import type { AcademicDataset } from './academic-reports.service';
-
-export class AcademicReportQuery {
-  @IsIn([
-    'teachers',
-    'courses',
-    'assignments',
-    'assistants',
-    'assistantships',
-    'semesters',
-    'projects',
-    'research',
-    'researchOutputs',
-    'hourlyContracts',
-  ])
-  dataset: AcademicDataset = 'assistantships';
-  @IsOptional() @IsUUID() semesterId?: string;
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1900)
-  @Max(2200)
-  reportingYear?: number;
-  @IsOptional() @IsString() @MaxLength(200) search?: string;
-  @IsOptional() @IsDateString({ strict: true }) startsOn?: string;
-  @IsOptional() @IsDateString({ strict: true }) endsOn?: string;
-}
+import { AcademicReportQuery } from './academic-reports.graphql';
+export { AcademicReportQuery } from './academic-reports.graphql';
 
 @Injectable()
 export class AcademicReportsGuard implements CanActivate {
@@ -94,6 +58,8 @@ export class AcademicReportsController {
       query.reportingYear,
       query.startsOn,
       query.endsOn,
+      query.page,
+      query.pageSize,
     );
   }
   @Get('export')
