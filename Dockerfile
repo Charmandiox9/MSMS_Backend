@@ -32,7 +32,9 @@ FROM base AS runner
 COPY --from=builder --chown=marsys:nodejs /app/package*.json ./
 COPY --from=production-deps --chown=marsys:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=marsys:nodejs /app/dist ./dist
+COPY --chown=marsys:nodejs docker/start.sh ./docker/start.sh
 USER marsys
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD node -e "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/bin/sh", "/app/docker/start.sh"]
 CMD ["node", "dist/main.js"]

@@ -31,9 +31,7 @@ export class InitialAdminService {
         where: { isActive: true, userRoles: { some: { roleId: role.id } } },
       });
       if (activeAdmins)
-        throw new ConflictException(
-          'Ya existe un administrador activo; utiliza la administración de usuarios',
-        );
+        return { status: 'already-initialized' };
       const existing = await tx.preloadedUser.findFirst({
         where: { roles: { some: { roleId: role.id } } },
       });
@@ -44,10 +42,14 @@ export class InitialAdminService {
           'Ya existe una precarga de administrador inicial',
         );
       }
-      if (await tx.user.findUnique({ where: { email: normalized } })) {
-        throw new ConflictException(
-          'El correo ya tiene una cuenta; requiere revisión de un administrador',
-        );
+      const user = await tx.user.findUnique({ where: { email: normalized } });
+      if (user) {
+        if (!user.isActive)
+          throw new ConflictException('La cuenta inicial está inactiva');
+        await tx.userRole.create({
+          data: { userId: user.id, roleId: role.id },
+        });
+        return { status: 'assigned' };
       }
       await tx.preloadedUser.create({
         data: { email: normalized, roles: { create: { roleId: role.id } } },

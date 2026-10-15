@@ -103,13 +103,15 @@ En la prueba local, **las 21 migraciones existentes se aplicaron desde cero**, s
 5. `NO_ACCESS_ROUTE=/no-access`. Configurar `ACADEMIC_TIME_ZONE=America/Santiago` y los datos reales de Resend para notificaciones.
 6. Mantener `TRUST_PROXY` vacío salvo que se hayan definido los IP/CIDR reales de proxies confiables. Nunca usar confianza universal. Producción limita CORS al origen frontend y rechaza mutaciones con cookie de sesión y origen ajeno/ausente; los webhooks sin cookie usan su secreto.
 7. Configurar healthcheck de `/api/health/ready` sobre puerto 3001. Comprueba PostgreSQL, roundtrip de Redis y acceso al bucket privado; devuelve error genérico sin credenciales. `/api/health/live` solo indica vida del proceso. La imagen ya incluye un healthcheck con Node, sin depender de curl.
-8. Con migraciones aplicadas, preparar al administrador inicial mediante **un comando de mantenimiento explícito** dentro del contenedor backend:
+8. Establecer `BOOTSTRAP_ADMIN_EMAIL` con el correo institucional del administrador inicial. Con migraciones ya aplicadas, el entrypoint de la imagen runner ejecuta automáticamente el bootstrap antes de iniciar la API. También se puede ejecutarlo manualmente dentro del contenedor backend:
 
 ```bash
 node dist/maintenance/bootstrap-admin.js
 ```
 
-El comando lee `BOOTSTRAP_ADMIN_EMAIL`, valida el correo contra la whitelist y crea una precarga cifrada con rol `SYSTEM_ADMIN`. Es idempotente para esa precarga, se serializa mediante lock de PostgreSQL y rechaza crear otro administrador si ya existe uno activo. No crea una sesión ni un endpoint de bootstrap público. En el primer OAuth válido, el flujo normal consume la precarga y asigna el rol. Quitar la variable de bootstrap después de verificar el acceso inicial.
+El comando lee `BOOTSTRAP_ADMIN_EMAIL`, valida el correo contra la whitelist y crea una precarga cifrada con rol `SYSTEM_ADMIN`. Si esa cuenta ya inició sesión y está activa, asigna el rol directamente siempre que aún no exista un administrador activo. No reactiva cuentas inactivas. Se serializa mediante lock de PostgreSQL y es idempotente: si ya existe un administrador activo, termina correctamente sin asignar nuevos roles, incluso si cambia el correo de la variable. Una precarga inicial de otro correo requiere revisión y hace fallar el arranque. No crea sesiones ni un endpoint público. En el primer OAuth válido se consume la precarga. Quitar la variable después de verificar el acceso inicial; no modifica las asignaciones existentes.
+
+En Compose, `api` espera a que `migrate` termine antes de ejecutar este paso; funciona también con varias réplicas. En Dokploy con Applications independientes, ejecutar primero la tarea de migraciones y luego desplegar el backend conservando el entrypoint del Dockerfile. No configurar una orden de arranque que evite el entrypoint. Sin `BOOTSTRAP_ADMIN_EMAIL`, el bootstrap automático no ejecuta ninguna operación. Después de asignar un rol a una cuenta que ya tenía sesión, cerrar sesión y volver a entrar con Google para renovar sus permisos.
 
 Para ejecutarlo antes de publicar la Application también se puede usar un contenedor runner de mantenimiento con su red y variables reales. Nunca ejecutar este comando en el host confiando accidentalmente en el `.env` de Neon/desarrollo.
 

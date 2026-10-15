@@ -8,12 +8,14 @@ describe('initial administrator', () => {
   const findFirst = jest.fn();
   const findUnique = jest.fn();
   const allowed = jest.fn();
+  const assign = jest.fn();
   const tx = {
     $queryRaw: jest.fn(),
     role: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'admin-role' }),
     },
     user: { count, findUnique },
+    userRole: { create: assign },
     preloadedUser: { findFirst, create },
   };
   const prisma = {
@@ -50,9 +52,26 @@ describe('initial administrator', () => {
   });
   it('refuses adding administrators after bootstrap', async () => {
     count.mockResolvedValue(1);
-    await expect(service.prepare('admin@example.test')).rejects.toThrow(
-      'administrador activo',
-    );
+    await expect(service.prepare('admin@example.test')).resolves.toEqual({
+      status: 'already-initialized',
+    });
+    expect(assign).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('assigns the first administrator to an existing active account', async () => {
+    findUnique.mockResolvedValue({ id: 'user-id', isActive: true });
+    await expect(service.prepare('admin@example.test')).resolves.toEqual({
+      status: 'assigned',
+    });
+    expect(assign).toHaveBeenCalledWith({
+      data: { userId: 'user-id', roleId: 'admin-role' },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('does not reactivate an inactive initial account', async () => {
+    findUnique.mockResolvedValue({ id: 'user-id', isActive: false });
+    await expect(service.prepare('admin@example.test')).rejects.toThrow('inactiva');
+    expect(assign).not.toHaveBeenCalled();
   });
   it('refuses replacing another initial preload', async () => {
     findFirst.mockResolvedValue({ email: 'other@example.test' });
