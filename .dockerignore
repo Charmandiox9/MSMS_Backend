@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.env*
+!.env.example
+*.log
+*.sql.gz
+*.dump
+*.backup*
+*.pem
+*.key
+.audit*
+test-results

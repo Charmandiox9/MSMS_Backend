@@ -70,4 +70,132 @@ describe('AcademicImportQueueService', () => {
       NotFoundException,
     );
   });
+
+  it('uses recent activity instead of job start time when recovering interrupted jobs', async () => {
+    jest.useFakeTimers();
+    try {
+      await service.onModuleInit();
+      expect(updateMany.mock.calls[0][0].where).toHaveProperty('updatedAt');
+      expect(updateMany.mock.calls[0][0].where).not.toHaveProperty('startedAt');
+    } finally {
+      await service.onModuleDestroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('heartbeats a long import and waits for it before shutting down', async () => {
+    jest.useFakeTimers();
+    let finish: (value: {
+      imported: number;
+      skipped: number;
+      errors: never[];
+      duplicates: never[];
+    }) => void = () => undefined;
+    const pendingImport = new Promise<{
+      imported: number;
+      skipped: number;
+      errors: never[];
+      duplicates: never[];
+    }>((resolve) => {
+      finish = resolve;
+    });
+    const activity = jest.fn().mockResolvedValue({ count: 1 });
+    const save = jest.fn().mockResolvedValue({});
+    const job = {
+      id: 'long-job',
+      type: AcademicImportType.PROJECTS,
+      payload: crypto.encrypt(
+        JSON.stringify({ fileBase64: 'test' }),
+        'AcademicImportJob.long-job.payload',
+      ),
+    };
+    const claim = jest.fn().mockResolvedValueOnce(job).mockResolvedValue(null);
+    const worker = new AcademicImportQueueService(
+      {
+        $transaction: claim,
+        academicImportJob: { updateMany: activity, update: save },
+      } as unknown as PrismaService,
+      crypto,
+      {
+        importProjects: () => pendingImport,
+      } as unknown as AcademicImportsService,
+    );
+    try {
+      await worker.onModuleInit();
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(activity).toHaveBeenCalledWith({
+        where: { id: 'long-job', status: 'PROCESSING' },
+        data: { updatedAt: expect.any(Date) },
+      });
+      let stopped = false;
+      const shutdown = worker.onModuleDestroy().then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      finish({ imported: 0, skipped: 0, errors: [], duplicates: [] });
+      await shutdown;
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'COMPLETED', payload: null }),
+        }),
+      );
+      const calls = activity.mock.calls.length;
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(activity).toHaveBeenCalledTimes(calls);
+    } finally {
+      finish({ imported: 0, skipped: 0, errors: [], duplicates: [] });
+      await worker.onModuleDestroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('waits for an in-flight database claim before shutting down', async () => {
+    let finishClaim: (value: null) => void = () => undefined;
+    const pendingClaim = new Promise<null>((resolve) => {
+      finishClaim = resolve;
+    });
+    const worker = new AcademicImportQueueService(
+      {
+        $transaction: jest.fn().mockReturnValue(pendingClaim),
+        academicImportJob: {
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+      } as unknown as PrismaService,
+      crypto,
+      imports,
+    );
+    await worker.onModuleInit();
+    let stopped = false;
+    const shutdown = worker.onModuleDestroy().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    finishClaim(null);
+    await shutdown;
+    expect(stopped).toBe(true);
+  });
+
+  it('rechecks interrupted jobs after startup so a quick restart does not strand recent work', async () => {
+    jest.useFakeTimers();
+    const recovery = jest.fn().mockResolvedValue({ count: 0 });
+    const worker = new AcademicImportQueueService(
+      {
+        $transaction: jest.fn().mockResolvedValue(null),
+        academicImportJob: { updateMany: recovery },
+      } as unknown as PrismaService,
+      crypto,
+      imports,
+    );
+    try {
+      await worker.onModuleInit();
+      expect(recovery).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(recovery).toHaveBeenCalledTimes(4);
+    } finally {
+      await worker.onModuleDestroy();
+      jest.useRealTimers();
+    }
+  });
 });

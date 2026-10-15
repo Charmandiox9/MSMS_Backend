@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -10,7 +10,10 @@ import { normalizePiiSearch, piiPolicies } from '../privacy/pii-policy';
 import { normalizePostgresSslMode } from './postgres-connection-string';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor(
     private config: ConfigService,
     private readonly crypto: PiiCryptoService,
@@ -22,7 +25,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         ? normalizePostgresSslMode(connectionString)
         : connectionString,
     });
-    const adapter = new PrismaPg(pool);
+    const adapter = new PrismaPg(pool, { disposeExternalPool: true });
     super({ adapter });
     return this.$extends(
       piiExtension(new PiiStorageCodec(crypto)),
@@ -38,6 +41,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
           `Completa la conversión PII de ${model} antes de iniciar la aplicación`,
         );
     }
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
   }
 
   private delegate(model: string) {

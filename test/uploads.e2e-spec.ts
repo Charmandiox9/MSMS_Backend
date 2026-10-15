@@ -296,7 +296,7 @@ describe('Carga de archivos sin almacenamiento configurado (e2e)', () => {
       .expect(503);
 
     expect(response.body.message).toBe(
-      'El almacenamiento R2 no está habilitado en este entorno',
+      'El almacenamiento de objetos no está habilitado en este entorno',
     );
   });
 });

@@ -42,24 +42,24 @@ const routes: Route[] = [
   {
     method: 'get',
     path: '/api/academic/teachers',
-    allowed: ['secretary', 'analyst', 'coordinator'],
+    allowed: ['secretary', 'analyst'],
   },
   {
     method: 'get',
     path: `/api/academic/teachers/${UUID}`,
-    allowed: ['secretary', 'analyst', 'coordinator'],
+    allowed: ['secretary', 'analyst'],
   },
   {
     method: 'post',
     path: '/api/academic/teachers/import-csv',
     body: { csv: 'x' },
-    allowed: ['secretary'],
+    allowed: ['secretary', 'analyst'],
   },
   {
     method: 'post',
     path: '/api/academic/teachers/import-roster',
     body: { csv: 'x' },
-    allowed: ['secretary'],
+    allowed: ['secretary', 'analyst'],
   },
   {
     method: 'get',

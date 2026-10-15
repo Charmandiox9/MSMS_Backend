@@ -46,3 +46,4 @@ lerna-debug.log*
 *.key
 
 /generated/prisma
+.audit*

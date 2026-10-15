@@ -35,6 +35,9 @@ export class AcademicImportQueueService
   private readonly logger = new Logger(AcademicImportQueueService.name);
   private polling = false;
   private timer: NodeJS.Timeout | undefined;
+  private runningPoll: Promise<void> | undefined;
+  private stopped = false;
+  private lastRecoveryAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -44,12 +47,15 @@ export class AcademicImportQueueService
 
   async onModuleInit() {
     await this.recoverInterruptedJobs();
+    this.lastRecoveryAt = Date.now();
     this.timer = setInterval(() => void this.processNext(), POLL_INTERVAL_MS);
     void this.processNext();
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy() {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
+    await this.runningPoll;
   }
 
   async enqueue(
@@ -97,7 +103,7 @@ export class AcademicImportQueueService
     await this.prisma.academicImportJob.updateMany({
       where: {
         status: AcademicImportStatus.PROCESSING,
-        startedAt: { lt: staleBefore },
+        updatedAt: { lt: staleBefore },
         attempts: { lt: MAX_ATTEMPTS },
       },
       data: { status: AcademicImportStatus.QUEUED, startedAt: null },
@@ -105,7 +111,7 @@ export class AcademicImportQueueService
     await this.prisma.academicImportJob.updateMany({
       where: {
         status: AcademicImportStatus.PROCESSING,
-        startedAt: { lt: staleBefore },
+        updatedAt: { lt: staleBefore },
         attempts: { gte: MAX_ATTEMPTS },
       },
       data: {
@@ -118,16 +124,29 @@ export class AcademicImportQueueService
     });
   }
 
-  private async processNext() {
-    if (this.polling) return;
+  private processNext(): Promise<void> {
+    if (this.stopped || this.polling)
+      return this.runningPoll ?? Promise.resolve();
     this.polling = true;
+    this.runningPoll = this.poll();
+    return this.runningPoll;
+  }
+
+  private async poll() {
     try {
+      if (Date.now() - this.lastRecoveryAt >= 60_000) {
+        await this.recoverInterruptedJobs();
+        this.lastRecoveryAt = Date.now();
+      }
       const job = await this.claimNext();
       if (!job) return;
       await this.process(job);
     } catch {
-      this.logger.error('No se pudo procesar el siguiente trabajo de importación');
+      this.logger.error(
+        'No se pudo procesar el siguiente trabajo de importación',
+      );
     } finally {
+      this.runningPoll = undefined;
       this.polling = false;
     }
   }
@@ -162,6 +181,18 @@ export class AcademicImportQueueService
     type: AcademicImportType;
     payload: string | null;
   }) {
+    const heartbeat = setInterval(() => {
+      void this.prisma.academicImportJob
+        .updateMany({
+          where: { id: job.id, status: AcademicImportStatus.PROCESSING },
+          data: { updatedAt: new Date() },
+        })
+        .catch(() =>
+          this.logger.warn(
+            'No se pudo actualizar la actividad de una importación',
+          ),
+        );
+    }, 30_000);
     try {
       if (!job.payload) throw new Error('El trabajo no contiene el archivo');
       const input = JSON.parse(
@@ -190,6 +221,8 @@ export class AcademicImportQueueService
         },
       });
       this.logger.warn(`Trabajo académico fallido: ${job.id}`);
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 

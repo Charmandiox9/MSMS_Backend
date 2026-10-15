@@ -1,6 +1,11 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageService } from './storage.service';
 
@@ -8,7 +13,9 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(),
 }));
 
-const getSignedUrlMock = getSignedUrl as jest.MockedFunction<typeof getSignedUrl>;
+const getSignedUrlMock = getSignedUrl as jest.MockedFunction<
+  typeof getSignedUrl
+>;
 
 const r2Config = {
   STORAGE_PROVIDER: 'r2',
@@ -24,7 +31,9 @@ describe('StorageService', () => {
   beforeEach(() => {
     getSignedUrlMock.mockReset();
     getSignedUrlMock.mockResolvedValue('https://signed.example.com/object');
-    sendMock = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+    sendMock = jest
+      .spyOn(S3Client.prototype, 'send')
+      .mockResolvedValue({} as never);
   });
 
   afterEach(() => {
@@ -54,18 +63,71 @@ describe('StorageService', () => {
 
     await expect(
       service.createPresignedUpload('evidence.pdf', 'application/pdf'),
-    ).rejects.toThrow('El almacenamiento R2 no está habilitado');
-    await expect(service.createPresignedDownload('uploads/a.pdf')).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+    ).rejects.toThrow('El almacenamiento de objetos no está habilitado');
+    await expect(
+      service.createPresignedDownload('uploads/a.pdf'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   describe('createPresignedUpload', () => {
+    it('supports MinIO with separate internal and public endpoints', async () => {
+      const service = createService({
+        STORAGE_PROVIDER: 'minio',
+        S3_ENDPOINT: 'http://minio:9000',
+        S3_PUBLIC_ENDPOINT: 'https://files.example.test',
+        S3_ACCESS_KEY: 'app',
+        S3_SECRET_KEY: 'secret',
+        S3_BUCKET_NAME: 'private',
+        S3_REGION: 'us-east-1',
+        S3_PRESIGNED_URL_EXPIRES_IN: '60',
+      });
+      await service.createPresignedDownload('uploads/evidence.pdf');
+      const signingClient = getSignedUrlMock.mock.calls[0][0];
+      expect(await signingClient.config.endpoint?.()).toEqual(
+        expect.objectContaining({ hostname: 'files.example.test' }),
+      );
+      expect(getSignedUrlMock.mock.calls[0][2]).toEqual({ expiresIn: 60 });
+      expect(sendMock.mock.calls[0][0].input.Bucket).toBe('private');
+    });
+
+    it('rejects incomplete S3 configuration', () => {
+      expect(() => createService({ STORAGE_PROVIDER: 's3' })).toThrow(
+        'S3_ENDPOINT',
+      );
+    });
+
+    it('uses the account endpoint when the optional R2 endpoint is empty', async () => {
+      await createService({ R2_ENDPOINT: '' }).createPresignedUpload(
+        'a.pdf',
+        'application/pdf',
+      );
+      expect(
+        await getSignedUrlMock.mock.calls[0][0].config.endpoint?.(),
+      ).toEqual(
+        expect.objectContaining({
+          hostname: 'account.r2.cloudflarestorage.com',
+        }),
+      );
+    });
+
+    it('checks the private bucket without signing a public URL', async () => {
+      await createService().checkHealth();
+      expect(sendMock.mock.calls[0][0].constructor.name).toBe(
+        'HeadBucketCommand',
+      );
+      expect(getSignedUrlMock).not.toHaveBeenCalled();
+    });
     it('genera una key única bajo uploads/ con el content type solicitado', async () => {
       const service = createService();
 
-      const first = await service.createPresignedUpload('Certificado Médico.PDF', 'application/pdf');
-      const second = await service.createPresignedUpload('Certificado Médico.PDF', 'application/pdf');
+      const first = await service.createPresignedUpload(
+        'Certificado Médico.PDF',
+        'application/pdf',
+      );
+      const second = await service.createPresignedUpload(
+        'Certificado Médico.PDF',
+        'application/pdf',
+      );
 
       expect(first).toEqual({
         key: expect.stringMatching(/^uploads\/[0-9a-f-]{36}\.pdf$/),
@@ -87,7 +149,10 @@ describe('StorageService', () => {
     it('descarta el nombre original y caracteres peligrosos de la extensión', async () => {
       const service = createService();
 
-      const { key } = await service.createPresignedUpload('../../etc/passwd.p$h%p', 'text/plain');
+      const { key } = await service.createPresignedUpload(
+        '../../etc/passwd.p$h%p',
+        'text/plain',
+      );
 
       expect(key).toMatch(/^uploads\/[0-9a-f-]{36}\.php$/);
       expect(key).not.toContain('..');
@@ -95,7 +160,10 @@ describe('StorageService', () => {
     });
 
     it('permite archivos sin extensión', async () => {
-      const { key } = await createService().createPresignedUpload('evidencia', 'image/png');
+      const { key } = await createService().createPresignedUpload(
+        'evidencia',
+        'image/png',
+      );
 
       expect(key).toMatch(/^uploads\/[0-9a-f-]{36}$/);
     });
@@ -107,14 +175,26 @@ describe('StorageService', () => {
       ['3601', 900],
       ['12.5', 900],
       ['no-numero', 900],
-    ])('usa R2_PRESIGNED_URL_EXPIRES_IN=%s como %d segundos', async (configured, expected) => {
-      const service = createService({ R2_PRESIGNED_URL_EXPIRES_IN: configured });
+    ])(
+      'usa R2_PRESIGNED_URL_EXPIRES_IN=%s como %d segundos',
+      async (configured, expected) => {
+        const service = createService({
+          R2_PRESIGNED_URL_EXPIRES_IN: configured,
+        });
 
-      const result = await service.createPresignedUpload('a.pdf', 'application/pdf');
+        const result = await service.createPresignedUpload(
+          'a.pdf',
+          'application/pdf',
+        );
 
-      expect(result.expiresIn).toBe(expected);
-      expect(getSignedUrlMock).toHaveBeenCalledWith(expect.anything(), expect.anything(), { expiresIn: expected });
-    });
+        expect(result.expiresIn).toBe(expected);
+        expect(getSignedUrlMock).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          { expiresIn: expected },
+        );
+      },
+    );
   });
 
   describe('createPresignedDownload', () => {
@@ -125,18 +205,27 @@ describe('StorageService', () => {
     }
 
     it('firma la key existente sin barra inicial', async () => {
-      const result = await createService().createPresignedDownload('/uploads/a.pdf');
+      const result =
+        await createService().createPresignedDownload('/uploads/a.pdf');
 
-      expect(result).toEqual({ downloadUrl: 'https://signed.example.com/object', expiresIn: 900 });
+      expect(result).toEqual({
+        downloadUrl: 'https://signed.example.com/object',
+        expiresIn: 900,
+      });
       expect(sendMock).toHaveBeenCalledTimes(1);
       const head = sendMock.mock.calls[0][0] as HeadObjectCommand;
       expect(head).toBeInstanceOf(HeadObjectCommand);
-      expect(head.input).toEqual({ Bucket: 'evidence-bucket', Key: 'uploads/a.pdf' });
+      expect(head.input).toEqual({
+        Bucket: 'evidence-bucket',
+        Key: 'uploads/a.pdf',
+      });
       expect(signedKey()).toBe('uploads/a.pdf');
     });
 
     it('prueba la key con el prefijo del bucket si la original no existe', async () => {
-      sendMock.mockRejectedValueOnce(new Error('NotFound')).mockResolvedValueOnce({});
+      sendMock
+        .mockRejectedValueOnce(new Error('NotFound'))
+        .mockResolvedValueOnce({});
 
       await createService().createPresignedDownload('uploads/a.pdf');
 
@@ -144,9 +233,13 @@ describe('StorageService', () => {
     });
 
     it('prueba la key sin el prefijo del bucket si la original no existe', async () => {
-      sendMock.mockRejectedValueOnce(new Error('NotFound')).mockResolvedValueOnce({});
+      sendMock
+        .mockRejectedValueOnce(new Error('NotFound'))
+        .mockResolvedValueOnce({});
 
-      await createService().createPresignedDownload('evidence-bucket/uploads/a.pdf');
+      await createService().createPresignedDownload(
+        'evidence-bucket/uploads/a.pdf',
+      );
 
       expect(signedKey()).toBe('uploads/a.pdf');
     });

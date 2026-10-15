@@ -85,11 +85,11 @@ describe('Listado de docentes (e2e)', () => {
       expect(response.body.message).toBe('El docente no existe');
     });
 
-    it('permite la consulta a coordinación docente', async () => {
+    it('reserva la consulta del repositorio a los roles autorizados', async () => {
       await request(ctx.app.getHttpServer())
         .get(path)
         .set('Cookie', ctx.cookieFor('coordinator'))
-        .expect(404);
+        .expect(403);
     });
 
     it('rechaza sin sesión con 401 y sin rol con 403', async () => {
