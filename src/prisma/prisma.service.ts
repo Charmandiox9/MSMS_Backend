@@ -7,6 +7,7 @@ import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { piiExtension } from '../privacy/pii-extension';
 import { PiiStorageCodec } from '../privacy/pii-storage-codec';
 import { normalizePiiSearch, piiPolicies } from '../privacy/pii-policy';
+import { normalizePostgresSslMode } from './postgres-connection-string';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
@@ -16,7 +17,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   ) {
     const connectionString =
       config.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({
+      connectionString: connectionString
+        ? normalizePostgresSslMode(connectionString)
+        : connectionString,
+    });
     const adapter = new PrismaPg(pool);
     super({ adapter });
     return this.$extends(
