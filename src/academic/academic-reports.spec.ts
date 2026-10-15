@@ -195,13 +195,94 @@ describe('Academic reports', () => {
     ]);
     const result = await reports.data('projects', undefined, undefined, 2026);
     expect(prisma.project.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { reportingYear: 2026 } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ reportingYear: 2026 }),
+      }),
     );
     expect(result.rows[0]).toMatchObject({
       title: 'Proyecto marino',
       totalAmount: '227700000',
       currency: 'CLP',
     });
+  });
+  it('pushes repository report search into the database query', async () => {
+    prisma.project.findMany.mockResolvedValue([]);
+    prisma.research.findMany.mockResolvedValue([]);
+    prisma.researchOutput.findMany.mockResolvedValue([]);
+
+    await reports.data('projects', undefined, '  coral  ');
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { title: { contains: 'coral', mode: 'insensitive' } },
+            { fundingSource: { contains: 'coral', mode: 'insensitive' } },
+          ]),
+        }),
+      }),
+    );
+
+    await reports.data('research', undefined, 'coral');
+    expect(prisma.research.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                { title: { contains: 'coral', mode: 'insensitive' } },
+              ]),
+            }),
+          ],
+        },
+      }),
+    );
+
+    await reports.data('researchOutputs', undefined, 'coral');
+    expect(prisma.researchOutput.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { title: { contains: 'coral', mode: 'insensitive' } },
+            { journal: { contains: 'coral', mode: 'insensitive' } },
+          ]),
+        }),
+      }),
+    );
+  });
+  it('applies report date ranges to research and publication dates in the database', async () => {
+    prisma.research.findMany.mockResolvedValue([]);
+    prisma.researchOutput.findMany.mockResolvedValue([]);
+    await reports.data(
+      'research', undefined, undefined, undefined, '2025-01-01', '2025-12-31',
+    );
+    expect(prisma.research.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { startsOn: { lte: new Date('2025-12-31T23:59:59.999Z') } },
+            {
+              OR: [
+                { endsOn: { gte: new Date('2025-01-01T00:00:00.000Z') } },
+                { endsOn: null },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await reports.data(
+      'researchOutputs', undefined, undefined, undefined, '2025-01-01', '2025-12-31',
+    );
+    expect(prisma.researchOutput.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          publicationDate: {
+            gte: new Date('2025-01-01T00:00:00.000Z'),
+            lte: new Date('2025-12-31T23:59:59.999Z'),
+          },
+        },
+      }),
+    );
   });
   it('filters project budgets by date overlap and rejects inverted ranges', async () => {
     prisma.project.findMany.mockResolvedValue([]);

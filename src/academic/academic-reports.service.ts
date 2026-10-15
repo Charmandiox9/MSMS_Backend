@@ -18,6 +18,10 @@ export type AcademicDataset =
 export type ReportRow = Record<string, string | number | null>;
 const time = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+const reportTextFilter = (value: string) => ({
+  contains: value.replace(/[\\%_]/g, '\\$&'),
+  mode: 'insensitive' as const,
+});
 
 @Injectable()
 export class AcademicReportsService {
@@ -223,9 +227,23 @@ export class AcademicReportsService {
           'endsOn',
           'closedOn',
         ];
+        const projectSearch = search?.trim();
         rows = (
           await this.prisma.project.findMany({
             where: {
+              ...(projectSearch
+                ? {
+                    OR: [
+                      { title: reportTextFilter(projectSearch) },
+                      { code: reportTextFilter(projectSearch) },
+                      { academicUnit: reportTextFilter(projectSearch) },
+                      { classification: reportTextFilter(projectSearch) },
+                      { fundingSource: reportTextFilter(projectSearch) },
+                      { program: reportTextFilter(projectSearch) },
+                      { currency: reportTextFilter(projectSearch) },
+                    ],
+                  }
+                : {}),
               ...(reportingYear ? { reportingYear } : {}),
               ...(startsOn || endsOn
                 ? {
@@ -281,16 +299,43 @@ export class AcademicReportsService {
           'endsOn',
           'outputCount',
         ];
+        const researchSearch = search?.trim();
         rows = (
           await this.prisma.research.findMany({
-            where: reportingYear
-              ? {
-                  startsOn: {
-                    gte: new Date(`${reportingYear}-01-01T00:00:00.000Z`),
-                    lt: new Date(`${reportingYear + 1}-01-01T00:00:00.000Z`),
-                  },
-                }
-              : {},
+            where: {
+              AND: [
+                ...(researchSearch
+                  ? [{
+                    OR: [
+                      { title: reportTextFilter(researchSearch) },
+                      { code: reportTextFilter(researchSearch) },
+                      { academicUnit: reportTextFilter(researchSearch) },
+                      { researchArea: reportTextFilter(researchSearch) },
+                      { project: { is: { title: reportTextFilter(researchSearch) } } },
+                    ],
+                  }]
+                  : []),
+                ...(reportingYear
+                  ? [{
+                      startsOn: {
+                        gte: new Date(`${reportingYear}-01-01T00:00:00.000Z`),
+                        lt: new Date(`${reportingYear + 1}-01-01T00:00:00.000Z`),
+                      },
+                    }]
+                  : []),
+                ...(endsOn
+                  ? [{ startsOn: { lte: new Date(`${endsOn}T23:59:59.999Z`) } }]
+                  : []),
+                ...(startsOn
+                  ? [{
+                      OR: [
+                        { endsOn: { gte: new Date(`${startsOn}T00:00:00.000Z`) } },
+                        { endsOn: null },
+                      ],
+                    }]
+                  : []),
+              ],
+            },
             include: {
               project: { select: { title: true } },
               _count: { select: { outputs: true } },
@@ -322,9 +367,36 @@ export class AcademicReportsService {
           'authorCount',
           'projectCount',
         ];
+        const outputSearch = search?.trim();
         rows = (
           await this.prisma.researchOutput.findMany({
-            where: reportingYear ? { reportingYear } : {},
+            where: {
+              ...(outputSearch
+                ? {
+                    OR: [
+                      { title: reportTextFilter(outputSearch) },
+                      { doi: reportTextFilter(outputSearch) },
+                      { journal: reportTextFilter(outputSearch) },
+                      { publisher: reportTextFilter(outputSearch) },
+                      { indexation: reportTextFilter(outputSearch) },
+                      { research: { is: { title: reportTextFilter(outputSearch) } } },
+                    ],
+                  }
+                : {}),
+              ...(reportingYear ? { reportingYear } : {}),
+              ...(startsOn || endsOn
+                ? {
+                    publicationDate: {
+                      ...(startsOn
+                        ? { gte: new Date(`${startsOn}T00:00:00.000Z`) }
+                        : {}),
+                      ...(endsOn
+                        ? { lte: new Date(`${endsOn}T23:59:59.999Z`) }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
             include: {
               research: { select: { title: true } },
               _count: { select: { authors: true, projects: true } },
@@ -408,7 +480,9 @@ export class AcademicReportsService {
         });
         break;
     }
-    const needle = search?.trim().toLocaleLowerCase();
+    const needle = ['projects', 'research', 'researchOutputs'].includes(dataset)
+      ? undefined
+      : search?.trim().toLocaleLowerCase();
     if (['teachers', 'assistants', 'courses'].includes(dataset))
       rows.sort((a, b) =>
         String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es'),
