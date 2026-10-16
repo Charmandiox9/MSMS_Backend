@@ -1,12 +1,704 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion   Int     @default(0)
+  emailHash    String? @unique
+  googleIdHash String? @unique
+
+  id        String  @id @default(uuid())
+  email     String  @unique
+  name      String
+  avatarUrl String?
+
+  // Google OAuth specific
+  googleId String? @unique
+
+  // Los roles y permisos son configurables y se asignan mediante relaciones RBAC.
+  userRoles             UserRole[]
+  createdJustifications Justification[]              @relation("JustificationCreatedBy")
+  decidedJustifications Justification[]              @relation("JustificationDecidedBy")
+  justificationHistory  JustificationStatusHistory[]
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AcademicImportType {
+  PROJECTS
+  RESEARCH
+  HOURLY
+}
+
+enum AcademicImportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Durable academic import queue; the workbook payload is application-encrypted.
+model AcademicImportJob {
+  id            String               @id @default(uuid())
+  type          AcademicImportType
+  status        AcademicImportStatus @default(QUEUED)
+  payload       String?              @db.Text
+  result        Json?
+  error         String?              @db.Text
+  requestedById String
+  attempts      Int                  @default(0)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([status, createdAt])
+  @@index([requestedById, createdAt])
+}
+
+enum JustificationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum JustificationInboxStatus {
+  UNREAD
+  READ
+}
+
+model AcademicSemester {
+  id                 String               @id @default(uuid())
+  name               String
+  startsOn           DateTime
+  endsOn             DateTime
+  isActive           Boolean              @default(false)
+  assignments        TeachingAssignment[]
+  courseSchedules    CourseSchedule[]
+  studentEnrollments StudentEnrollment[]
+  hourlyPayRates     HourlyPayRate[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([name])
+  @@index([isActive])
+}
+
+model Teacher {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion       Int     @default(0)
+  emailHash        String? @unique
+  employeeCodeHash String? @unique
+  rutHash          String? @unique
+
+  id                     String                 @id @default(uuid())
+  name                   String
+  email                  String                 @unique
+  employeeCode           String?                @unique
+  rut                    String?                @unique
+  academicUnit           String?
+  academicDegree         AcademicDegree?
+  certification          TeacherCertification?
+  professionalTitle      String?
+  institution            String?
+  projectParticipations  ProjectParticipant[]
+  researchParticipations ResearchParticipant[]
+  outputAuthorships      ResearchOutputAuthor[]
+  isActive               Boolean                @default(true)
+  joinedOn               DateTime?              @db.Date
+  leftOn                 DateTime?              @db.Date
+  assignments            TeachingAssignment[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+}
+
+model Course {
+  id                 String                    @id @default(uuid())
+  code               String?
+  name               String
+  assignments        TeachingAssignment[]
+  schedules          CourseSchedule[]
+  assistantApprovals AssistantCourseApproval[]
+  studentEnrollments StudentEnrollment[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([code, name])
+}
+
+/// Academic students are independent from administrative login accounts.
+model Student {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  emailHash  String? @unique
+
+  id                 String                 @id @default(uuid())
+  name               String
+  email              String                 @unique
+  enrollments        StudentEnrollment[]
+  justificationInbox JustificationInbox[]
+  justifications     Justification[]
+  outputAuthorships  ResearchOutputAuthor[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+}
+
+/// A student attends an NRC in a semester, independently of teachers or time slots.
+model StudentEnrollment {
+  id         String           @id @default(uuid())
+  studentId  String
+  semesterId String
+  courseId   String
+  nrc        String
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  createdAt  DateTime         @default(now())
+
+  @@unique([studentId, semesterId, nrc])
+  @@index([semesterId, nrc])
+  @@index([courseId])
+}
+
+model TeachingAssignment {
+  id              String                   @id @default(uuid())
+  semesterId      String
+  teacherId       String
+  courseId        String
+  nrc             String                   @default("")
+  /// Deprecated: retained only for historical data. New imports use nrc.
+  parallel        String                   @default("")
+  semester        AcademicSemester         @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  teacher         Teacher                  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt       DateTime                 @default(now())
+  assistantships  Assistantship[]
+  hourlyContracts HourlyTeachingContract[]
+
+  // Composite reference ensures an assistantship uses this assignment's course.
+  @@unique([id, courseId])
+  @@unique([id, semesterId])
+  @@unique([semesterId, teacherId, courseId, nrc])
+  @@index([semesterId])
+  @@index([teacherId])
+}
+
+/// Academic student record; independent from administrative login accounts.
+model TeachingAssistant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion      Int     @default(0)
+  emailHash       String? @unique
+  studentCodeHash String? @unique
+
+  id          String                    @id @default(uuid())
+  name        String
+  email       String                    @unique
+  studentCode String?                   @unique
+  isActive    Boolean                   @default(true)
+  approvals   AssistantCourseApproval[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+}
+
+/// Records an already passed course, independently of its NRC in each semester.
+model AssistantCourseApproval {
+  assistantId    String
+  courseId       String
+  approvedOn     DateTime          @db.Date
+  assistant      TeachingAssistant @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  course         Course            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  assistantships Assistantship[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@id([assistantId, courseId])
+  // Supports a foreign key that keeps the approval date consistent in assignments.
+  @@unique([assistantId, courseId, approvedOn])
+  @@index([courseId])
+}
+
+/// Semester, course NRC and supervising teacher come from the teaching assignment.
+/// nrc identifies the assistantship itself and can differ from the course NRC.
+model Assistantship {
+  id                   String                  @id @default(uuid())
+  nrc                  String?
+  teachingAssignmentId String
+  assistantId          String
+  courseId             String
+  /// Must match the approval record; SQL checks approval precedes startsOn.
+  approvedOn           DateTime                @db.Date
+  startsOn             DateTime                @db.Date
+  endsOn               DateTime?               @db.Date
+  weeklyHours          Decimal?                @db.Decimal(5, 2)
+  teachingAssignment   TeachingAssignment      @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
+  schedules            AssistantshipSchedule[]
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@unique([teachingAssignmentId, assistantId])
+  @@index([assistantId, courseId, approvedOn])
+  @@index([teachingAssignmentId, courseId])
+}
+
+/// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).
+model AssistantshipSchedule {
+  id              String        @id @default(uuid())
+  assistantshipId String
+  weekday         Int
+  startsAtMinute  Int
+  endsAtMinute    Int
+  location        String?
+  assistantship   Assistantship @relation(fields: [assistantshipId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([assistantshipId, weekday, startsAtMinute, endsAtMinute])
+}
+
+model CourseSchedule {
+  id         String           @id @default(uuid())
+  semesterId String
+  courseId   String
+  nrc        String
+  day        String
+  block      String
+  location   String?
+  semester   AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@unique([semesterId, nrc, day, block])
+  @@index([semesterId])
+  @@index([nrc])
+}
+
+model JustificationInbox {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion             Int     @default(0)
+  externalResponseIdHash String? @unique
+  studentEmailHash       String?
+
+  id                  String                   @id @default(uuid())
+  externalResponseId  String                   @unique
+  studentEmail        String
+  studentId           String?
+  student             Student?                 @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  absenceDate         DateTime
+  absenceBlocks       String[]                 @default([])
+  subjectName         String
+  subjectCode         String?
+  nrc                 String?
+  reasonCategory      String?
+  /// Deprecated: retained for historical submissions.
+  parallel            String?
+  reason              String?
+  evidenceKey         String
+  evidenceContentType String
+  status              JustificationInboxStatus @default(UNREAD)
+  readAt              DateTime?
+  justificationId     String?                  @unique
+  justification       Justification?           @relation(fields: [justificationId], references: [id])
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([studentEmailHash])
+  @@index([status, createdAt])
+  @@index([studentId])
+}
+
+model Justification {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion           Int     @default(0)
+  sourceResponseIdHash String? @unique
+  studentEmailHash     String?
+
+  id                  String                       @id @default(uuid())
+  sourceResponseId    String                       @unique
+  studentEmail        String
+  studentId           String?
+  student             Student?                     @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  absenceDate         DateTime
+  absenceBlocks       String[]                     @default([])
+  subjectName         String
+  subjectCode         String?
+  nrc                 String?
+  reasonCategory      String?
+  /// Deprecated: retained for historical submissions.
+  parallel            String?
+  reason              String?
+  evidenceKey         String
+  evidenceContentType String
+  status              JustificationStatus          @default(PENDING)
+  rejectionReason     String?
+  openedAt            DateTime                     @default(now())
+  decidedAt           DateTime?
+  createdById         String
+  decidedById         String?
+  createdBy           User                         @relation("JustificationCreatedBy", fields: [createdById], references: [id])
+  decidedBy           User?                        @relation("JustificationDecidedBy", fields: [decidedById], references: [id])
+  inboxEntry          JustificationInbox?
+  history             JustificationStatusHistory[]
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  @@index([studentEmailHash])
+  @@index([status, createdAt])
+  @@index([studentEmail])
+  @@index([studentId])
+}
+
+model JustificationStatusHistory {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
+  id              String               @id @default(uuid())
+  justificationId String
+  fromStatus      JustificationStatus?
+  toStatus        JustificationStatus
+  note            String?
+  changedById     String
+  justification   Justification        @relation(fields: [justificationId], references: [id], onDelete: Cascade)
+  changedBy       User                 @relation(fields: [changedById], references: [id])
+  createdAt       DateTime             @default(now())
+
+  @@index([justificationId, createdAt])
+}
+
+model Role {
+  id          String              @id @default(uuid())
+  code        String              @unique
+  name        String              @unique
+  description String?
+  isSystem    Boolean             @default(false)
+  userRoles   UserRole[]
+  preloads    PreloadedUserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  code        String           @unique
+  name        String
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model PreloadedUser {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  emailHash  String? @unique
+
+  id        String              @id @default(uuid())
+  email     String              @unique
+  createdAt DateTime            @default(now())
+  roles     PreloadedUserRole[]
+}
+
+model PreloadedUserRole {
+  preloadedUserId String
+  roleId          String
+  assignedAt      DateTime @default(now())
+
+  preloadedUser PreloadedUser @relation(fields: [preloadedUserId], references: [id], onDelete: Cascade)
+  role          Role          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([preloadedUserId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  assignedAt   DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+enum AcademicDegree {
+  PROFESSIONAL
+  MASTER
+  DOCTOR
+  NOT_APPLICABLE
+}
+
+enum TeacherCertification {
+  NONE
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+}
+
+enum HourlyTeacherCategory {
+  NEW
+  EXISTING
+  DIVING_PRINCIPAL
+  DIVING_SECONDARY
+}
+
+enum TeachingComponent {
+  LECTURE
+  WORKSHOP
+  LABORATORY
+  FIELDWORK
+  ASSISTANTSHIP
+}
+
+/// Configurable CLP monthly payment per direct teaching hour, per semester.
+model HourlyPayRate {
+  id             String                   @id @default(uuid())
+  semesterId     String
+  category       HourlyTeacherCategory
+  academicDegree AcademicDegree
+  certification  TeacherCertification
+  hourlyRateClp  Decimal                  @db.Decimal(12, 2)
+  semester       AcademicSemester         @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  contracts      HourlyTeachingContract[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([id, semesterId])
+  @@unique([semesterId, category, academicDegree, certification])
+}
+
+/// A component/parallel of a semester assignment. Snapshots preserve historical pay.
+model HourlyTeachingContract {
+  id                   String             @id @default(uuid())
+  semesterId           String
+  teachingAssignmentId String
+  payRateId            String
+  component            TeachingComponent
+  parallel             String
+  directHours          Decimal            @db.Decimal(5, 2)
+  startsOn             DateTime           @db.Date
+  endsOn               DateTime           @db.Date
+  hourlyRateClp        Decimal            @db.Decimal(12, 2)
+  teachingAssignment   TeachingAssignment @relation(fields: [teachingAssignmentId, semesterId], references: [id, semesterId], onDelete: Restrict)
+  payRate              HourlyPayRate      @relation(fields: [payRateId, semesterId], references: [id, semesterId], onDelete: Restrict)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([teachingAssignmentId, component, parallel])
+  @@index([semesterId])
+  @@index([payRateId, semesterId])
+}
+
+enum ProjectStatus {
+  REGISTERED
+  AWARDED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+/// General register: research, training, services, agreements and academic programs.
+model Project {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
+  id                  String                  @id @default(uuid())
+  reportingYear       Int
+  academicUnit        String
+  faculty             String?
+  resolution          String?
+  code                String?                 @unique
+  title               String
+  classification      String?
+  fundingSource       String?
+  program             String?
+  competition         String?
+  applicationArea     String?
+  participationScope  String?
+  status              ProjectStatus           @default(REGISTERED)
+  officialized        Boolean?
+  startsOn            DateTime?               @db.Date
+  endsOn              DateTime?               @db.Date
+  revisedEndsOn       DateTime?               @db.Date
+  closedOn            DateTime?               @db.Date
+  currency            String?
+  totalAmount         Decimal?                @db.Decimal(18, 2)
+  vraContribution     Decimal?                @db.Decimal(18, 2)
+  vridtContribution   Decimal?                @db.Decimal(18, 2)
+  recoveryAmount      Decimal?                @db.Decimal(18, 2)
+  facultyContribution Decimal?                @db.Decimal(18, 2)
+  depreciationAmount  Decimal?                @db.Decimal(18, 2)
+  profitabilityAmount Decimal?                @db.Decimal(18, 2)
+  folderUrl           String?
+  notes               String?
+  participants        ProjectParticipant[]
+  research            Research?
+  outputs             ResearchOutputProject[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([reportingYear, academicUnit])
+  @@index([status])
+}
+
+/// Named external participants can be recorded without creating a teacher account.
+model ProjectParticipant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  nameHash   String?
+
+  id           String   @id @default(uuid())
+  projectId    String
+  teacherId    String?
+  name         String
+  role         String
+  contactEmail String?
+  gender       String?
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  teacher      Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, nameHash, role])
+  @@unique([projectId, name, role])
+  @@index([nameHash])
+  @@index([teacherId])
+}
+
+/// Research activity can be linked to a funded project or registered independently.
+model Research {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
+  id           String                @id @default(uuid())
+  projectId    String?               @unique
+  code         String?               @unique
+  title        String
+  description  String?
+  academicUnit String
+  researchArea String?
+  startsOn     DateTime?             @db.Date
+  endsOn       DateTime?             @db.Date
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  participants ResearchParticipant[]
+  outputs      ResearchOutput[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([academicUnit])
+}
+
+model ResearchParticipant {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int     @default(0)
+  nameHash   String?
+
+  id         String   @id @default(uuid())
+  researchId String
+  teacherId  String?
+  name       String
+  role       String
+  research   Research @relation(fields: [researchId], references: [id], onDelete: Cascade)
+  teacher    Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([researchId, nameHash, role])
+  @@unique([researchId, name, role])
+  @@index([nameHash])
+  @@index([teacherId])
+}
+
+enum ResearchOutputKind {
+  ARTICLE
+  BOOK
+  BOOK_CHAPTER
+  INTELLECTUAL_PROPERTY
+}
+
+model ResearchOutput {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
+  id                         String                  @id @default(uuid())
+  researchId                 String?
+  kind                       ResearchOutputKind
+  reportingYear              Int
+  title                      String
+  doi                        String?                 @unique
+  journal                    String?
+  issn                       String?
+  isbn                       String?
+  quartile                   String?
+  fiveYearImpactFactor       Decimal?                @db.Decimal(10, 4)
+  publicationDate            DateTime?               @db.Date
+  indexation                 String?
+  publisher                  String?
+  publicationPlace           String?
+  studentParticipation       Boolean?
+  internationalParticipation Boolean?
+  intellectualPropertyType   String?
+  phase                      String?
+  phaseDate                  DateTime?               @db.Date
+  notes                      String?
+  research                   Research?               @relation(fields: [researchId], references: [id], onDelete: Restrict)
+  authors                    ResearchOutputAuthor[]
+  projects                   ResearchOutputProject[]
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+
+  @@index([reportingYear, kind])
+  @@index([researchId])
+}
+
+model ResearchOutputAuthor {
+  /// Application-encrypted PII; version 0 requires the offline backfill.
+  piiVersion Int @default(0)
+
+  id          String         @id @default(uuid())
+  outputId    String
+  teacherId   String?
+  studentId   String?
+  name        String
+  position    Int
+  affiliation String?
+  isStudent   Boolean?
+  output      ResearchOutput @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  teacher     Teacher?       @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student     Student?       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([outputId, position])
+  @@index([teacherId])
+  @@index([studentId])
+}
+
+/// A publication can acknowledge several projects, as in the EPRYMA workbook.
+model ResearchOutputProject {
+  outputId  String
+  projectId String
+  output    ResearchOutput @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@id([outputId, projectId])
+  @@index([projectId])
 }

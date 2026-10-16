@@ -1,0 +1,66 @@
+import { UseGuards } from '@nestjs/common';
+import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { IsUUID } from 'class-validator';
+import { ArgsType, Field } from '@nestjs/graphql';
+import {
+  AssistantshipAssignmentOption,
+  AssistantshipFilters,
+  AssistantshipOptions,
+  AssistantshipPage,
+  AssistantshipView,
+  RegisterAssistantshipInput,
+} from './assistantships.dto';
+import { AssistantshipsGuard } from './assistantships.guard';
+import { AssistantshipsService } from './assistantships.service';
+
+@ArgsType()
+export class AssistantshipSemesterArgs {
+  @Field(() => ID) @IsUUID() semesterId!: string;
+}
+
+@ArgsType()
+export class AssistantshipIdArgs {
+  @Field(() => ID) @IsUUID() id!: string;
+}
+
+@Resolver()
+@UseGuards(AssistantshipsGuard)
+export class AssistantshipsResolver {
+  constructor(private readonly service: AssistantshipsService) {}
+
+  @Query(() => AssistantshipPage)
+  assistantships(
+    @Args('filters', { nullable: true, type: () => AssistantshipFilters })
+    filters?: AssistantshipFilters,
+  ) {
+    return this.service.list(filters ?? new AssistantshipFilters());
+  }
+
+  @Query(() => AssistantshipView, { nullable: true })
+  assistantship(@Args() args: AssistantshipIdArgs) {
+    return this.service.get(args.id);
+  }
+
+  @Query(() => AssistantshipOptions)
+  assistantshipOptions() {
+    return this.service.options();
+  }
+
+  @Query(() => [AssistantshipAssignmentOption])
+  assistantshipAssignments(@Args() args: AssistantshipSemesterArgs) {
+    return this.service.assignments(args.semesterId);
+  }
+
+  @Mutation(() => AssistantshipView)
+  registerAssistantship(@Args('input') input: RegisterAssistantshipInput) {
+    return this.service.register(input);
+  }
+
+  @Mutation(() => AssistantshipView)
+  updateAssistantship(
+    @Args() args: AssistantshipIdArgs,
+    @Args('input') input: RegisterAssistantshipInput,
+  ) {
+    return this.service.update(args.id, input);
+  }
+}
