@@ -190,6 +190,7 @@ export class UsersService {
       create: { userId, roleId },
       update: {},
     });
+    await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true };
   }
 
@@ -219,6 +220,7 @@ export class UsersService {
         );
     }
     await this.prisma.userRole.deleteMany({ where: { userId, roleId } });
+    await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true };
   }
 

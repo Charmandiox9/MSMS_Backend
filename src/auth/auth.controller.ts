@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
@@ -63,6 +71,8 @@ export class AuthController {
 
   @Public()
   @Get('session')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('Vary', 'Cookie')
   @UseGuards(SessionAuthGuard)
   getSession(@Req() req) {
     return req.user;
