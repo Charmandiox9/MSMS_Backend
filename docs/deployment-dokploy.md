@@ -11,7 +11,7 @@ Internet -> Traefik/Dokploy HTTPS
               resto              -> frontend:3001
 backend -> PostgreSQL y Redis autenticado, por red interna
 backend -> endpoint interno S3 para operaciones
-navegador/Apps Script -> endpoint público S3 HTTPS para URLs firmadas
+navegador/Apps Script -> URL temporal HTTPS del backend -> MinIO interno
 ```
 
 El Compose de este repositorio permite probar localmente ambos repositorios hermanos, con Nginx como entrada. En Dokploy se recomienda desplegar **dos Applications independientes**, PostgreSQL/Redis como recursos nativos y storage como recurso separado. No hace falta poner Nginx delante de Traefik. La carpeta raíz no es un repositorio Git.
@@ -46,14 +46,16 @@ Conservar por separado y cifrados `PII_ACTIVE_KEY_ID`, todo el anillo `PII_ENCRY
 
 ## 4. Almacenamiento privado
 
-El backend admite `STORAGE_PROVIDER=r2`, `s3` o `minio`. `none` permite desarrollo sin storage, pero readiness no estará disponible. No se utiliza un prefijo Nginx `/storage` para sustituir el endpoint S3.
+El backend admite `STORAGE_PROVIDER=r2`, `s3` o `minio`. `none` permite desarrollo sin storage, pero readiness no estará disponible. El modo predeterminado `STORAGE_TRANSFER_MODE=backend` mantiene MinIO interno: el backend emite URLs temporales bajo su propia dirección pública y transfiere los archivos. No hace falta dominio público S3 ni CORS de MinIO para este modo.
 
 Para S3/MinIO:
 
 | Variable | Uso |
 | --- | --- |
 | `S3_ENDPOINT` | Endpoint interno para HeadBucket/HeadObject y operaciones del servidor |
-| `S3_PUBLIC_ENDPOINT` | URL alcanzable por navegador y Apps Script; HTTPS en producción |
+| `PUBLIC_API_URL` | Base pública del backend, incluyendo `/api` y el prefijo del proxy si existe. Por defecto `FRONTEND_URL` + `/api` |
+| `STORAGE_TRANSFER_MODE` | `backend` predeterminado; `direct` conserva el flujo S3 anterior |
+| `S3_PUBLIC_ENDPOINT` | Solo modo `direct`: endpoint S3 público para firmar URLs |
 | `S3_REGION` | Región esperada por el proveedor; por defecto `us-east-1` |
 | `S3_BUCKET_NAME` | Bucket privado |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Credencial de aplicación, diferente de la administrativa |
@@ -61,11 +63,15 @@ Para S3/MinIO:
 
 1. Elegir una distribución/servicio mantenido, fijar imagen/digest, revisar licencia y procedimiento de actualización. **MinIO Community está archivado y declara que ya no se mantiene**; la imagen histórica seleccionada explícitamente en el generador local es solo para pruebas de compatibilidad. [Repositorio oficial](https://github.com/minio/minio).
 2. Si se autoaloja, crear recurso Compose separado con volumen persistente y configuración de la edición mantenida elegida. Seguir sus instrucciones de instalación, credenciales y licenciamiento; no asumir que el ejemplo Community sirve para AIStor.
-3. Asociar un dominio HTTPS al puerto de la API S3 (habitualmente 9000). La consola (habitualmente 9001) queda restringida por VPN u otro control administrativo.
+3. En modo `backend`, mantener API S3 (9000) y consola (9001) internas; administrar por SSH/VPN. El servicio backend debe alcanzar el hostname interno de MinIO en la misma red Docker. Solo el modo `direct` requiere endpoint S3 público HTTPS.
 4. Crear bucket privado y cuenta con lectura/escritura de objetos, listado y consulta de bucket necesarios. No usar las credenciales root en la Application.
-5. Configurar CORS del storage para el origen real de MARSYS y los métodos/cabeceras que requieran las subidas firmadas. Verificar el preflight desde el navegador.
-6. Las URLs se firman directamente con `S3_PUBLIC_ENDPOINT`. No cambiar host, puerto o ruta después de firmar: puede invalidar SigV4.
-7. Probar carga firmada, lectura firmada, expiración y rechazo anónimo; configurar respaldo externo de objetos y cifrado en reposo. Un volumen local no es un backup.
+5. En modo `backend`, las cargas y descargas usan URLs del backend y no requieren CORS de MinIO. Mantener el CORS habitual del backend para el origen de MARSYS. Solo en modo `direct` configurar CORS del bucket para el frontend.
+6. En modo `backend`, configurar `PUBLIC_API_URL` con la base pública real (por ejemplo `https://HOST/marsys/api`). Las capacidades firmadas autorizan solo una clave, operación y tipo MIME, y caducan en 1–3600 s (900 s predeterminado). No registrar query strings ni cachear estas rutas en ningún proxy. En modo `direct`, mantener host y ruta de `S3_PUBLIC_ENDPOINT` al usar SigV4.
+7. Probar carga y descarga mediante backend, expiración, rechazo de tokens alterados y acceso S3 anónimo. El límite de carga es 10 MiB (PDF/JPEG/PNG); configurar ese límite y timeout suficiente en el proxy de entrada y Traefik. Las descargas se transmiten como attachment por streaming; las cargas usan memoria acotada por petición. Configurar respaldo externo y cifrado en reposo. Un volumen local no es un backup.
+
+El contrato `uploadUrl`/`downloadUrl` y los endpoints de emisión `presigned-upload` se conservan para no romper frontend ni Google Apps Script. `PUT /api/storage/files/upload?token=...` y `GET /api/storage/files/download?token=...` usan capacidades temporales en lugar de sesión adicional. La emisión sigue exigiendo roles o el secreto de Forms. No son enlaces de un solo uso: se pueden reutilizar hasta su expiración, igual que las URLs S3 anteriores. Cambiar el secreto JWT invalida estas URLs; no usarlo como rotación habitual.
+
+Un `PUBLIC_API_URL` bajo `/marsys/api` permite emitir enlaces con ese prefijo, pero NO configura automáticamente el `basePath` de Next ni la reescritura del proxy. Antes de desplegar toda la plataforma bajo un path, adaptar y validar ese recorrido por separado.
 
 Si se conserva R2, utilizar las variables `R2_*` de `.env.example`; la integración existente se mantiene. No se necesitan migraciones de objetos cuando la instalación comienza sin datos.
 
@@ -198,3 +204,16 @@ Validación local: builds Linux correctos, 21 migraciones desde cero, **571 prue
 La auditoría npm de dependencias de producción dio cero avisos en frontend y cero altos/críticos en backend. Permanecen dos avisos moderados de la cadena ExcelJS/uuid; no se aplicó una bajada mayor de ExcelJS ni un override incompatible de uuid para ocultarlos. Evaluar una actualización compatible y el camino afectado antes de la aprobación de seguridad. La imagen de mantenimiento incluye herramientas adicionales y no debe publicarse como servicio web.
 
 La prueba local no instala Dokploy ni valida un servidor remoto, certificados, correo entregado ni credenciales OAuth reales. El endpoint local es `http://localhost`; no existe un bypass de autenticación para entrar con la cuenta sintética. Los respaldos locales prueban restaurabilidad, pero no sustituyen un destino externo ante pérdida de la VM.
+
+## Verificar el almacenamiento privado mediante backend
+
+Después de reconstruir el backend en el stack de pruebas local, ejecutar:
+
+```bash
+docker compose --env-file .env.docker-test -p marsys-validation cp test/docker/backend-transfer-smoke.cjs api:/tmp/backend-transfer-smoke.cjs
+docker compose --env-file .env.docker-test -p marsys-validation exec -T api node /tmp/backend-transfer-smoke.cjs
+```
+
+La prueba valida bytes de ida y vuelta por Nginx y backend contra MinIO real, URLs del mismo origen, ausencia de redirección, capacidades inválidas y rechazo de lectura S3 anónima. Solo funciona sobre la base local desechable.
+
+Validación del cambio de transferencia (16 de octubre de 2026): build e imagen Linux correctos; 581 pruebas unitarias/SQL y 283 E2E pasaron. La suite SQL de ayudantías se repitió tras arrancar PostgreSQL, que estaba detenido al iniciar la validación. El smoke real pasó contra Nginx, backend y MinIO con dos réplicas API, sin exponer URLs S3 al cliente.

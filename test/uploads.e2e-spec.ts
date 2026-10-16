@@ -9,6 +9,7 @@ import { createTestApp, FORMS_SECRET, TestApp } from './support/test-app';
 function createR2Storage() {
   return new StorageService(
     new ConfigService({
+      STORAGE_TRANSFER_MODE: 'direct',
       STORAGE_PROVIDER: 'r2',
       R2_ACCOUNT_ID: 'e2e-account',
       R2_ACCESS_KEY_ID: 'e2e-access-key',

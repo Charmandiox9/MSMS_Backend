@@ -18,6 +18,7 @@ const getSignedUrlMock = getSignedUrl as jest.MockedFunction<
 >;
 
 const r2Config = {
+  STORAGE_TRANSFER_MODE: 'direct',
   STORAGE_PROVIDER: 'r2',
   R2_ACCOUNT_ID: 'account',
   R2_ACCESS_KEY_ID: 'key',
