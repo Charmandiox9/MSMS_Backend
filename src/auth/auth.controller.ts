@@ -5,23 +5,26 @@ import { SessionService } from './session.service';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { resolveRedirectRoute } from './role-redirect/role-redirect.util';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private sessionService: SessionService,
+    private readonly config: ConfigService,
   ) {}
 
   private getCookieOptions() {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') || 'http://localhost:3000';
     const secure = frontendUrl.startsWith('https://');
 
     return {
       httpOnly: true,
       secure,
       sameSite: secure ? ('none' as const) : ('lax' as const),
-      path: '/',
+      path: new URL(frontendUrl).pathname.replace(/\/+$/, '') || '/',
       maxAge: 3600000 * 24,
     };
   }
@@ -38,7 +41,7 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req, @Res() res) {
     const user = req.user;
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
     const name = isProduction ? 'session' : 'token';
     const sessionPayload = this.authService.getSessionPayload(user);
     const value = isProduction
@@ -51,7 +54,9 @@ export class AuthController {
     // lee y redirige. El JWT contiene solo la identidad; /auth/session
     // reconstruye el perfil y los roles desde la cuenta activa.
     const route = resolveRedirectRoute(sessionPayload.roles);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = (
+      this.config.get<string>('FRONTEND_URL') || 'http://localhost:3000'
+    ).replace(/\/+$/, '');
     const params = new URLSearchParams({ route });
     res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
   }
@@ -66,7 +71,7 @@ export class AuthController {
   @Public()
   @Post('logout')
   async logout(@Req() req, @Res() res) {
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
     const name = isProduction ? 'session' : 'token';
     const sessionId = req.headers.cookie
       ?.split(';')
