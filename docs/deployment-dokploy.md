@@ -71,7 +71,7 @@ Para S3/MinIO:
 
 El contrato `uploadUrl`/`downloadUrl` y los endpoints de emisión `presigned-upload` se conservan para no romper frontend ni Google Apps Script. `PUT /api/storage/files/upload?token=...` y `GET /api/storage/files/download?token=...` usan capacidades temporales en lugar de sesión adicional. La emisión sigue exigiendo roles o el secreto de Forms. No son enlaces de un solo uso: se pueden reutilizar hasta su expiración, igual que las URLs S3 anteriores. Cambiar el secreto JWT invalida estas URLs; no usarlo como rotación habitual.
 
-Un `PUBLIC_API_URL` bajo `/marsys/api` permite emitir enlaces con ese prefijo, pero NO configura automáticamente el `basePath` de Next ni la reescritura del proxy. Antes de desplegar toda la plataforma bajo un path, adaptar y validar ese recorrido por separado.
+Para instalar bajo un prefijo, configurar también el `basePath` del frontend durante el build y las reescrituras de Dokploy; ver la configuración institucional de la sección 7.1. `PUBLIC_API_URL` por sí sola solo configura los enlaces emitidos por el backend.
 
 Si se conserva R2, utilizar las variables `R2_*` de `.env.example`; la integración existente se mantiene. No se necesitan migraciones de objetos cuando la instalación comienza sin datos.
 
@@ -124,7 +124,7 @@ Para ejecutarlo antes de publicar la Application también se puede usar un conte
 ## 7. Frontend y dominios Dokploy
 
 1. Crear Application frontend desde su repositorio independiente, Dockerfile/contexto raíz y puerto interno **3001**.
-2. Pasar `NEXT_PUBLIC_API_URL=/api/graphql` como **build argument** y como variable pública del entorno. El Dockerfile ya declara ese ARG antes de `next build`; el enlace de Google necesita el valor compilado.
+2. Pasar `NEXT_PUBLIC_API_URL=/api/graphql` como **build argument** y como variable pública del entorno. Para una instalación en la raíz dejar `NEXT_PUBLIC_BASE_PATH` vacío. Si hay prefijo, usar los valores de la sección 7.1: ambos son argumentos de build y requieren reconstruir la imagen.
 3. El paquete Geist incorpora las fuentes localmente; la construcción ya no descarga Google Fonts. No introducir secretos en variables `NEXT_PUBLIC_*`.
 4. En Domains configurar HTTPS/Let’s Encrypt, sin Strip Path ni prefijo interno añadido:
 
@@ -137,6 +137,50 @@ Para ejecutarlo antes de publicar la Application también se puede usar un conte
 Revisar los routers generados en Advanced: la ruta de runtime-config es una excepción de Next, no de Nest. Si hay prioridades explícitas, mantener el orden indicado. No habilitar Advanced→Ports para publicar Node directamente. [Dominios Dokploy](https://docs.dokploy.com/docs/core/domains).
 
 5. Probar HTTP→HTTPS, certificado, login, callback, sesión y logout. No cachear respuestas autenticadas ni GraphQL privado en CDN/proxy.
+
+### 7.1. Dominio institucional: `/fasol/marsys`
+
+Dirección prevista: `https://eic-proyectos.ucn.cl/fasol/marsys`. El proxy de entrada institucional debe enviar **todo ese prefijo**, conservándolo y manteniendo el host, hacia Traefik de Dokploy. Tener permiso para el path no confirma que esa regla ya exista. Coordinarla con el administrador sin modificar `/fasol/faeduc` ni otras aplicaciones. El HTTPS puede terminar en ese proxy, como en el servicio existente; no activar un certificado en Dokploy sin confirmar cómo llega el tráfico.
+
+**Frontend — argumentos de build**, y los mismos valores en Environment:
+
+```dotenv
+NEXT_PUBLIC_BASE_PATH=/fasol/marsys
+NEXT_PUBLIC_API_URL=/fasol/marsys/api/graphql
+```
+
+Reconstruir la imagen después de cambiarlos. Next conserva el prefijo en navegación, assets y runtime-config. La comprobación de salud del Dockerfile también usa ese prefijo. No configurar otro valor de basePath solo al arrancar una imagen ya construida.
+
+**Backend — Environment**:
+
+```dotenv
+FRONTEND_URL=https://eic-proyectos.ucn.cl/fasol/marsys
+PUBLIC_API_URL=https://eic-proyectos.ucn.cl/fasol/marsys/api
+GOOGLE_CALLBACK_URL=https://eic-proyectos.ucn.cl/fasol/marsys/api/auth/google/callback
+STORAGE_PROVIDER=minio
+STORAGE_TRANSFER_MODE=backend
+S3_ENDPOINT=http://marsysucn-marsysstorage-rslk80:9000
+S3_BUCKET_NAME=marsys-evidence
+S3_REGION=us-east-1
+```
+
+Añadir las credenciales de la cuenta limitada de MinIO mediante los secretos `S3_ACCESS_KEY` y `S3_SECRET_KEY`; confirmar el hostname en Dokploy. No usar las claves root. Mantener las Applications en una red que permita resolver y alcanzar el servicio MinIO. El túnel SSH de la consola es solo administrativo; no es el endpoint del backend.
+
+En Google Cloud, registrar el origen `https://eic-proyectos.ucn.cl` y el callback completo indicado arriba. Las cookies de login/logout se limitan a `/fasol/marsys`. CORS usa el **origen sin path**, por lo que no aísla entre aplicaciones que comparten ese dominio.
+
+Crear estas reglas en Domains del frontend/backend con host `eic-proyectos.ucn.cl`, puerto interno **3001** y precedencia de mayor a menor:
+
+| Path público | Application | Strip Path | Internal Path | Prioridad orientativa |
+| --- | --- | --- | --- | --- |
+| `/fasol/marsys/api/runtime-config` | frontend | No | vacío | 300 |
+| `/fasol/marsys/api` | backend | Sí | `/api` | 200 |
+| `/fasol/marsys` | frontend | No | vacío | 100 |
+
+Dokploy primero retira el Path público cuando Strip Path está activo y después agrega Internal Path. Así `/fasol/marsys/api/auth/session` llega a Nest como `/api/auth/session`. El frontend recibe su prefijo completo. Revisar las reglas generadas y probar también la URL sin barra final. La salud interna de Nest continúa en `/api/health/ready`.
+
+Con este modo no se publica MinIO ni se necesita CORS del bucket: navegador → MARSYS → MinIO interno. No es necesario `S3_PUBLIC_ENDPOINT`. Mantener el bucket privado y su política limitada. Queda pendiente verificar con las credenciales reales del backend remoto: readiness, carga y descarga de un archivo, denegación de acceso anónimo y persistencia tras redeploy. Configurar también backups externos, cifrado y retención de versiones antes de la apertura de producción.
+
+Validación local de este prefijo: build frontend y backend correctos, 279 pruebas frontend, 283 E2E backend y 3 pruebas de autenticación correctas; imagen frontend con login, runtime-config, enlace Google y assets bajo el prefijo comprobados por HTTP. Esto no verifica todavía el proxy institucional, OAuth real ni las credenciales del MinIO remoto.
 
 ## 8. Nginx local, réplicas y límites
 
