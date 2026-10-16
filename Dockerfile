@@ -28,6 +28,16 @@ COPY --from=builder --chown=marsys:nodejs /app/prisma.config.ts ./
 USER marsys
 CMD ["npx", "prisma", "migrate", "deploy"]
 
+# Opt-in, single-replica Dokploy deployment: migrate before bootstrap/API startup.
+# Retains the pinned CLI and migrations; runner below remains the lean default.
+FROM migration AS dokploy
+COPY --from=builder --chown=marsys:nodejs /app/dist ./dist
+COPY --chown=marsys:nodejs docker/start.sh docker/deploy.sh ./docker/
+EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 CMD node -e "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/bin/sh", "/app/docker/deploy.sh"]
+CMD ["node", "dist/main.js"]
+
 FROM base AS runner
 COPY --from=builder --chown=marsys:nodejs /app/package*.json ./
 COPY --from=production-deps --chown=marsys:nodejs /app/node_modules ./node_modules

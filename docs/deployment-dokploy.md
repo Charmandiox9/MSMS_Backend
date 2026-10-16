@@ -77,7 +77,7 @@ Si se conserva R2, utilizar las variables `R2_*` de `.env.example`; la integraci
 
 ## 5. Build reproducible y migraciones
 
-El Dockerfile backend tiene dos destinos operativos: `runner` (predeterminado, sin dependencias de desarrollo ni CLI Prisma) y `migration` (CLI Prisma). Ambos usan el mismo lockfile y código. Cada réplica arranca únicamente Nest; **no ejecuta migraciones al iniciar**. La imagen Node está fijada por digest; actualizar `NODE_IMAGE` deliberadamente y repetir la validación para recibir parches del sistema/runtime.
+El Dockerfile backend tiene tres destinos operativos: `runner` (predeterminado, sin dependencias de desarrollo ni CLI Prisma), `migration` (CLI Prisma) y `dokploy` (migraciones automáticas antes del arranque, para una sola réplica). Usan el mismo lockfile y código. `runner` **no ejecuta migraciones al iniciar**. La imagen Node está fijada por digest; actualizar `NODE_IMAGE` deliberadamente y repetir la validación para recibir parches del sistema/runtime.
 
 Desde el checkout de backend:
 
@@ -100,9 +100,36 @@ docker run --rm --network RED_INTERNA \
 
 En la prueba local, **las 21 migraciones existentes se aplicaron desde cero**, sin cambiar ningún SQL histórico ni el esquema Prisma. Repetir `migrate deploy` después no encuentra migraciones pendientes.
 
+### 5.1. Migraciones automáticas en la Application existente
+
+Para la instalación actual de una sola réplica, seleccionar **Docker Build Stage = `dokploy`** en General → Build Type → Dockerfile. Mantener Dockerfile Path `Dockerfile`, Docker Context Path `.`, una réplica y Run Command/Arguments vacíos. No reemplazar el entrypoint del Dockerfile. Este destino conserva las herramientas de la imagen de migraciones, por lo que es mayor que `runner`; no descarga Prisma mediante npx al arrancar.
+
+Cada arranque de esta imagen ejecuta, en este orden:
+
+1. El Prisma incluido ejecuta `migrate deploy` usando `DIRECT_URL` o, en su ausencia, `DATABASE_URL`.
+2. Solo si termina correctamente, se ejecuta el bootstrap opcional del administrador.
+3. Solo después arranca la API.
+
+Las migraciones aplicadas se registran en PostgreSQL y no se repiten. Un reinicio comprueba las pendientes otra vez. Una migración fallida impide iniciar la API nueva; no elimina ni revierte automáticamente los cambios SQL ya realizados. Resolver el fallo antes de reintentar; nunca usar reset, db push ni modificar migraciones ya aplicadas. Mantener cambios de esquema compatibles con la versión anterior durante la actualización y probarlos con una copia restaurada. Esta modalidad no garantiza cero interrupciones ni preserva por sí sola la versión anterior si la política de actualización de Swarm la detiene.
+
+Mantener **una réplica** con esta modalidad. Antes de escalar, volver a `runner` con una tarea de migraciones por release separada y comprobada. No usar `dokploy` además de otra tarea automática de migraciones. El usuario de `DIRECT_URL` necesita permisos de migración; mantener ambas URLs en la misma base. La imagen `dokploy` recibe las variables completas del paso 6 antes del primer Deploy, aunque la instalación inicial ya esté migrada.
+
+**Desplegar tras un push es una configuración distinta.** Con el proveedor Git + SSH se puede construir y desplegar manualmente desde el dashboard; eso no crea por sí solo un webhook accesible. Para activar el disparo automático se necesita que GitHub alcance el webhook de despliegue por HTTPS, con Autodeploy habilitado y la rama correcta, o una automatización con acceso al API privado. El `localhost:3010` del túnel no sirve desde GitHub. Coordinar una ruta pública limitada al webhook con quien administra el proxy institucional; no usar el dominio/path de la plataforma como webhook sin una regla de proxy real. No publicar el valor completo del webhook, ya que actúa como credencial. No cambiar el dominio global de Dokploy ni las conexiones Git de otros proyectos para resolver este punto.
+
+Documentación: [Autodeploy de Dokploy](https://docs.dokploy.com/docs/core/auto-deploy).
+
+Validación local de la etapa automática:
+
+```bash
+docker build --target dokploy -t marsys-backend:dokploy-test .
+node test/docker/auto-migration-smoke.cjs
+```
+
+La prueba crea una base y red aisladas, aplica desde cero, repite el arranque, simula una migración nueva y comprueba que una migración inválida bloquea el arranque y el reintento. Elimina únicamente sus recursos al terminar y no lee archivos .env.
+
 ## 6. Backend y primer administrador
 
-1. Crear Application backend desde su repo con Dockerfile/contexto raíz (destino predeterminado runner), o seleccionar la imagen de release del registry.
+1. Crear Application backend desde su repo con Dockerfile/contexto raíz. Para la automatización de una sola réplica usar destino `dokploy` (sección 5.1); para migraciones separadas usar `runner` (predeterminado), o seleccionar la imagen de release del registry.
 2. Cargar variables privadas de `.env.example`: `NODE_ENV=production`, `PORT=3001`, URLs PostgreSQL/Redis, claves PII, `JWT_SECRET`, OAuth, whitelist, secreto Forms, storage y correo.
 3. Establecer `FRONTEND_URL=https://DOMINIO_APP` sin barra final y `GOOGLE_CALLBACK_URL=https://DOMINIO_APP/api/auth/google/callback`. Configurar exactamente ese callback en Google Cloud.
 4. Al menos una de `ALLOWED_DOMAINS`/`ALLOWED_EMAILS` debe contener valores reales autorizados. El OAuth no promueve automáticamente al primer visitante.
