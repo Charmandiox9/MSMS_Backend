@@ -5,6 +5,7 @@ import { SessionService } from './session.service';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ActiveUserService } from './active-user.service';
+import { HEADERS_METADATA } from '@nestjs/common/constants';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -33,6 +34,15 @@ describe('AuthController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('prevents caching session roles in the browser or shared proxies', () => {
+    expect(
+      Reflect.getMetadata(
+        HEADERS_METADATA,
+        AuthController.prototype.getSession,
+      ),
+    ).toContainEqual({ name: 'Cache-Control', value: 'private, no-store' });
   });
 
   it('clears the HTTP-only cookie on logout', () => {

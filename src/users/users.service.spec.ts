@@ -152,6 +152,19 @@ describe('UsersService account administration', () => {
   });
 
   describe('assignRole', () => {
+    it('invalidates the active session profile after granting a role', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+      prisma.role.findUnique.mockResolvedValue({ id: 'role-1' });
+      await service.assignRole('user-1', 'role-1');
+      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+    });
+
+    it('invalidates the active session profile after revoking a role', async () => {
+      prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
+      await service.revokeRole('user-1', 'role-1');
+      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+    });
+
     it('asigna el rol de forma idempotente', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
       prisma.role.findUnique.mockResolvedValue({ id: 'role-1' });

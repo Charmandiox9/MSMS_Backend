@@ -256,6 +256,7 @@ describe('Permisos por endpoint (e2e)', () => {
       const response = await request(ctx.app.getHttpServer())
         .get('/api/auth/session')
         .set('Cookie', ctx.cookieFor('secretary'))
+        .expect('Cache-Control', 'private, no-store')
         .expect(200);
 
       expect(response.body.sub).toBe('user-secretary');
