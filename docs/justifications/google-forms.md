@@ -146,7 +146,7 @@ function handleFormSubmit(event) {
     payload: file.getBlob().getBytes(),
     muteHttpExceptions: true,
   });
-  assertSuccess_(uploadResponse, 'subida del archivo a R2');
+  assertSuccess_(uploadResponse, 'subida del archivo mediante backend');
 
   const externalResponseId = [
     SpreadsheetApp.getActive().getId(),
@@ -231,3 +231,7 @@ Guarda y autoriza los permisos que Google solicite para leer los archivos de Dri
 | No se ejecuta Apps Script | Comprueba que el trigger use la hoja vinculada y el evento **Al enviar formulario**, y revisa si la cuenta propietaria perdió acceso a Drive. |
 
 No registres en los logs respuestas completas, correos, enlaces de Drive, secretos ni URLs firmadas. Si la subida a R2 resulta correcta pero falla el registro del inbox, la respuesta del Form puede reintentarse; revisa si quedó un archivo huérfano en R2 antes de eliminarlo.
+
+## Transferencia privada mediante backend
+
+Con `STORAGE_TRANSFER_MODE=backend` (predeterminado), `uploadUrl` apunta al backend público y Apps Script conserva el mismo PUT. MinIO solo necesita conexión interna desde el backend. Definir `PUBLIC_API_URL` con la base pública completa, incluyendo `/api`; el tamaño máximo es 10 MiB. Las URLs caducan y no deben escribirse en logs. La llamada de Apps Script se realiza fuera del navegador y no depende de CORS.

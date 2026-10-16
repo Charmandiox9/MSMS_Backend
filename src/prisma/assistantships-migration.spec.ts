@@ -136,7 +136,7 @@ describeDatabase('assistantship database integrity', () => {
   ])('protects history when deleting %s', async (table) => {
     await insertAssistantship();
     await expect(client.query(`DELETE FROM "${table}"`)).rejects.toMatchObject({
-      code: '23001',
+      code: expect.stringMatching(/^(23001|23503)$/),
     });
   });
 

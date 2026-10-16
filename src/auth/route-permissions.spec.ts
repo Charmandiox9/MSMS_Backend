@@ -18,6 +18,7 @@ import {
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { JustificationsController } from '../justifications/justifications.controller';
 import { StorageController } from '../storage/storage.controller';
+import { StorageTransferController } from '../storage/storage-transfer.controller';
 import { UsersController } from '../users/users.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
@@ -40,6 +41,7 @@ const controllers: Type[] = [
   DashboardController,
   JustificationsController,
   StorageController,
+  StorageTransferController,
 ];
 
 const reflector = new Reflector();
@@ -167,6 +169,8 @@ describe('Matriz de permisos por endpoint', () => {
 
       'StorageController.createPresignedUpload': COORDINATOR,
       'StorageController.createFormsPresignedUpload': 'PUBLIC',
+      'StorageTransferController.upload': 'PUBLIC',
+      'StorageTransferController.download': 'PUBLIC',
     });
   });
 

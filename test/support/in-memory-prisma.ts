@@ -63,6 +63,20 @@ export function createInMemoryPrisma() {
     seedUser(user: SeedUser) {
       users.set(user.id, { isActive: true, name: user.email, ...user });
     },
+    findPiiIds(model: string, search: string) {
+      const needle = search.toLowerCase();
+      return Promise.resolve(
+        model === 'User'
+          ? [...users.values()]
+              .filter(
+                (user) =>
+                  user.email.toLowerCase().includes(needle) ||
+                  user.name?.toLowerCase().includes(needle),
+              )
+              .map((user) => user.id)
+          : [],
+      );
+    },
     seedAssignment(assignment: SeedAssignment) {
       assignments.push(assignment);
     },

@@ -1,81 +1,154 @@
-version: '3.8'
+name: marsys
+x-api: &api
+  image: marsys-backend:local
+  build: .
+  restart: unless-stopped
+  stop_grace_period: 5m
+  environment: &api-env
+    NODE_ENV: production
+    PORT: '3001'
+    DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    DIRECT_URL: ${DIRECT_URL:?Set DIRECT_URL}
+    CACHE_TYPE: redis
+    REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+    PII_ACTIVE_KEY_ID: ${PII_ACTIVE_KEY_ID:?Set PII_ACTIVE_KEY_ID}
+    PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?Set PII_ENCRYPTION_KEYS}
+    PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY:?Set PII_BLIND_INDEX_KEY}
+    JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
+    GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:?Set GOOGLE_CALLBACK_URL}
+    FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL}
+    ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-}
+    ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+    NO_ACCESS_ROUTE: /no-access
+    GOOGLE_FORMS_WEBHOOK_SECRET: ${GOOGLE_FORMS_WEBHOOK_SECRET:?Set GOOGLE_FORMS_WEBHOOK_SECRET}
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    NOTIFICATIONS_FROM: ${NOTIFICATIONS_FROM:-}
+    ACADEMIC_TIME_ZONE: America/Santiago
+    STORAGE_PROVIDER: ${STORAGE_PROVIDER:-s3}
+    STORAGE_TRANSFER_MODE: ${STORAGE_TRANSFER_MODE:-backend}
+    PUBLIC_API_URL: ${PUBLIC_API_URL:-}
+    S3_ENDPOINT: ${S3_ENDPOINT:?Set S3_ENDPOINT}
+    S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+    S3_REGION: ${S3_REGION:-us-east-1}
+    S3_BUCKET_NAME: ${S3_BUCKET_NAME:?Set S3_BUCKET_NAME}
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+    BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+  logging: &logging
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
 
 services:
-  # Servicio de Base de Datos PostgreSQL
   db:
-    image: postgres:15-alpine
-    container_name: msms_db
-    restart: always
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
-      POSTGRES_DB: ${DB_NAME:-msms_db}
-    # No exponemos el puerto al host para no chocar con tu entorno de desarrollo local.
-    volumes:
-      - db_data:/var/lib/postgresql/data
-
-  # Servicio Backend NestJS
-  api:
+      POSTGRES_USER: ${DB_USER:?Set DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME}
+    volumes: [db_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: ['sh', '-c', 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy noeviction']
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+  # Explicit image selection: legacy Community images are for compatibility tests only.
+  minio:
+    image: ${MINIO_IMAGE:?Select a maintained S3 distribution or explicit local test image}
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${FRONTEND_URL:?Set FRONTEND_URL}
+    command: server /data --console-address ':9001'
+    volumes: [minio_data:/data]
+    ports: ['127.0.0.1:${S3_TEST_PORT:-19000}:9000']
+    logging: *logging
+  migrate:
+    <<: *api
+    image: marsys-migration:local
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: msms_api
-    restart: unless-stopped
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - NODE_ENV=${NODE_ENV:-preproduction}
+      target: migration
+    restart: 'no'
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    healthcheck: { disable: true }
     depends_on:
-      - db
-
-  # Servicio Frontend Next.js
+      db: { condition: service_healthy }
+  storage-init:
+    image: ${MC_IMAGE:?Select MC_IMAGE}
+    entrypoint: ['/bin/sh', '/init.sh']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:?Set S3_BUCKET_NAME}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+    volumes: ['./docker/minio-init.sh:/init.sh:ro']
+    depends_on: [minio]
+    logging: *logging
+  api:
+    <<: *api
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
   frontend:
+    image: marsys-frontend:local
     build:
       context: ../frontend
-      dockerfile: Dockerfile
-    container_name: msms_frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api/graphql
     restart: unless-stopped
     environment:
-      - NODE_ENV=${NODE_ENV:-preproduction}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api/graphql}
-      - NEXT_PUBLIC_STORAGE_URL=${NEXT_PUBLIC_STORAGE_URL:-/storage}
-    depends_on:
-      - api
-
-  # Caché: Redis (Pre-producción / Producción)
-  redis:
-    image: redis:7-alpine
-    container_name: msms_redis
-    restart: always
-    volumes:
-      - redis_data:/data
-
-  # Almacenamiento de objetos: MinIO (Pre-producción / Producción)
-  minio:
-    image: minio/minio
-    container_name: msms_minio
-    restart: always
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-
-  # Proxy Inverso: NGINX (Punto de entrada único)
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: /api/graphql
+    logging: *logging
   nginx:
-    image: nginx:alpine
-    container_name: msms_nginx
-    restart: always
-    ports:
-      # Exponemos NGINX en el puerto 8080 del host para no chocar con nada en desarrollo
-      - "${NGINX_HTTP_PORT:-8080}:80"
-      - "${NGINX_HTTPS_PORT:-8443}:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ['127.0.0.1:${NGINX_HTTP_PORT:-80}:80']
+    volumes: ['./nginx/conf.d:/etc/nginx/conf.d:ro']
     depends_on:
-      - api
-      - frontend
-      - minio
+      api: { condition: service_started }
+      frontend: { condition: service_started }
+    logging: *logging
+  backend-tests:
+    <<: *api
+    profiles: [test]
+    image: marsys-backend-tests:local
+    build:
+      context: .
+      target: builder
+    restart: 'no'
+    environment:
+      NODE_ENV: test
+      TEST_DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    command: ['npm', 'test', '--', '--runInBand']
+    healthcheck: { disable: true }
+  frontend-tests:
+    profiles: [test]
+    image: marsys-frontend-tests:local
+    build:
+      context: ../frontend
+      target: test
+    command: ['npm', 'test', '--', '--maxWorkers=2']
 
 volumes:
   db_data:

@@ -70,6 +70,17 @@ datos necesarios; requieren HTTPS y almacenamiento seguro por su destinatario.
 
 ## Activación controlada
 
+### Instalación con base nueva en Dokploy
+
+Si PostgreSQL comienza vacío, ejecutar las migraciones directamente. No importar
+datos de Neon ni ejecutar el backfill de registros anteriores. Generar claves nuevas
+del entorno, preservarlas desde el primer registro y preparar al administrador
+mediante `node dist/maintenance/bootstrap-admin.js` dentro del contenedor configurado.
+La precarga usa Prisma con cifrado PII y whitelist; no se inserta correo en claro
+mediante SQL. Véase `deployment-dokploy.md` para migraciones, almacenamiento y pruebas.
+
+### Instalaciones con datos existentes
+
 La migración SQL añade índices HMAC y una marca de conversión; **no convierte
 datos ni almacena claves**. La aplicación bloquea el inicio si encuentra filas
 sin convertir. No desplegar esta versión antes de completar el procedimiento.

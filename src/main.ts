@@ -3,6 +3,9 @@ import { AppModule } from './app.module';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { ValidationError } from 'class-validator';
 import { json, urlencoded } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { isSessionMutationAllowed } from './common/http-security';
 
 // Las importaciones envían el CSV completo como texto dentro del JSON. Solo esas
 // rutas aceptan cuerpos grandes; el resto mantiene el límite por defecto (100 KB)
@@ -30,7 +33,47 @@ function flattenValidationMessages(errors: ValidationError[]): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  const config = app.get(ConfigService);
+  const frontendUrl = config.get<string>(
+    'FRONTEND_URL',
+    'http://localhost:3000',
+  );
+  const isProduction = config.get<string>('NODE_ENV') === 'production';
+  const trustedProxies = config.get<string>('TRUST_PROXY');
+  app.set(
+    'trust proxy',
+    trustedProxies
+      ? trustedProxies.split(',').map((entry) => entry.trim())
+      : false,
+  );
+  app.enableShutdownHooks();
+  if (isProduction) {
+    app.use(
+      (
+        req: import('express').Request,
+        res: import('express').Response,
+        next: import('express').NextFunction,
+      ) => {
+        if (
+          !isSessionMutationAllowed(
+            req.method,
+            req.headers.cookie,
+            req.get('origin'),
+            frontendUrl,
+          )
+        ) {
+          res
+            .status(403)
+            .json({ statusCode: 403, message: 'Origen no autorizado' });
+          return;
+        }
+        next();
+      },
+    );
+  }
   app.setGlobalPrefix('api');
   app.use(CSV_IMPORT_ROUTES, json({ limit: CSV_IMPORT_BODY_LIMIT }));
   app.use(EXCEL_IMPORT_ROUTES, json({ limit: '18mb' }));
@@ -38,13 +81,13 @@ async function bootstrap() {
   app.use(json());
   app.use(urlencoded({ extended: true }));
 
-  const allowedOrigins = [
-    process.env.FRONTEND_URL,
-    'http://localhost:3000',
-    'http://localhost:80',
-    'http://localhost',
-    'https://msmsfrontend-production.up.railway.app',
-  ];
+  const allowedOrigins = isProduction
+    ? [new URL(frontendUrl).origin]
+    : [
+        new URL(frontendUrl).origin,
+        'http://localhost:3000',
+        'http://localhost:3001',
+      ];
 
   app.enableCors({
     origin: (

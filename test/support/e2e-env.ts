@@ -5,6 +5,11 @@
 Object.assign(process.env, {
   NODE_ENV: 'test',
   JWT_SECRET: 'e2e-jwt-secret',
+  PII_ACTIVE_KEY_ID: 'e2e',
+  PII_ENCRYPTION_KEYS: JSON.stringify({
+    e2e: Buffer.alloc(32, 1).toString('base64'),
+  }),
+  PII_BLIND_INDEX_KEY: Buffer.alloc(32, 2).toString('base64'),
   ALLOWED_DOMAINS: 'ucn.cl,alumnos.ucn.cl',
   CACHE_TYPE: 'memory',
   GOOGLE_FORMS_WEBHOOK_SECRET: 'e2e-forms-secret',

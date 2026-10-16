@@ -10,6 +10,7 @@ import { AppModule } from '../../src/app.module';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { StorageService } from '../../src/storage/storage.service';
+import { AcademicImportQueueService } from '../../src/academic-imports/academic-import-queue.service';
 import {
   createInMemoryPrisma,
   InMemoryPrisma,
@@ -77,6 +78,15 @@ export async function createTestApp(
     .useValue(prisma)
     .overrideProvider(NotificationsService)
     .useValue(notifications)
+    .overrideProvider(AcademicImportQueueService)
+    .useValue({
+      enqueue: jest
+        .fn()
+        .mockResolvedValue({ id: 'test-job', status: 'QUEUED' }),
+      getStatus: jest
+        .fn()
+        .mockResolvedValue({ id: 'test-job', status: 'COMPLETED' }),
+    })
     .overrideProvider(StorageService)
     .useValue(
       options.storage ?? {

@@ -59,9 +59,9 @@ describe('Validación del módulo académico (e2e)', () => {
       await post(path).send({ csv: 'a', extra: true }).expect(400);
     });
 
-    it('solo secretaría importa: analista y coordinación reciben 403', async () => {
+    it('autoriza al analista y mantiene coordinación sin permiso de importar', async () => {
       const csv = `${teachersHeader}\nana@ucn.cl,Ana,Biología,10001,2026-2,2026-08-01,2026-12-15`;
-      await post(path, 'analyst').send({ csv }).expect(403);
+      await post(path, 'analyst').send({}).expect(400);
       await post(path, 'coordinator').send({ csv }).expect(403);
       await request(ctx.app.getHttpServer())
         .post(path)
@@ -83,8 +83,9 @@ describe('Validación del módulo académico (e2e)', () => {
       expect(response.body.message).toBe('Fila 3: Correo inválido: luis@');
     });
 
-    it('rechaza a roles sin permiso de importación', async () => {
-      await post(path, 'analyst')
+    it('valida el cuerpo del analista y rechaza a coordinación', async () => {
+      await post(path, 'analyst').send({}).expect(400);
+      await post(path, 'coordinator')
         .send({ csv: 'nombre,correo,nrc\nAna,ana@ucn.cl,10001' })
         .expect(403);
     });
