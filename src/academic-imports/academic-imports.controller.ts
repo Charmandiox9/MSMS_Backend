@@ -9,6 +9,10 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
+import {
+  CreateCareerFromCsvDto,
+  ImportCurriculumDto,
+} from '../careers/careers.dto';
 import { ACADEMIC_REPOSITORY_ROLES } from '../academic/repository-access';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
@@ -65,6 +69,35 @@ export class AcademicImportsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.queue.enqueue(AcademicImportType.HOURLY, input, user.id);
+  }
+
+  @Post('careers/commit')
+  @Roles('ACADEMIC_SECRETARY')
+  @HttpCode(HttpStatus.ACCEPTED)
+  importCareerCurriculum(
+    @Body() input: CreateCareerFromCsvDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.queue.enqueue(
+      AcademicImportType.CURRICULUM,
+      { operation: 'CREATE_CAREER', input },
+      user.id,
+    );
+  }
+
+  @Post('careers/:careerId/curricula/commit')
+  @Roles('ACADEMIC_SECRETARY')
+  @HttpCode(HttpStatus.ACCEPTED)
+  importCurriculum(
+    @Param('careerId', ParseUUIDPipe) careerId: string,
+    @Body() input: ImportCurriculumDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.queue.enqueue(
+      AcademicImportType.CURRICULUM,
+      { operation: 'ADD_VERSION', careerId, input },
+      user.id,
+    );
   }
 
   @Get('jobs/:id')
