@@ -12,6 +12,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import {
   ImportStudentsDto,
   ListStudentsDto,
+  StudentCourseAttemptInputDto,
   StudentInputDto,
 } from './students.dto';
 import { StudentsService } from './students.service';
@@ -38,6 +39,22 @@ export class StudentsController {
   )
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.get(id);
+  }
+  @Get(':id/progress')
+  @Roles(
+    'ACADEMIC_SECRETARY',
+    'ACADEMIC_PROCESS_ANALYST',
+    'TEACHING_SUPPORT_COORDINATOR',
+  )
+  progress(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.progress(id);
+  }
+  @Post(':id/attempts')
+  recordAttempt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: StudentCourseAttemptInputDto,
+  ) {
+    return this.service.recordAttempt(id, input);
   }
   @Post() create(@Body() input: StudentInputDto) {
     return this.service.save(input);

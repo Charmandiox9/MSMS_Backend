@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { AssistantshipState } from '../assistantships/assistantships.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { findCurriculumCourseMatch } from './curriculum-course-match';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
@@ -674,7 +675,22 @@ export class AcademicService {
           { block: 'asc' },
           { course: { name: 'asc' } },
         ],
-        include: { course: true, semester: true },
+        include: {
+          course: {
+            include: {
+              curriculumCourses: {
+                include: {
+                  curriculumVersion: {
+                    select: {
+                      career: { select: { id: true, code: true, name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          semester: true,
+        },
       }),
       this.prisma.assistantship.findMany({
         where: { teachingAssignment: { semester: { isActive: true } } },
@@ -783,6 +799,12 @@ export class AcademicService {
     name: string,
     code?: string,
   ) {
+    const curriculumMatch = await findCurriculumCourseMatch(
+      transaction,
+      name,
+      code?.trim() || null,
+    );
+    if (curriculumMatch) return curriculumMatch;
     if (code?.trim())
       return transaction.course.upsert({
         where: { code_name: { code: code.trim(), name } },

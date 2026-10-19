@@ -24,6 +24,7 @@ describe('AcademicService', () => {
     course: {
       upsert: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 'course-1' }),
     },
     teachingAssignment: {

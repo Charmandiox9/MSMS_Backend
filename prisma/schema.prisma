@@ -39,6 +39,7 @@ enum AcademicImportType {
   PROJECTS
   RESEARCH
   HOURLY
+  CURRICULUM
 }
 
 enum AcademicImportStatus {
@@ -78,18 +79,24 @@ enum JustificationInboxStatus {
   READ
 }
 
+enum CourseAttemptOutcome {
+  PASSED
+  FAILED
+}
+
 model AcademicSemester {
-  id                 String               @id @default(uuid())
+  id                 String                 @id @default(uuid())
   name               String
   startsOn           DateTime
   endsOn             DateTime
-  isActive           Boolean              @default(false)
+  isActive           Boolean                @default(false)
   assignments        TeachingAssignment[]
   courseSchedules    CourseSchedule[]
   studentEnrollments StudentEnrollment[]
+  courseAttempts     StudentCourseAttempt[]
   hourlyPayRates     HourlyPayRate[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@unique([name])
   @@index([isActive])
@@ -131,6 +138,8 @@ model Course {
   schedules          CourseSchedule[]
   assistantApprovals AssistantCourseApproval[]
   studentEnrollments StudentEnrollment[]
+  curriculumCourses  CurriculumCourse[]
+  courseAttempts     StudentCourseAttempt[]
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -143,15 +152,18 @@ model Student {
   piiVersion Int     @default(0)
   emailHash  String? @unique
 
-  id                 String                 @id @default(uuid())
-  name               String
-  email              String                 @unique
-  enrollments        StudentEnrollment[]
-  justificationInbox JustificationInbox[]
-  justifications     Justification[]
-  outputAuthorships  ResearchOutputAuthor[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  id                        String                 @id @default(uuid())
+  name                      String
+  email                     String                 @unique
+  enrollments               StudentEnrollment[]
+  careerCurriculumVersionId String?
+  careerCurriculumVersion   CurriculumVersion?     @relation(fields: [careerCurriculumVersionId], references: [id], onDelete: Restrict)
+  courseAttempts            StudentCourseAttempt[]
+  justificationInbox        JustificationInbox[]
+  justifications            Justification[]
+  outputAuthorships         ResearchOutputAuthor[]
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
 }
 
 /// A student attends an NRC in a semester, independently of teachers or time slots.
@@ -168,6 +180,65 @@ model StudentEnrollment {
 
   @@unique([studentId, semesterId, nrc])
   @@index([semesterId, nrc])
+  @@index([courseId])
+}
+
+/// A student's result for one course in a particular semester. Repeated
+/// attempts are retained and numbered; they are independent from editable rosters.
+model StudentCourseAttempt {
+  id            String               @id @default(uuid())
+  studentId     String
+  semesterId    String
+  courseId      String
+  attemptNumber Int
+  outcome       CourseAttemptOutcome
+  nrc           String?
+  student       Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  semester      AcademicSemester     @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  course        Course               @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  createdAt     DateTime             @default(now())
+
+  @@unique([studentId, courseId, attemptNumber])
+  @@index([studentId, semesterId])
+  @@index([courseId])
+}
+
+/// A career groups one or more curricula assigned to student cohorts.
+model Career {
+  id                 String              @id @default(uuid())
+  code               String              @unique
+  name               String              @unique
+  isActive           Boolean             @default(true)
+  curriculumVersions CurriculumVersion[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+/// Curriculum version applied to an admission cohort; versions remain stable
+/// so historical student progress keeps its original course requirements.
+model CurriculumVersion {
+  id         String             @id @default(uuid())
+  careerId   String
+  cohortYear Int
+  career     Career             @relation(fields: [careerId], references: [id], onDelete: Restrict)
+  students   Student[]
+  courses    CurriculumCourse[]
+  createdAt  DateTime           @default(now())
+
+  @@unique([careerId, cohortYear])
+  @@index([careerId])
+}
+
+/// A global course included in one version of a career's curriculum.
+model CurriculumCourse {
+  id                  String            @id @default(uuid())
+  curriculumVersionId String
+  courseId            String
+  termNumber          Int
+  curriculumVersion   CurriculumVersion @relation(fields: [curriculumVersionId], references: [id], onDelete: Cascade)
+  course              Course            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@index([curriculumVersionId, courseId])
   @@index([courseId])
 }
 

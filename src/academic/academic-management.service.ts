@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { findCurriculumCourseMatch } from './curriculum-course-match';
 import { loadCurrentCourses } from './current-courses';
 import { HourlyPaymentsService } from './hourly-payments.service';
 import { contractDate } from './hourly-payment-calculator';
@@ -320,8 +321,9 @@ export class AcademicManagementService {
         throw new ConflictException('El NRC ya existe en el semestre activo');
       const name = input.name.trim();
       const code = input.code?.trim() || null;
-      // Reuse the catalog record without changing offerings in past semesters.
+      const curriculumMatch = await findCurriculumCourseMatch(tx, name, code);
       const course =
+        (curriculumMatch ? { id: curriculumMatch.id } : null) ??
         (await tx.course.findFirst({ where: { name, code } })) ??
         (await tx.course.create({ data: { name, code } }));
       await tx.courseSchedule.createMany({
