@@ -19,6 +19,8 @@ describe('AssistantshipsResolver contract', () => {
     list: jest.fn(),
     get: jest.fn(),
     options: jest.fn(),
+    student: jest.fn(),
+    careerCourses: jest.fn(),
     assignments: jest.fn(),
     register: jest.fn(),
     update: jest.fn(),
@@ -58,6 +60,12 @@ describe('AssistantshipsResolver contract', () => {
     expect(service.register).toHaveBeenCalledWith(input);
     expect(service.update).toHaveBeenCalledWith('assistantship', input);
     expect(service.assignments).toHaveBeenCalledWith('semester');
+  });
+  it('delegates protected student and career course lookups', () => {
+    void resolver.assistantshipStudent({ email: 'student@example.test' });
+    void resolver.assistantshipCareerCourses({ careerId: 'career' });
+    expect(service.student).toHaveBeenCalledWith('student@example.test');
+    expect(service.careerCourses).toHaveBeenCalledWith('career');
   });
   it('validates IDs, email, confirmation, dates, hours and nested schedules', () => {
     const input = plainToInstance(RegisterAssistantshipInput, {

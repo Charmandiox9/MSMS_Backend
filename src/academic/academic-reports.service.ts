@@ -143,18 +143,18 @@ export class AcademicReportsService {
                   approvals: {
                     some: {
                       assistantships: {
-                        some: { teachingAssignment: assignmentFilter },
+                        some: assignmentFilter,
                       },
                     },
                   },
                 }
               : {},
-            include: { approvals: { include: { course: true } } },
+            include: { student: true, approvals: { include: { course: true } } },
             orderBy: { id: 'asc' },
           })
         ).map((item) => ({
-          name: item.name,
-          email: item.email,
+          name: item.student?.name ?? item.name,
+          email: item.student?.email ?? item.email,
           status: item.isActive ? 'ACTIVE' : 'INACTIVE',
           courses: item.approvals.map((a) => a.course.name).join('; '),
         }));
@@ -175,24 +175,26 @@ export class AcademicReportsService {
         ];
         rows = (
           await this.prisma.assistantship.findMany({
-            where: { teachingAssignment: assignmentFilter },
+            where: assignmentFilter,
             include: {
+              course: true,
+              semester: true,
               teachingAssignment: {
                 include: { semester: true, course: true, teacher: true },
               },
-              approval: { include: { assistant: true } },
+              approval: { include: { assistant: { include: { student: true } } } },
               schedules: true,
             },
             orderBy: { startsOn: 'desc' },
           })
         ).map((item) => ({
-          semester: item.teachingAssignment.semester.name,
+          semester: item.semester.name,
           assistantshipNrc: item.nrc,
-          course: item.teachingAssignment.course.name,
-          courseNrc: item.teachingAssignment.nrc,
-          teacher: item.teachingAssignment.teacher.name,
-          name: item.approval.assistant.name,
-          email: item.approval.assistant.email,
+          course: item.course.name,
+          courseNrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? null,
+          teacher: item.teachingAssignment?.teacher.name ?? null,
+          name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
+          email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
           startsOn: item.startsOn.toISOString().slice(0, 10),
           endsOn: item.endsOn?.toISOString().slice(0, 10) ?? null,
           weeklyHours: item.weeklyHours?.toNumber() ?? null,

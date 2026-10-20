@@ -39,6 +39,7 @@ describe('Módulo de estudiantes', () => {
       update: jest.fn(),
       count: jest.fn(),
     },
+    teachingAssistant: { findMany: jest.fn() },
     studentEnrollment: {
       findMany: jest.fn(),
       createMany: jest.fn(),
@@ -62,6 +63,7 @@ describe('Módulo de estudiantes', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.findPiiIds.mockResolvedValue([]);
+    prisma.teachingAssistant.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(
       (
         operation:
@@ -99,6 +101,41 @@ describe('Módulo de estudiantes', () => {
     ]);
     prisma.student.count.mockResolvedValue(1);
   });
+  it('returns linked and legacy assistantships when searching a student', async () => {
+    const historical = {
+      id: 'history',
+      course,
+      semester: { id: 'old', name: '2025-2' },
+      nrc: null,
+      courseNrc: null,
+      startsOn: new Date('2025-08-01'),
+      endsOn: new Date('2025-12-31'),
+    };
+    prisma.teachingAssistant.findMany.mockResolvedValue([
+      {
+        studentId,
+        email: 'previous@example.com',
+        approvals: [{ assistantships: [historical] }],
+      },
+      {
+        studentId: null,
+        email: profile.email,
+        approvals: [{ assistantships: [{ ...historical, id: 'legacy' }] }],
+      },
+    ]);
+    const result = await controller.list({
+      page: 1,
+      pageSize: 10,
+      search: 'Ana',
+    });
+    expect(result.items[0].assistantships.map(({ id }) => id)).toEqual([
+      'history',
+      'legacy',
+    ]);
+    expect(prisma.findPiiIds).toHaveBeenCalledWith('Student', 'Ana');
+    expect((await controller.get(studentId)).assistantships).toHaveLength(2);
+  });
+
   it('crea un estudiante global y vincula la asignatura sin depender de un profesor', async () => {
     await controller.create({
       ...profile,

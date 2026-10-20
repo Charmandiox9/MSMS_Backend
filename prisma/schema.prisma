@@ -95,6 +95,7 @@ model AcademicSemester {
   studentEnrollments StudentEnrollment[]
   courseAttempts     StudentCourseAttempt[]
   hourlyPayRates     HourlyPayRate[]
+  assistantships     Assistantship[]
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
@@ -140,6 +141,7 @@ model Course {
   studentEnrollments StudentEnrollment[]
   curriculumCourses  CurriculumCourse[]
   courseAttempts     StudentCourseAttempt[]
+  assistantships     Assistantship[]
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -162,6 +164,7 @@ model Student {
   justificationInbox        JustificationInbox[]
   justifications            Justification[]
   outputAuthorships         ResearchOutputAuthor[]
+  teachingAssistant         TeachingAssistant?
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
 }
@@ -210,6 +213,7 @@ model Career {
   name               String              @unique
   isActive           Boolean             @default(true)
   curriculumVersions CurriculumVersion[]
+  assistantships     Assistantship[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -265,7 +269,7 @@ model TeachingAssignment {
   @@index([teacherId])
 }
 
-/// Academic student record; independent from administrative login accounts.
+/// Assistant profile linked to the global academic student; legacy links may be absent.
 model TeachingAssistant {
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion      Int     @default(0)
@@ -273,6 +277,8 @@ model TeachingAssistant {
   studentCodeHash String? @unique
 
   id          String                    @id @default(uuid())
+  studentId   String?                   @unique
+  student     Student?                  @relation(fields: [studentId], references: [id], onDelete: Restrict)
   name        String
   email       String                    @unique
   studentCode String?                   @unique
@@ -299,12 +305,15 @@ model AssistantCourseApproval {
   @@index([courseId])
 }
 
-/// Semester, course NRC and supervising teacher come from the teaching assignment.
+/// Semester and course remain queryable without a historical teaching assignment.
 /// nrc identifies the assistantship itself and can differ from the course NRC.
 model Assistantship {
   id                   String                  @id @default(uuid())
   nrc                  String?
-  teachingAssignmentId String
+  teachingAssignmentId String?
+  semesterId           String
+  careerId             String?
+  courseNrc            String?
   assistantId          String
   courseId             String
   /// Must match the approval record; SQL checks approval precedes startsOn.
@@ -312,7 +321,10 @@ model Assistantship {
   startsOn             DateTime                @db.Date
   endsOn               DateTime?               @db.Date
   weeklyHours          Decimal?                @db.Decimal(5, 2)
-  teachingAssignment   TeachingAssignment      @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  teachingAssignment   TeachingAssignment?     @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  semester             AcademicSemester        @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  course               Course                  @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  career               Career?                 @relation(fields: [careerId], references: [id], onDelete: Restrict)
   approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
   schedules            AssistantshipSchedule[]
   createdAt            DateTime                @default(now())
@@ -321,6 +333,7 @@ model Assistantship {
   @@unique([teachingAssignmentId, assistantId])
   @@index([assistantId, courseId, approvedOn])
   @@index([teachingAssignmentId, courseId])
+  @@index([semesterId, courseId])
 }
 
 /// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).

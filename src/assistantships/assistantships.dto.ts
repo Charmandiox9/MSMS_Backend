@@ -73,15 +73,44 @@ export class AssistantshipScheduleInput {
 
 @InputType()
 export class RegisterAssistantshipInput {
-  @Field() @IsString() @IsNotEmpty() @MaxLength(50) assistantshipNrc!: string;
-  @Field(() => ID) @IsUUID() teachingAssignmentId!: string;
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  assistantshipNrc?: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  teachingAssignmentId?: string;
+  @Field(() => ID) @IsUUID() semesterId!: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  courseId?: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  careerId?: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  careerCurriculumVersionId?: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  studentId?: string;
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  courseNrc?: string;
   @Field()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLength(200)
   assistantName!: string;
   @Field()
   @Transform(({ value }: { value: unknown }) =>
@@ -125,15 +154,21 @@ export class AssistantshipScheduleView {
 @ObjectType()
 export class AssistantshipView {
   @Field(() => ID) id!: string;
-  @Field(() => ID) teachingAssignmentId!: string;
+  @Field(() => ID, { nullable: true }) teachingAssignmentId!: string | null;
+  @Field(() => ID, { nullable: true }) studentId!: string | null;
+  @Field(() => ID) courseId!: string;
+  @Field(() => ID, { nullable: true }) careerId!: string | null;
+  @Field(() => ID, { nullable: true }) careerCurriculumVersionId!:
+    string | null;
+  @Field(() => String, { nullable: true }) careerName!: string | null;
   @Field(() => String, { nullable: true }) assistantshipNrc!: string | null;
   @Field() assistantName!: string;
   @Field() assistantEmail!: string;
   @Field(() => String, { nullable: true }) studentCode!: string | null;
   @Field() courseName!: string;
   @Field(() => String, { nullable: true }) courseCode!: string | null;
-  @Field() nrc!: string;
-  @Field() teacherName!: string;
+  @Field(() => String, { nullable: true }) nrc!: string | null;
+  @Field(() => String, { nullable: true }) teacherName!: string | null;
   @Field(() => ID) semesterId!: string;
   @Field() semesterName!: string;
   @Field() approvedOn!: string;
@@ -179,12 +214,47 @@ export class AssistantshipBlockOption {
 
 @ObjectType()
 export class AssistantshipOptions {
+  @Field(() => [AssistantshipCareerOption])
+  careers!: AssistantshipCareerOption[];
   @Field(() => [AssistantshipBlockOption])
   blocks!: AssistantshipBlockOption[];
   @Field(() => [AssistantshipSemesterOption])
   semesters!: AssistantshipSemesterOption[];
   @Field(() => [AssistantshipTeacherOption])
   teachers!: AssistantshipTeacherOption[];
+}
+
+@ObjectType()
+export class AssistantshipCurriculumOption {
+  @Field(() => ID) id!: string;
+  @Field(() => Int) cohortYear!: number;
+}
+
+@ObjectType()
+export class AssistantshipCareerOption {
+  @Field(() => ID) id!: string;
+  @Field() name!: string;
+  @Field() isActive!: boolean;
+  @Field(() => [AssistantshipCurriculumOption])
+  curriculumVersions!: AssistantshipCurriculumOption[];
+}
+
+@ObjectType()
+export class AssistantshipStudentOption {
+  @Field(() => ID) id!: string;
+  @Field() name!: string;
+  @Field() email!: string;
+  @Field(() => ID, { nullable: true }) careerCurriculumVersionId!:
+    string | null;
+  @Field(() => ID, { nullable: true }) careerId!: string | null;
+  @Field(() => String, { nullable: true }) careerName!: string | null;
+}
+
+@ObjectType()
+export class AssistantshipCourseOption {
+  @Field(() => ID) id!: string;
+  @Field() name!: string;
+  @Field(() => String, { nullable: true }) code!: string | null;
 }
 
 @ObjectType()

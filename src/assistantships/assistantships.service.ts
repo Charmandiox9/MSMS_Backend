@@ -16,9 +16,21 @@ import {
   AssistantshipView,
   RegisterAssistantshipInput,
 } from './assistantships.dto';
-
 const include = {
-  approval: { include: { assistant: true } },
+  approval: {
+    include: {
+      assistant: {
+        include: {
+          student: {
+            include: { careerCurriculumVersion: { include: { career: true } } },
+          },
+        },
+      },
+    },
+  },
+  course: true,
+  semester: true,
+  career: true,
   teachingAssignment: {
     include: { teacher: true, course: true, semester: true },
   },
@@ -31,14 +43,12 @@ const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 const invalid = (code: string, message: string): never => {
   throw new BadRequestException({ code, message });
 };
-
 @Injectable()
 export class AssistantshipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
-
   private today(): Date {
     const parts = new Intl.DateTimeFormat('en', {
       timeZone:
@@ -53,7 +63,6 @@ export class AssistantshipsService {
       `${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`,
     );
   }
-
   private view(record: AssistantshipRecord, today: Date): AssistantshipView {
     const {
       teachingAssignment: assignment,
@@ -63,15 +72,21 @@ export class AssistantshipsService {
       id: record.id,
       teachingAssignmentId: record.teachingAssignmentId,
       assistantshipNrc: record.nrc,
-      assistantName: assistant.name,
-      assistantEmail: assistant.email,
+      studentId: assistant.studentId,
+      courseId: record.courseId,
+      careerId: record.careerId,
+      careerName: record.career?.name ?? null,
+      careerCurriculumVersionId:
+        assistant.student?.careerCurriculumVersionId ?? null,
+      assistantName: assistant.student?.name ?? assistant.name,
+      assistantEmail: assistant.student?.email ?? assistant.email,
       studentCode: assistant.studentCode,
-      courseName: assignment.course.name,
-      courseCode: assignment.course.code,
-      nrc: assignment.nrc,
-      teacherName: assignment.teacher.name,
-      semesterId: assignment.semesterId,
-      semesterName: assignment.semester.name,
+      courseName: record.course.name,
+      courseCode: record.course.code,
+      nrc: record.courseNrc ?? assignment?.nrc ?? null,
+      teacherName: assignment?.teacher.name ?? null,
+      semesterId: record.semesterId,
+      semesterName: record.semester.name,
       approvedOn: isoDate(record.approvedOn),
       startsOn: isoDate(record.startsOn),
       endsOn: record.endsOn ? isoDate(record.endsOn) : null,
@@ -85,7 +100,6 @@ export class AssistantshipsService {
             : AssistantshipState.ACTIVE,
     };
   }
-
   async list(filters: AssistantshipFilters) {
     const today = this.today();
     const search = filters.search?.trim();
@@ -96,11 +110,14 @@ export class AssistantshipsService {
     const teacherIds = search
       ? await this.prisma.findPiiIds('Teacher', search)
       : [];
+    const studentIds = search
+      ? await this.prisma.findPiiIds('Student', search)
+      : [];
     const where: Prisma.AssistantshipWhereInput = {
-      teachingAssignment: {
-        ...(filters.semesterId ? { semesterId: filters.semesterId } : {}),
-        ...(filters.teacherId ? { teacherId: filters.teacherId } : {}),
-      },
+      ...(filters.semesterId ? { semesterId: filters.semesterId } : {}),
+      ...(filters.teacherId
+        ? { teachingAssignment: { teacherId: filters.teacherId } }
+        : {}),
       ...(filters.state === AssistantshipState.SCHEDULED
         ? { startsOn: { gt: today } }
         : {}),
@@ -119,7 +136,10 @@ export class AssistantshipsService {
               {
                 approval: {
                   assistant: {
-                    id: { in: assistantIds },
+                    OR: [
+                      { id: { in: assistantIds } },
+                      { studentId: { in: studentIds } },
+                    ],
                   },
                 },
               },
@@ -133,6 +153,8 @@ export class AssistantshipsService {
                 },
               },
               { nrc: text },
+              { courseNrc: text },
+              { course: { OR: [{ name: text }, { code: text }] } },
             ],
           }
         : {}),
@@ -140,8 +162,8 @@ export class AssistantshipsService {
     const [total, assistants, semesters] = await Promise.all([
       this.prisma.assistantship.count({ where }),
       this.prisma.assistantship.groupBy({ by: ['assistantId'], where }),
-      this.prisma.teachingAssignment.findMany({
-        where: { assistantships: { some: where } },
+      this.prisma.assistantship.findMany({
+        where,
         distinct: ['semesterId'],
         select: { semesterId: true },
       }),
@@ -154,7 +176,7 @@ export class AssistantshipsService {
       skip: (page - 1) * filters.pageSize,
       take: filters.pageSize,
       orderBy: [
-        { teachingAssignment: { semester: { startsOn: 'desc' } } },
+        { semester: { startsOn: 'desc' } },
         { startsOn: 'desc' },
         { id: 'asc' },
       ],
@@ -168,7 +190,6 @@ export class AssistantshipsService {
       totalPages,
     };
   }
-
   async get(id: string): Promise<AssistantshipView> {
     const today = this.today();
     const record = await this.prisma.assistantship.findUnique({
@@ -183,9 +204,8 @@ export class AssistantshipsService {
     }
     return this.view(record, today);
   }
-
   async options() {
-    const [semesters, teachers] = await Promise.all([
+    const [semesters, teachers, careers] = await Promise.all([
       this.prisma.academicSemester.findMany({
         orderBy: [{ startsOn: 'desc' }, { name: 'asc' }],
       }),
@@ -194,8 +214,13 @@ export class AssistantshipsService {
         orderBy: { id: 'asc' },
         select: { id: true, name: true },
       }),
+      this.prisma.career.findMany({
+        include: { curriculumVersions: { orderBy: { cohortYear: 'desc' } } },
+        orderBy: { name: 'asc' },
+      }),
     ]);
     return {
+      careers,
       semesters: semesters.map((semester) => ({
         ...semester,
         startsOn: isoDate(semester.startsOn),
@@ -205,7 +230,6 @@ export class AssistantshipsService {
       blocks: academicScheduleBlocks,
     };
   }
-
   async assignments(semesterId: string) {
     const assignments = await this.prisma.teachingAssignment.findMany({
       where: { semesterId, teacher: { isActive: true }, nrc: { not: '' } },
@@ -220,26 +244,187 @@ export class AssistantshipsService {
       teacherName: assignment.teacher.name,
     }));
   }
-
+  async student(email: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { email: email.trim().toLowerCase() },
+      include: { careerCurriculumVersion: { include: { career: true } } },
+    });
+    return student
+      ? {
+          id: student.id,
+          name: student.name,
+          email: student.email,
+          careerCurriculumVersionId: student.careerCurriculumVersionId,
+          careerId: student.careerCurriculumVersion?.careerId ?? null,
+          careerName: student.careerCurriculumVersion?.career.name ?? null,
+        }
+      : null;
+  }
+  async careerCourses(careerId: string) {
+    return this.prisma.course.findMany({
+      where: {
+        curriculumCourses: { some: { curriculumVersion: { careerId } } },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
   async register(
     input: RegisterAssistantshipInput,
   ): Promise<AssistantshipView> {
     return this.save(input);
   }
-
   async update(
     id: string,
     input: RegisterAssistantshipInput,
   ): Promise<AssistantshipView> {
     return this.save(input, id);
   }
+  private async resolveAcademicContext(
+    transaction: Prisma.TransactionClient,
+    input: RegisterAssistantshipInput,
+    startsOn: Date,
+    endsOn: Date,
+  ) {
+    const semester = await transaction.academicSemester.findUnique({
+      where: { id: input.semesterId },
+    });
+    if (!semester) invalid('SEMESTER_PERIOD', 'El semestre no existe');
+    const activeSemester = await transaction.academicSemester.findFirst({
+      where: { isActive: true },
+    });
+    const historical = !semester!.isActive;
+    if (
+      historical &&
+      semester!.endsOn >= (activeSemester?.startsOn ?? this.today())
+    )
+      invalid(
+        'SEMESTER_PERIOD',
+        'Selecciona el semestre activo o uno anterior',
+      );
+    const assignment = input.teachingAssignmentId
+      ? await transaction.teachingAssignment.findUnique({
+          where: { id: input.teachingAssignmentId },
+          include: { teacher: true, semester: true },
+        })
+      : null;
+    if (!historical && !assignment)
+      invalid(
+        'ASSIGNMENT_NOT_FOUND',
+        'Selecciona una asignatura del semestre activo',
+      );
+    if (input.teachingAssignmentId && !assignment)
+      invalid('ASSIGNMENT_NOT_FOUND', 'La asignación docente no existe');
+    if (assignment && assignment.semesterId !== semester!.id)
+      invalid('SEMESTER_PERIOD', 'El semestre de la asignatura cambió');
+    if (
+      !historical &&
+      assignment &&
+      (!assignment.teacher.isActive || !assignment.nrc)
+    )
+      invalid(
+        'INACTIVE_PROFILE',
+        'El profesor debe estar activo y tener un NRC',
+      );
+    if (!historical && !input.assistantshipNrc?.trim())
+      invalid('INVALID_INPUT', 'Indica el NRC de la ayudantía');
+    if (
+      startsOn < new Date(isoDate(semester!.startsOn)) ||
+      endsOn > new Date(isoDate(semester!.endsOn))
+    )
+      invalid('SEMESTER_PERIOD', 'La ayudantía debe estar dentro del semestre');
+    const courseId = historical
+      ? (input.courseId ?? assignment?.courseId)
+      : assignment?.courseId;
+    if (!courseId) invalid('ASSIGNMENT_NOT_FOUND', 'Selecciona una asignatura');
+    if (assignment && assignment.courseId !== courseId)
+      invalid(
+        'ASSIGNMENT_NOT_FOUND',
+        'La asignatura no coincide con la asignación',
+      );
+    if (historical) {
+      if (!input.careerId)
+        invalid('CAREER_REQUIRED', 'Selecciona la carrera de la ayudantía');
+      const membership = await transaction.curriculumCourse.findFirst({
+        where: { courseId, curriculumVersion: { careerId: input.careerId } },
+      });
+      if (!membership)
+        invalid('COURSE_CAREER', 'La asignatura no pertenece a esa carrera');
+    }
+    return { semester: semester!, assignment, historical, courseId: courseId! };
+  }
+
+  private async resolveAssistant(
+    transaction: Prisma.TransactionClient,
+    input: RegisterAssistantshipInput,
+  ) {
+    const email = input.assistantEmail.trim().toLowerCase();
+    let student = await transaction.student.findUnique({ where: { email } });
+    if (input.studentId && student?.id !== input.studentId)
+      invalid(
+        'ASSISTANT_IDENTITY',
+        'El estudiante o su correo cambió. Busca nuevamente',
+      );
+    if (!student?.careerCurriculumVersionId) {
+      if (!input.careerCurriculumVersionId)
+        invalid('CAREER_REQUIRED', 'Indica la carrera y malla del estudiante');
+      const curriculum = await transaction.curriculumVersion.findUnique({
+        where: { id: input.careerCurriculumVersionId },
+        include: { career: true },
+      });
+      if (!curriculum?.career.isActive)
+        invalid('CAREER_REQUIRED', 'Selecciona una carrera activa');
+      student = student
+        ? await transaction.student.update({
+            where: { id: student.id },
+            data: { careerCurriculumVersionId: curriculum!.id },
+          })
+        : await transaction.student.create({
+            data: {
+              name: input.assistantName.trim(),
+              email,
+              careerCurriculumVersionId: curriculum!.id,
+            },
+          });
+    } else if (
+      input.careerCurriculumVersionId &&
+      input.careerCurriculumVersionId !== student.careerCurriculumVersionId
+    ) {
+      invalid(
+        'ASSISTANT_IDENTITY',
+        'La carrera del estudiante cambió. Busca nuevamente',
+      );
+    }
+    const studentCode = input.studentCode?.trim() || null;
+    const existing = await transaction.teachingAssistant.findFirst({
+      where: { OR: [{ studentId: student!.id }, { email }] },
+    });
+    if (existing && !existing.isActive)
+      invalid('INACTIVE_PROFILE', 'El estudiante ayudante está inactivo');
+    if (existing?.studentId && existing.studentId !== student!.id)
+      invalid(
+        'ASSISTANT_IDENTITY',
+        'El correo ya está vinculado a otro estudiante',
+      );
+    const assistant = existing
+      ? await transaction.teachingAssistant.update({
+          where: { id: existing.id },
+          data: { studentId: student!.id },
+        })
+      : await transaction.teachingAssistant.create({
+          data: {
+            name: student!.name,
+            email,
+            studentCode,
+            studentId: student!.id,
+          },
+        });
+    return assistant;
+  }
 
   private async save(
     input: RegisterAssistantshipInput,
     id?: string,
   ): Promise<AssistantshipView> {
-    if (!input.assistantshipNrc?.trim())
-      invalid('INVALID_INPUT', 'Indica el NRC de la ayudantía');
     const date = (value: string) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
         return invalid('INVALID_PERIOD', 'Usa fechas sin hora');
@@ -295,55 +480,20 @@ export class AssistantshipsService {
               code: 'NOT_FOUND',
               message: 'La ayudantía no existe',
             });
-          const assignment = await transaction.teachingAssignment.findUnique({
-            where: { id: input.teachingAssignmentId },
-            include: { teacher: true, semester: true },
-          });
-          if (!assignment)
-            throw new NotFoundException({
-              code: 'ASSIGNMENT_NOT_FOUND',
-              message: 'La asignación docente no existe',
-            });
-          if (!assignment.teacher.isActive || !assignment.nrc)
-            invalid(
-              'INACTIVE_PROFILE',
-              'El profesor debe estar activo y tener un NRC',
+          const { semester, assignment, historical, courseId } =
+            await this.resolveAcademicContext(
+              transaction,
+              input,
+              startsOn,
+              endsOn,
             );
-          if (
-            startsOn < new Date(isoDate(assignment.semester.startsOn)) ||
-            endsOn > new Date(isoDate(assignment.semester.endsOn))
-          )
-            invalid(
-              'SEMESTER_PERIOD',
-              'La ayudantía debe estar dentro del semestre',
-            );
-          const email = input.assistantEmail.trim().toLowerCase();
-          const studentCode = input.studentCode?.trim() || null;
-          const existing = await transaction.teachingAssistant.findUnique({
-            where: { email },
-          });
-          if (existing && !existing.isActive)
-            invalid('INACTIVE_PROFILE', 'El estudiante ayudante está inactivo');
-          if (
-            existing &&
-            (existing.name !== input.assistantName.trim() ||
-              (studentCode && existing.studentCode !== studentCode))
-          )
-            throw new ConflictException({
-              code: 'ASSISTANT_IDENTITY',
-              message: 'El correo ya pertenece a un estudiante con otros datos',
-            });
-          const assistant =
-            existing ??
-            (await transaction.teachingAssistant.create({
-              data: { name: input.assistantName.trim(), email, studentCode },
-            }));
+          const assistant = await this.resolveAssistant(transaction, input);
           const approval = await transaction.assistantCourseApproval.findUnique(
             {
               where: {
                 assistantId_courseId: {
                   assistantId: assistant.id,
-                  courseId: assignment.courseId,
+                  courseId: courseId!,
                 },
               },
             },
@@ -358,7 +508,7 @@ export class AssistantshipsService {
             await transaction.assistantCourseApproval.create({
               data: {
                 assistantId: assistant.id,
-                courseId: assignment.courseId,
+                courseId: courseId!,
                 approvedOn,
               },
             });
@@ -388,9 +538,14 @@ export class AssistantshipsService {
               'El ayudante tiene otra ayudantía con horario incompatible',
             );
           const data = {
-            nrc: input.assistantshipNrc.trim(),
-            teachingAssignmentId: assignment.id,
-            courseId: assignment.courseId,
+            nrc: input.assistantshipNrc?.trim() || null,
+            teachingAssignmentId: assignment?.id ?? null,
+            semesterId: semester!.id,
+            careerId: historical ? input.careerId : null,
+            courseNrc: historical
+              ? input.courseNrc?.trim() || null
+              : assignment!.nrc,
+            courseId: courseId!,
             assistantId: assistant.id,
             approvedOn,
             startsOn,

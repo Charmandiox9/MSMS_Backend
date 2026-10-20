@@ -23,11 +23,65 @@ const currentEnrollments = {
 const studentCareer = {
   include: { career: { select: { id: true, code: true, name: true } } },
 } as const;
+
+const assistantshipHistory = {
+  approvals: {
+    include: {
+      assistantships: {
+        include: { course: true, semester: true },
+        orderBy: { startsOn: 'desc' },
+      },
+    },
+  },
+} as const;
 type Catalog = Awaited<ReturnType<typeof loadCurrentCourses>>;
 
 @Injectable()
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async withAssistantships<T extends { id: string; email: string }>(
+    students: T[],
+  ) {
+    if (!students.length) return [];
+    // Exact protected email lookup also recovers records created before student links existed.
+    const assistants = await this.prisma.teachingAssistant.findMany({
+      where: {
+        OR: [
+          { studentId: { in: students.map(({ id }) => id) } },
+          {
+            studentId: null,
+            email: { in: students.map(({ email }) => email) },
+          },
+        ],
+      },
+      include: assistantshipHistory,
+    });
+    return students.map((student) => ({
+      ...student,
+      assistantships: assistants
+        .filter(
+          (assistant) =>
+            assistant.studentId === student.id ||
+            (!assistant.studentId &&
+              assistant.email.trim().toLowerCase() ===
+                student.email.trim().toLowerCase()),
+        )
+        .flatMap((assistant) =>
+          assistant.approvals.flatMap((approval) => approval.assistantships),
+        )
+        .sort((a, b) => b.startsOn.valueOf() - a.startsOn.valueOf())
+        .map((record) => ({
+          id: record.id,
+          course: record.course,
+          semester: record.semester,
+          nrc: record.nrc,
+          courseNrc: record.courseNrc,
+          startsOn: record.startsOn,
+          endsOn: record.endsOn,
+        })),
+    }));
+  }
 
   async list({ page, pageSize, search, nrc }: ListStudentsDto) {
     const where: Prisma.StudentWhereInput = {
@@ -57,7 +111,7 @@ export class StudentsService {
       { maxWait: 10_000, timeout: 30_000 },
     );
     return {
-      items,
+      items: await this.withAssistantships(items),
       total,
       page,
       pageSize,
@@ -74,7 +128,7 @@ export class StudentsService {
       },
     });
     if (!student) throw new NotFoundException('El estudiante no existe');
-    return student;
+    return (await this.withAssistantships([student]))[0];
   }
 
   private async write<T>(
@@ -167,7 +221,9 @@ export class StudentsService {
           !curriculum.career.isActive &&
           curriculum.id !== existingStudent?.careerCurriculumVersionId
         )
-          throw new BadRequestException('La carrera seleccionada está inactiva');
+          throw new BadRequestException(
+            'La carrera seleccionada está inactiva',
+          );
       }
       const student = id
         ? await tx.student.update({ where: { id }, data })
@@ -209,7 +265,9 @@ export class StudentsService {
             career: { select: { id: true, code: true, name: true } },
             courses: {
               orderBy: [{ termNumber: 'asc' }, { course: { name: 'asc' } }],
-              include: { course: { select: { id: true, code: true, name: true } } },
+              include: {
+                course: { select: { id: true, code: true, name: true } },
+              },
             },
           },
         },
@@ -222,7 +280,10 @@ export class StudentsService {
         },
         enrollments: {
           where: { semester: { isActive: true } },
-          select: { courseId: true, semester: { select: { id: true, name: true } } },
+          select: {
+            courseId: true,
+            semester: { select: { id: true, name: true } },
+          },
         },
       },
     });
@@ -247,7 +308,9 @@ export class StudentsService {
     const passedCourses = courses.filter(
       (course) => course.outcome === 'PASSED',
     ).length;
-    const enrolledCourses = courses.filter((course) => course.currentEnrollment).length;
+    const enrolledCourses = courses.filter(
+      (course) => course.currentEnrollment,
+    ).length;
 
     return {
       student: {
@@ -269,15 +332,21 @@ export class StudentsService {
     };
   }
 
-  async recordAttempt(
-    studentId: string,
-    input: StudentCourseAttemptInputDto,
-  ) {
+  async recordAttempt(studentId: string, input: StudentCourseAttemptInputDto) {
     return this.write(async (tx) => {
       const [student, course, semester] = await Promise.all([
-        tx.student.findUnique({ where: { id: studentId }, select: { id: true } }),
-        tx.course.findUnique({ where: { id: input.courseId }, select: { id: true } }),
-        tx.academicSemester.findUnique({ where: { id: input.semesterId }, select: { id: true } }),
+        tx.student.findUnique({
+          where: { id: studentId },
+          select: { id: true },
+        }),
+        tx.course.findUnique({
+          where: { id: input.courseId },
+          select: { id: true },
+        }),
+        tx.academicSemester.findUnique({
+          where: { id: input.semesterId },
+          select: { id: true },
+        }),
       ]);
       if (!student) throw new NotFoundException('El estudiante no existe');
       if (!course) throw new NotFoundException('La asignatura no existe');

@@ -105,6 +105,37 @@ describe('Academic reports', () => {
       }),
     );
   });
+  it('exports past assistantships without a teacher or NRC', async () => {
+    prisma.assistantship.findMany.mockResolvedValue([
+      {
+        nrc: null,
+        courseNrc: null,
+        startsOn: new Date('2025-08-01'),
+        endsOn: new Date('2025-12-31'),
+        weeklyHours: null,
+        semester: { name: '2025-2' },
+        course: { name: 'Biología' },
+        teachingAssignment: null,
+        approval: {
+          assistant: { name: 'Ayudante', email: 'helper@example.test' },
+        },
+        schedules: [],
+      },
+    ]);
+    const result = await controller.exportReport({
+      dataset: 'assistantships',
+      semesterId: 'past',
+    });
+    expect(result.rows[0]).toMatchObject({
+      semester: '2025-2',
+      course: 'Biología',
+      teacher: null,
+      courseNrc: null,
+    });
+    expect(prisma.assistantship.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { semesterId: 'past' } }),
+    );
+  });
   it('exports assistantship NRC separately from course NRC and includes all schedules', async () => {
     prisma.assistantship.findMany.mockResolvedValue([
       {
@@ -112,6 +143,8 @@ describe('Academic reports', () => {
         startsOn: new Date('2026-08-01'),
         endsOn: null,
         weeklyHours: null,
+        semester: { name: '2026-2' },
+        course: { name: 'Biología' },
         teachingAssignment: {
           semester: { name: '2026-2' },
           course: { name: 'Biología' },

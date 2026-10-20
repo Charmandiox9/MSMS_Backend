@@ -11,15 +11,20 @@ type AssistantshipScheduleView {
 
 type AssistantshipView {
   id: ID!
-  teachingAssignmentId: ID!
+  teachingAssignmentId: ID
+  studentId: ID
+  courseId: ID!
+  careerId: ID
+  careerCurriculumVersionId: ID
+  careerName: String
   assistantshipNrc: String
   assistantName: String!
   assistantEmail: String!
   studentCode: String
   courseName: String!
   courseCode: String
-  nrc: String!
-  teacherName: String!
+  nrc: String
+  teacherName: String
   semesterId: ID!
   semesterName: String!
   approvedOn: String!
@@ -65,9 +70,37 @@ type AssistantshipBlockOption {
 }
 
 type AssistantshipOptions {
+  careers: [AssistantshipCareerOption!]!
   blocks: [AssistantshipBlockOption!]!
   semesters: [AssistantshipSemesterOption!]!
   teachers: [AssistantshipTeacherOption!]!
+}
+
+type AssistantshipCurriculumOption {
+  id: ID!
+  cohortYear: Int!
+}
+
+type AssistantshipCareerOption {
+  id: ID!
+  name: String!
+  isActive: Boolean!
+  curriculumVersions: [AssistantshipCurriculumOption!]!
+}
+
+type AssistantshipStudentOption {
+  id: ID!
+  name: String!
+  email: String!
+  careerCurriculumVersionId: ID
+  careerId: ID
+  careerName: String
+}
+
+type AssistantshipCourseOption {
+  id: ID!
+  name: String!
+  code: String
 }
 
 type AssistantshipAssignmentOption {
@@ -328,6 +361,8 @@ type Query {
   assistantships(filters: AssistantshipFilters): AssistantshipPage!
   assistantship(id: ID!): AssistantshipView
   assistantshipOptions: AssistantshipOptions!
+  assistantshipStudent(email: String!): AssistantshipStudentOption
+  assistantshipCareerCourses(careerId: ID!): [AssistantshipCourseOption!]!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
   repositoryProjectOptions(filters: RepositoryProjectOptionFilters): RepositoryProjectOptionPage!
   repositoryProject(id: ID!): RepositoryProjectDetail!
@@ -397,8 +432,14 @@ type Mutation {
 }
 
 input RegisterAssistantshipInput {
-  assistantshipNrc: String!
-  teachingAssignmentId: ID!
+  assistantshipNrc: String
+  teachingAssignmentId: ID
+  semesterId: ID!
+  courseId: ID
+  careerId: ID
+  careerCurriculumVersionId: ID
+  studentId: ID
+  courseNrc: String
   assistantName: String!
   assistantEmail: String!
   studentCode: String

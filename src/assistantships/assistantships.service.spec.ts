@@ -18,6 +18,7 @@ const assignment = {
   course: { name: 'Biología', code: 'BIO101' },
   semester: {
     id: 'semester',
+    isActive: true,
     name: '2026-2',
     startsOn: new Date('2026-08-01'),
     endsOn: new Date('2026-12-31'),
@@ -25,6 +26,7 @@ const assignment = {
 };
 const assistant = {
   id: 'assistant',
+  studentId: 'student',
   name: 'Estudiante',
   email: 'student@example.test',
   studentCode: null,
@@ -38,10 +40,18 @@ const record = {
   weeklyHours: new Prisma.Decimal(4),
   schedules: [],
   approval: { assistant },
+  teachingAssignmentId: assignment.id,
+  semesterId: assignment.semesterId,
+  courseId: assignment.courseId,
+  careerId: null,
+  courseNrc: assignment.nrc,
+  course: assignment.course,
+  semester: assignment.semester,
   teachingAssignment: assignment,
 };
 const validInput = (): RegisterAssistantshipInput =>
   Object.assign(new RegisterAssistantshipInput(), {
+    semesterId: 'semester',
     assistantshipNrc: '20001',
     teachingAssignmentId: 'assignment',
     assistantName: 'Estudiante',
@@ -58,7 +68,15 @@ describe('AssistantshipsService', () => {
   let service: AssistantshipsService;
   const transaction = {
     teachingAssignment: { findUnique: jest.fn() },
-    teachingAssistant: { findUnique: jest.fn(), create: jest.fn() },
+    teachingAssistant: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    student: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    academicSemester: { findUnique: jest.fn(), findFirst: jest.fn() },
+    curriculumVersion: { findUnique: jest.fn() },
+    curriculumCourse: { findFirst: jest.fn() },
     assistantCourseApproval: { findUnique: jest.fn(), create: jest.fn() },
     assistantship: {
       findMany: jest.fn(),
@@ -82,6 +100,9 @@ describe('AssistantshipsService', () => {
     teachingAssignment: { findMany: jest.fn() },
     academicSemester: { findMany: jest.fn() },
     teacher: { findMany: jest.fn() },
+    career: { findMany: jest.fn() },
+    student: { findUnique: jest.fn() },
+    course: { findMany: jest.fn() },
   };
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -92,7 +113,21 @@ describe('AssistantshipsService', () => {
         callback(transaction),
     );
     transaction.teachingAssignment.findUnique.mockResolvedValue(assignment);
-    transaction.teachingAssistant.findUnique.mockResolvedValue(null);
+    transaction.teachingAssistant.findFirst.mockResolvedValue(null);
+    transaction.teachingAssistant.update.mockResolvedValue(assistant);
+    transaction.student.findUnique.mockResolvedValue({
+      id: 'student',
+      name: assistant.name,
+      email: assistant.email,
+      careerCurriculumVersionId: 'curriculum',
+    });
+    transaction.academicSemester.findUnique.mockResolvedValue(
+      assignment.semester,
+    );
+    transaction.academicSemester.findFirst.mockResolvedValue(
+      assignment.semester,
+    );
+    prisma.career.findMany.mockResolvedValue([]);
     transaction.teachingAssistant.create.mockResolvedValue(assistant);
     transaction.assistantCourseApproval.findUnique.mockResolvedValue(null);
     transaction.assistantship.findMany.mockResolvedValue([]);
@@ -182,6 +217,7 @@ describe('AssistantshipsService', () => {
         name: 'Estudiante',
         email: 'student@example.test',
         studentCode: null,
+        studentId: 'student',
       },
     });
     expect(transaction.assistantCourseApproval.create).toHaveBeenCalledWith({
@@ -196,7 +232,7 @@ describe('AssistantshipsService', () => {
     });
   });
   it('reuses existing profiles and approvals without changing history', async () => {
-    transaction.teachingAssistant.findUnique.mockResolvedValue(assistant);
+    transaction.teachingAssistant.findFirst.mockResolvedValue(assistant);
     transaction.assistantCourseApproval.findUnique.mockResolvedValue({
       approvedOn: new Date('2026-07-01'),
     });
@@ -234,7 +270,7 @@ describe('AssistantshipsService', () => {
     });
   });
   it('rejects inactive students', async () => {
-    transaction.teachingAssistant.findUnique.mockResolvedValue({
+    transaction.teachingAssistant.findFirst.mockResolvedValue({
       ...assistant,
       isActive: false,
     });
@@ -242,13 +278,136 @@ describe('AssistantshipsService', () => {
       response: { code: 'INACTIVE_PROFILE' },
     });
   });
-  it('rejects an email registered to a different student identity', async () => {
-    transaction.teachingAssistant.findUnique.mockResolvedValue({
+  it('rejects an email that no longer matches the selected student', async () => {
+    await expect(
+      service.register({ ...validInput(), studentId: 'other-student' }),
+    ).rejects.toMatchObject({
+      response: { code: 'ASSISTANT_IDENTITY' },
+    });
+  });
+  it('uses the registered student identity and links the existing assistant', async () => {
+    transaction.teachingAssistant.findFirst.mockResolvedValue({
       ...assistant,
-      name: 'Otro estudiante',
+      name: 'Old name',
+    });
+    await service.register(validInput());
+    expect(transaction.teachingAssistant.update).toHaveBeenCalledWith({
+      where: { id: assistant.id },
+      data: { studentId: 'student' },
+    });
+    expect(transaction.student.create).not.toHaveBeenCalled();
+  });
+  it('creates an academic student with their selected curriculum atomically', async () => {
+    transaction.student.findUnique.mockResolvedValue(null);
+    transaction.curriculumVersion.findUnique.mockResolvedValue({
+      id: 'curriculum',
+      career: { isActive: true },
+    });
+    transaction.student.create.mockResolvedValue({
+      id: 'student',
+      name: assistant.name,
+      email: assistant.email,
+    });
+    await service.register({
+      ...validInput(),
+      careerCurriculumVersionId: 'curriculum',
+    });
+    expect(transaction.student.create).toHaveBeenCalledWith({
+      data: {
+        name: assistant.name,
+        email: assistant.email,
+        careerCurriculumVersionId: 'curriculum',
+      },
+    });
+  });
+  it('requires a curriculum for unregistered students', async () => {
+    transaction.student.findUnique.mockResolvedValue(null);
+    await expect(service.register(validInput())).rejects.toMatchObject({
+      response: { code: 'CAREER_REQUIRED' },
+    });
+    expect(transaction.student.create).not.toHaveBeenCalled();
+  });
+  it('registers a past course without a teaching assignment or NRC', async () => {
+    const semester = {
+      ...assignment.semester,
+      id: 'past',
+      isActive: false,
+      startsOn: new Date('2025-08-01'),
+      endsOn: new Date('2025-12-31'),
+    };
+    transaction.academicSemester.findUnique.mockResolvedValue(semester);
+    transaction.curriculumCourse.findFirst.mockResolvedValue({
+      courseId: 'course',
+    });
+    transaction.assistantship.create.mockResolvedValue({
+      ...record,
+      teachingAssignment: null,
+      teachingAssignmentId: null,
+      startsOn: semester.startsOn,
+      endsOn: semester.endsOn,
+      semester,
+      semesterId: 'past',
+      courseNrc: null,
+      careerId: 'career',
+    });
+    const result = await service.register({
+      ...validInput(),
+      semesterId: 'past',
+      courseId: 'course',
+      careerId: 'career',
+      teachingAssignmentId: undefined,
+      assistantshipNrc: undefined,
+      approvedOn: '2025-07-01',
+      startsOn: '2025-08-01',
+      endsOn: '2025-12-31',
+    });
+    expect(result).toMatchObject({
+      semesterId: 'past',
+      teacherName: null,
+      nrc: null,
+      state: 'COMPLETED',
+    });
+    expect(transaction.assistantship.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          semesterId: 'past',
+          courseId: 'course',
+          nrc: null,
+          courseNrc: null,
+          teachingAssignmentId: null,
+        }),
+      }),
+    );
+  });
+  it('rejects historical courses outside the selected career', async () => {
+    transaction.academicSemester.findUnique.mockResolvedValue({
+      ...assignment.semester,
+      isActive: false,
+      startsOn: new Date('2025-08-01'),
+      endsOn: new Date('2025-12-31'),
+    });
+    transaction.curriculumCourse.findFirst.mockResolvedValue(null);
+    await expect(
+      service.register({
+        ...validInput(),
+        teachingAssignmentId: undefined,
+        courseId: 'course',
+        careerId: 'career',
+        approvedOn: '2025-07-01',
+        startsOn: '2025-08-01',
+        endsOn: '2025-12-31',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'COURSE_CAREER' } });
+  });
+  it('rejects future inactive semesters', async () => {
+    transaction.academicSemester.findUnique.mockResolvedValue({
+      ...assignment.semester,
+      isActive: false,
+      startsOn: new Date('2027-01-01'),
+      endsOn: new Date('2027-06-30'),
     });
     await expect(service.register(validInput())).rejects.toMatchObject({
-      response: { code: 'ASSISTANT_IDENTITY' },
+      response: { code: 'SEMESTER_PERIOD' },
     });
   });
   it('rejects rewriting an existing approval date', async () => {
@@ -313,7 +472,9 @@ describe('AssistantshipsService', () => {
     prisma.teachingAssignment.findMany.mockResolvedValue([
       { semesterId: 'semester' },
     ]);
-    prisma.assistantship.findMany.mockResolvedValue([record]);
+    prisma.assistantship.findMany
+      .mockResolvedValueOnce([{ semesterId: 'semester' }])
+      .mockResolvedValueOnce([record]);
     const filters = Object.assign(new AssistantshipFilters(), {
       semesterId: 'semester',
       teacherId: 'teacher',
@@ -327,14 +488,14 @@ describe('AssistantshipsService', () => {
       assistants: 1,
       semesters: 1,
     });
-    const query = prisma.assistantship.findMany.mock.calls[0][0];
+    const query = prisma.assistantship.findMany.mock.calls[1][0];
     expect(query.skip).toBe(0);
     expect(query.where?.teachingAssignment).toEqual({
-      semesterId: 'semester',
       teacherId: 'teacher',
     });
+    expect(query.where?.semesterId).toBe('semester');
     expect(query.where?.startsOn).toEqual({ lte: new Date('2026-10-04') });
-    expect(query.where?.OR).toHaveLength(3);
+    expect(query.where?.OR).toHaveLength(5);
   });
   it.each([
     ['2026-11-01', '2026-12-31', AssistantshipState.SCHEDULED],
