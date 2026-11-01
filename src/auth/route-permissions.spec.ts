@@ -20,6 +20,7 @@ import { JustificationsController } from '../justifications/justifications.contr
 import { StorageController } from '../storage/storage.controller';
 import { StorageTransferController } from '../storage/storage-transfer.controller';
 import { UsersController } from '../users/users.controller';
+import { DataRightsController } from '../privacy-rights/data-rights.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { ROLES_KEY } from './decorators/roles.decorator';
@@ -35,6 +36,7 @@ const controllers: Type[] = [
   AppController,
   AuthController,
   UsersController,
+  DataRightsController,
   AcademicController,
   AcademicCoursesController,
   AcademicSemestersController,
@@ -133,6 +135,12 @@ describe('Matriz de permisos por endpoint', () => {
       'UsersController.revoke': ['SYSTEM_ADMIN'],
       'UsersController.setActive': ['SYSTEM_ADMIN'],
       'UsersController.permanentlyDelete': ['SYSTEM_ADMIN'],
+
+      'DataRightsController.create': 'AUTHENTICATED',
+      'DataRightsController.listMine': 'AUTHENTICATED',
+      'DataRightsController.listQueue': ['PRIVACY_OFFICER'],
+      'DataRightsController.updateStatus': ['PRIVACY_OFFICER'],
+      'DataRightsController.extendDeadline': ['PRIVACY_OFFICER'],
 
       'AcademicController.listTeachers': REPOSITORY,
       'AcademicController.getTeacher': REPOSITORY,

@@ -12,6 +12,11 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
     lookups: { email: 'emailHash', googleId: 'googleIdHash' },
     searchable: ['name', 'email'],
   },
+  DataRightsRequest: {
+    fields: ['details', 'responseNote', 'extensionNote'],
+    lookups: {},
+    searchable: [],
+  },
   PreloadedUser: {
     fields: ['email'],
     lookups: { email: 'emailHash' },

@@ -28,6 +28,8 @@ model User {
   createdJustifications Justification[]              @relation("JustificationCreatedBy")
   decidedJustifications Justification[]              @relation("JustificationDecidedBy")
   justificationHistory  JustificationStatusHistory[]
+  dataRightsRequests    DataRightsRequest[]          @relation("DataRightsSubject")
+  dataRightsActions     DataRightsRequestEvent[]     @relation("DataRightsActor")
 
   isActive Boolean @default(true)
 
@@ -46,6 +48,66 @@ enum AcademicImportStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum DataRightsRequestType {
+  ACCESS
+  RECTIFICATION
+  SUPPRESSION
+  OPPOSITION
+  PORTABILITY
+  BLOCKING
+}
+
+enum DataRightsRequestStatus {
+  RECEIVED
+  VERIFYING
+  IN_PROGRESS
+  COMPLETED
+  DENIED
+  CLOSED
+}
+
+enum DataRightsRequestEventType {
+  SUBMITTED
+  STATUS_CHANGED
+  DEADLINE_EXTENDED
+}
+
+model DataRightsRequest {
+  id            String                   @id @default(uuid())
+  subjectUserId String?
+  rightType     DataRightsRequestType
+  status        DataRightsRequestStatus  @default(RECEIVED)
+  details       String?                  @db.Text
+  responseNote  String?                  @db.Text
+  dueAt         DateTime
+  extendedAt    DateTime?
+  extensionNote String?                  @db.Text
+  respondedAt   DateTime?
+  piiVersion    Int                      @default(0)
+  subject       User?                    @relation("DataRightsSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  events        DataRightsRequestEvent[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  closedAt      DateTime?
+
+  @@index([subjectUserId, createdAt])
+  @@index([status, dueAt])
+}
+
+model DataRightsRequestEvent {
+  id         String                     @id @default(uuid())
+  requestId  String
+  actorId    String?
+  eventType  DataRightsRequestEventType
+  fromStatus DataRightsRequestStatus?
+  toStatus   DataRightsRequestStatus
+  request    DataRightsRequest          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor      User?                      @relation("DataRightsActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime                   @default(now())
+
+  @@index([requestId, createdAt])
 }
 
 /// Durable academic import queue; the workbook payload is application-encrypted.

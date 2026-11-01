@@ -26,6 +26,7 @@ import { AssistantshipsModule } from './assistantships/assistantships.module';
 import { StudentsModule } from './students/students.module';
 import { AcademicRepositoryModule } from './academic-repository/repository.module';
 import { AcademicImportsModule } from './academic-imports/academic-imports.module';
+import { DataRightsModule } from './privacy-rights/data-rights.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -68,6 +69,7 @@ const devProviders =
     StudentsModule,
     AcademicRepositoryModule,
     AcademicImportsModule,
+    DataRightsModule,
     HealthModule,
   ],
   controllers: [AppController],

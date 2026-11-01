@@ -28,6 +28,7 @@ No se descifra en SQL y no se admite una lectura alternativa en claro.
 | Proyectos y participantes       | Notas, carpeta, nombres, contacto y género                                                     |
 | Investigaciones y participantes | Descripción, nombres                                                                           |
 | Resultados académicos y autoría | Notas, nombres, afiliación                                                                     |
+| Solicitudes de derechos         | Respuesta y fundamento de prórroga cifrados; vínculo a cuenta seudónimo                        |
 
 Otros datos vinculados a personas, incluyendo fechas, grado/certificación,
 horas, relaciones y pagos, conservan tipos nativos para las reglas académicas
@@ -166,6 +167,16 @@ vigencia el 1 de diciembre de 2026. Sus artículos 14 ter, 14 quáter, 14 quinqu
 y 14 sexies cubren transparencia, protección desde el diseño y por defecto,
 seguridad proporcional al riesgo y reporte de ciertos incidentes.
 
+El artículo 11 exige acusar recibo, responder por escrito dentro de 30 días
+corridos desde el ingreso (prorrogables una sola vez hasta por otros 30 días),
+conservar evidencia de envío, fecha y contenido íntegro, y fundamentar las
+denegaciones. Al denegar, se debe informar el plazo de 30 días hábiles para
+reclamar ante la Agencia. Las solicitudes deben identificar al titular y su medio
+de respuesta; ciertos derechos requieren especificar el tratamiento, la petición,
+la causal o las modificaciones y antecedentes que correspondan.
+El mismo artículo establece un plazo especial de dos días hábiles para responder
+solicitudes de bloqueo temporal asociadas a rectificación, supresión u oposición.
+
 ### Estado técnico revisado el 1 de noviembre de 2026
 
 La implementación aporta cifrado de campos personales, controles de acceso,
@@ -183,18 +194,64 @@ integraciones que las aplicaran. Se reemplazó por un aviso informativo sobre la
 cookie necesaria de sesión y almacenamiento local de preferencias. Cada despliegue
 debe volver a revisar etiquetas, scripts de terceros, cookies y almacenamiento.
 
+Para personas con cuenta activa existe un registro autenticado de solicitudes de
+derechos. Cada persona solo ve sus propias solicitudes; el personal con rol
+`PRIVACY_OFFICER` y administradores del sistema gestionan una cola, con cambios
+de estado permitidos, respuesta cifrada y eventos de auditoría. No se ejecutan
+automáticamente exportaciones, rectificaciones, supresiones ni bloqueos: cada
+caso requiere validación y ejecución controlada por el responsable. Personas sin
+cuenta deben usar el canal institucional publicado. La fecha de recepción se
+conserva como `createdAt` y el plazo inicial se calcula a 30 días corridos. La
+cola prioriza vencimientos. El
+personal autorizado puede extenderlo una vez por hasta 30 días adicionales, solo
+mientras el caso está abierto y con un fundamento cifrado. El sistema registra la
+fecha de prórroga y eventos de recepción, cambio de estado y extensión. El servicio
+impide duplicados abiertos del mismo tipo por cuenta, limita las transiciones y
+exige una respuesta para cerrar por rechazo o resolución. Al responder registra
+`respondedAt` y conserva la respuesta cifrada; el portal la muestra a la persona
+autenticada. El registro no captura la confirmación de lectura ni acredita el envío
+de la respuesta a otro medio. No envía notificaciones por correo ni recibe adjuntos;
+la institución debe
+operar y conservar el canal oficial alternativo para personas sin cuenta y aprobar
+la política de conservación de solicitudes, respuestas y fundamentos de prórroga.
+El formulario autenticado usa la identidad y correo de la cuenta y solicita una
+descripción cifrada para derechos distintos de acceso. La identidad del proveedor
+de identidad y el método de autenticación deben ser validados como suficientes por
+la institución y según las instrucciones aplicables de la Agencia.
+Para bloqueo temporal, el sistema usa una meta operativa conservadora de 48 horas,
+ordena el caso antes y no ofrece la prórroga de 30 días. Este objetivo no calcula
+días hábiles ni feriados; la institución debe validar el calendario y responder
+dentro del plazo legal de dos días hábiles.
+
 Continúan pendientes de implementación y verificación técnica:
 
-- Flujo para recibir, verificar, registrar, tramitar y auditar solicitudes de
-  acceso, rectificación, supresión, oposición, portabilidad y bloqueo. La edición
-  o eliminación administrativa de una cuenta no equivale por sí sola a tramitar
-  estos derechos.
+- Flujos seguros para localizar, exportar, corregir, suprimir, oponerse o bloquear
+  datos por categoría una vez que la institución apruebe reglas y excepciones. La
+  edición o eliminación administrativa de una cuenta no equivale por sí sola a
+  tramitar estos derechos.
 - Reglas configurables de retención por categoría y finalidad, más eliminación o
   anonimización verificable en sistemas activos, archivos, réplicas y respaldos.
 - Registro y procedimiento técnico de incidentes, evaluación de riesgo,
   preservación de evidencia y coordinación de las notificaciones que correspondan.
 - Evidencia periódica de restauración de respaldos y evaluación de la eficacia de
   controles de seguridad en cada entorno.
+
+### Preparación técnica ante incidentes
+
+Ante una sospecha, el operador debe registrar cuándo se detectó y qué sistemas,
+categorías de datos y cuentas podrían estar afectados. Debe preservar evidencia
+sin copiar datos personales sin cifrar a tickets o canales de chat, contener el
+acceso comprometido, proteger los respaldos y coordinar la evaluación de riesgo
+con el responsable institucional y el encargado de privacidad. La respuesta debe
+conservar la trazabilidad de acciones y dejar constancia de la decisión de
+notificar o no a la Agencia y a las personas afectadas, según corresponda. No se
+deben rotar ni eliminar las claves PII antes de asegurar la recuperación de los
+datos cifrados y la cobertura de los respaldos.
+
+El procedimiento operativo, la guardia responsable, los contactos y simulacros
+deben definirse por la institución. La restauración de base de datos, archivos y
+claves debe probarse periódicamente en un entorno aislado; que exista un respaldo
+no demuestra que pueda recuperarse.
 
 La facultad o institución responsable debe entregar y aprobar antes de producción:
 identidad legal del responsable y representante, canal oficial de derechos,
