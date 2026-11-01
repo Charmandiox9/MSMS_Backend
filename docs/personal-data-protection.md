@@ -162,12 +162,47 @@ anteriores que escribían texto claro deben permanecer detenidos hasta actualiza
 ## Ley 21.719
 
 La [ley oficial](https://www.bcn.cl/leychile/navegar?idNorma=1209272) entra en
-vigencia el 1 de diciembre de 2026. Su artículo 14 quinquies exige seguridad
-adecuada al riesgo y contempla seudonimización, cifrado, restauración y evaluación
-periódica. No prescribe SHA-256 como técnica de cifrado.
+vigencia el 1 de diciembre de 2026. Sus artículos 14 ter, 14 quáter, 14 quinquies
+y 14 sexies cubren transparencia, protección desde el diseño y por defecto,
+seguridad proporcional al riesgo y reporte de ciertos incidentes.
 
-Esta implementación aporta controles técnicos. El cumplimiento integral también
-requiere definir y acreditar finalidad/base de tratamiento, minimización,
-conservación, derechos de titulares, respuesta a incidentes y las condiciones de
-proveedores/transferencias. La institución debe resolver esas obligaciones; los
-tests de software no equivalen a una certificación legal.
+### Estado técnico revisado el 1 de noviembre de 2026
+
+La implementación aporta cifrado de campos personales, controles de acceso,
+protección de sesión y reducción de PII en logs. La ruta bilingüe `/privacy` fue
+habilitada en el frontend. Describe categorías y usos detectados en el software,
+los seis derechos de acceso, rectificación, supresión, oposición, portabilidad y
+bloqueo, y los controles técnicos observables. Sus valores de responsable y
+contacto se leen exclusivamente en el servidor desde `PRIVACY_CONTROLLER_NAME`
+y `PRIVACY_CONTACT_EMAIL`; no deben añadirse secretos ni tokens a estas variables.
+La página indica expresamente que la información institucional sigue pendiente y
+no presenta el aviso técnico como aprobación o política institucional adoptada.
+
+El aviso anterior simulaba preferencias de analítica y marketing sin encontrar
+integraciones que las aplicaran. Se reemplazó por un aviso informativo sobre la
+cookie necesaria de sesión y almacenamiento local de preferencias. Cada despliegue
+debe volver a revisar etiquetas, scripts de terceros, cookies y almacenamiento.
+
+Continúan pendientes de implementación y verificación técnica:
+
+- Flujo para recibir, verificar, registrar, tramitar y auditar solicitudes de
+  acceso, rectificación, supresión, oposición, portabilidad y bloqueo. La edición
+  o eliminación administrativa de una cuenta no equivale por sí sola a tramitar
+  estos derechos.
+- Reglas configurables de retención por categoría y finalidad, más eliminación o
+  anonimización verificable en sistemas activos, archivos, réplicas y respaldos.
+- Registro y procedimiento técnico de incidentes, evaluación de riesgo,
+  preservación de evidencia y coordinación de las notificaciones que correspondan.
+- Evidencia periódica de restauración de respaldos y evaluación de la eficacia de
+  controles de seguridad en cada entorno.
+
+La facultad o institución responsable debe entregar y aprobar antes de producción:
+identidad legal del responsable y representante, canal oficial de derechos,
+finalidades y bases de licitud por tratamiento, plazos de conservación,
+destinatarios y proveedores reales, países y garantías de transferencias,
+excepciones de retención académica, y responsables/procedimientos de respuesta a
+incidentes. La configuración del despliegue debe contrastarse con esta política.
+
+Estos controles y evidencias mejoran la preparación técnica, pero no constituyen
+una certificación legal ni sustituyen las decisiones y obligaciones del responsable
+institucional.
