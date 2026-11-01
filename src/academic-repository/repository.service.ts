@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ResearchOutputKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ParticipantInputDto,
@@ -188,6 +188,18 @@ export class RepositoryService {
   }
 
   private outputData(input: ResearchOutputInputDto) {
+    const hasIntellectualPropertyMetadata = [
+      input.intellectualPropertyType,
+      input.phase,
+      input.phaseDate,
+    ].some((value) => value !== undefined && value !== null && value !== '');
+    if (
+      input.kind !== ResearchOutputKind.INTELLECTUAL_PROPERTY &&
+      hasIntellectualPropertyMetadata
+    )
+      throw new BadRequestException(
+        'Los metadatos de propiedad intelectual solo corresponden a resultados de ese tipo',
+      );
     if (input.authors?.some((author) => author.teacherId && author.studentId))
       throw new BadRequestException('Una autoría no puede vincular a un profesor y estudiante simultáneamente');
     if (input.authors && new Set(input.authors.map(({ position }) => position)).size !== input.authors.length)

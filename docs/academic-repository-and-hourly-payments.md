@@ -71,8 +71,16 @@ El formulario de proyectos cubre identificación, origen, fechas, siete montos
 decimales, moneda, documentación y participantes. Vacío significa desconocido,
 incluyendo montos: no se convierte a cero. Los importes viajan como strings
 decimales de hasta dos cifras decimales; registrar cualquier monto exige moneda.
-Las fechas se validan en el backend. Investigaciones registra descripción,
-área, fechas, equipo y un proyecto opcional; la base asegura un vínculo único.
+Las fechas se validan en el backend y los cierres no pueden preceder al inicio.
+Investigaciones registra descripción, área, fechas, equipo y un proyecto
+opcional; la base asegura un vínculo único.
+
+Los resultados académicos validan año, fechas, longitudes y precisión decimal.
+El factor de impacto admite hasta cuatro decimales. Los metadatos de propiedad
+intelectual solo se aceptan cuando el tipo del resultado es propiedad intelectual;
+el formulario oculta esos campos para otros tipos y los limpia al cambiar el tipo.
+La API también valida que cada autor tenga como máximo un vínculo personal y que
+las posiciones de autoría no se repitan.
 
 Un participante puede ser externo o vincularse a un profesor global existente.
 El backend obtiene del padrón el nombre del profesor, valida el equipo completo
