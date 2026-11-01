@@ -25,9 +25,34 @@ La migración `20261014000000_academic_repository_and_hourly_teaching` amplía
 Los proyectos e investigaciones tienen pantallas CRUD en
 `/dashboard/projects` y `/dashboard/research`, disponibles para administración,
 secretaría docente y análisis de procesos académicos. La navegación lateral y
-los accesos de Información académica incluyen ambas páginas. No se importan
-automáticamente las planillas: las fechas inválidas y montos desconocidos deben
-resolverse antes de una futura importación.
+los accesos de Información académica incluyen ambas páginas.
+
+## Carga inicial desde planillas entregadas
+
+La carga es manual, requiere sesión y permiso de repositorio, y nunca se ejecuta
+automáticamente al iniciar el sistema. Los formatos fuente disponibles y
+soportados son:
+
+- `proyectos 2025-2026.xlsx`: hoja `proyectos`, con el marcador `AÑO` en A2.
+  Los registros empiezan en la fila 3. El sistema revisa cada fila antes de
+  confirmar la importación.
+- `Epryma 2026.xlsx`: hojas `Publicaciones`, `Libros` y `Propiedad intelectual`.
+  La hoja `Publicaciones` debe tener `Titulo` en C5. Las publicaciones, libros
+  y registros de propiedad intelectual se convierten en `ResearchOutput`.
+
+La interfaz acepta `.xlsx` de hasta 12 MB y muestra una vista previa con filas
+importables, errores, duplicados y advertencias. La confirmación crea un trabajo
+asíncrono; el contenido del archivo se cifra mientras el trabajo está pendiente
+y se elimina del registro al terminar, tanto si tiene éxito como si falla. Los
+archivos fuente no se guardan en este repositorio.
+
+No se encontraron planillas de convenios, pasantías ni movilidad entre los
+archivos entregados. No se inventan formatos para esas categorías; se agregan
+cuando exista una fuente acordada y un modelo que las represente.
+
+Las fechas inválidas y los montos desconocidos del origen no se convierten en
+valores válidos por defecto: la vista previa informa los problemas antes de
+persistir datos.
 
 ## CRUD de proyectos e investigaciones
 
