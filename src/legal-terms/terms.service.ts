@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -9,6 +10,8 @@ import { getTerms, CURRENT_TERMS_VERSION } from './terms-content';
 
 @Injectable()
 export class TermsService {
+  private readonly logger = new Logger(TermsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async withStorageCheck<T>(operation: () => Promise<T>): Promise<T> {
@@ -21,11 +24,12 @@ export class TermsService {
         'code' in error &&
         error.code === 'P2021'
       ) {
-        throw new ServiceUnavailableException({
-          code: 'TERMS_STORAGE_NOT_INITIALIZED',
-          message:
-            'La base de datos aún no tiene la migración de términos. En MSMS_Backend ejecuta npx prisma migrate dev y reinicia el servidor.',
-        });
+        this.logger.error(
+          'Terms acceptance storage is not initialized. Apply the pending database migration.',
+        );
+        throw new ServiceUnavailableException(
+          'No fue posible verificar la aceptación de los términos en este momento.',
+        );
       }
       throw error;
     }
