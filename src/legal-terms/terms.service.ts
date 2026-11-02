@@ -24,9 +24,7 @@ export class TermsService {
         'code' in error &&
         error.code === 'P2021'
       ) {
-        this.logger.error(
-          'Terms acceptance storage is not initialized. Apply the pending database migration.',
-        );
+        this.logger.error('Terms acceptance storage is unavailable.');
         throw new ServiceUnavailableException(
           'No fue posible verificar la aceptación de los términos en este momento.',
         );
