@@ -78,11 +78,282 @@ type AssistantshipAssignmentOption {
   teacherName: String!
 }
 
+type AcademicReportTableRow {
+  values: [AcademicReportValue]!
+}
+
+"""
+A report cell containing text or a finite number. Missing values are null.
+"""
+scalar AcademicReportValue
+
+type AcademicReportTable {
+  columns: [String!]!
+  rows: [AcademicReportTableRow!]!
+  totalRows: Int!
+  page: Int
+  pageSize: Int
+}
+
+type AcademicChartPoint {
+  label: String!
+  value: String!
+}
+
+type AcademicOutputChartPoint {
+  reportingYear: Int!
+  kind: String!
+  count: Int!
+}
+
+type AcademicHourlyChartPoint {
+  label: String!
+  value: String!
+  count: Int!
+}
+
+type AcademicChartSemester {
+  id: ID!
+  name: String!
+}
+
+type AcademicChartSummary {
+  projects: AcademicReportTable!
+  researchByYear: [AcademicChartPoint!]!
+  outputs: [AcademicOutputChartPoint!]!
+  hourlyByComponent: [AcademicHourlyChartPoint!]!
+  semesters: [AcademicChartSemester!]!
+}
+
+type RepositoryParticipantView {
+  id: ID
+  name: String!
+  role: String!
+  teacherId: ID
+  contactEmail: String
+  gender: String
+}
+
+type RepositoryListRecord {
+  id: ID!
+  title: String!
+  academicUnit: String!
+  code: String
+  startsOn: DateTime
+  endsOn: DateTime
+  updatedAt: DateTime!
+  createdAt: DateTime!
+  participants: [RepositoryParticipantView!]!
+  outputCount: Int!
+  reportingYear: Int
+  status: ProjectStatus
+  researchArea: String
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+enum ProjectStatus {
+  REGISTERED
+  AWARDED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+type RepositoryListPage {
+  items: [RepositoryListRecord!]!
+  total: Int!
+  page: Int!
+  pageSize: Int!
+  totalPages: Int!
+}
+
+type RepositoryProjectOption {
+  id: ID!
+  title: String!
+  code: String
+  researchId: ID
+}
+
+type RepositoryProjectOptionPage {
+  items: [RepositoryProjectOption!]!
+  total: Int!
+  page: Int!
+  pageSize: Int!
+  totalPages: Int!
+}
+
+type ResearchOutputAuthorView {
+  id: ID!
+  name: String!
+  position: Int!
+  affiliation: String
+  isStudent: Boolean
+  teacherId: ID
+  studentId: ID
+}
+
+type ResearchOutputResearchView {
+  id: ID!
+  title: String!
+  code: String
+}
+
+type ResearchOutputProjectView {
+  id: ID!
+  title: String!
+  code: String
+}
+
+type ResearchOutputProjectLinkView {
+  project: ResearchOutputProjectView!
+}
+
+type ResearchOutputListRecord {
+  id: ID!
+  researchId: ID
+  kind: ResearchOutputKind!
+  reportingYear: Int!
+  title: String!
+  doi: String
+  journal: String
+  issn: String
+  isbn: String
+  quartile: String
+  fiveYearImpactFactor: String
+  publicationDate: DateTime
+  indexation: String
+  publisher: String
+  publicationPlace: String
+  studentParticipation: Boolean
+  internationalParticipation: Boolean
+  intellectualPropertyType: String
+  phase: String
+  phaseDate: DateTime
+  notes: String
+  updatedAt: DateTime!
+  createdAt: DateTime!
+  research: ResearchOutputResearchView
+  authors: [ResearchOutputAuthorView!]!
+  projects: [ResearchOutputProjectLinkView!]!
+}
+
+enum ResearchOutputKind {
+  ARTICLE
+  BOOK
+  BOOK_CHAPTER
+  INTELLECTUAL_PROPERTY
+}
+
+type ResearchOutputListPage {
+  items: [ResearchOutputListRecord!]!
+  total: Int!
+  page: Int!
+  pageSize: Int!
+  totalPages: Int!
+}
+
+type RepositoryLinkedRecord {
+  id: ID!
+  title: String!
+  code: String
+}
+
+type RepositoryProjectDetail {
+  id: ID!
+  title: String!
+  academicUnit: String!
+  code: String
+  startsOn: DateTime
+  endsOn: DateTime
+  updatedAt: DateTime!
+  createdAt: DateTime!
+  participants: [RepositoryParticipantView!]!
+  outputCount: Int!
+  reportingYear: Int
+  status: ProjectStatus
+  researchArea: String
+  faculty: String
+  resolution: String
+  classification: String
+  fundingSource: String
+  program: String
+  competition: String
+  applicationArea: String
+  participationScope: String
+  officialized: Boolean
+  revisedEndsOn: DateTime
+  closedOn: DateTime
+  currency: String
+  totalAmount: String
+  vraContribution: String
+  vridtContribution: String
+  recoveryAmount: String
+  facultyContribution: String
+  depreciationAmount: String
+  profitabilityAmount: String
+  folderUrl: String
+  notes: String
+  research: RepositoryLinkedRecord
+}
+
+type RepositoryResearchDetail {
+  id: ID!
+  title: String!
+  academicUnit: String!
+  code: String
+  startsOn: DateTime
+  endsOn: DateTime
+  updatedAt: DateTime!
+  createdAt: DateTime!
+  participants: [RepositoryParticipantView!]!
+  outputCount: Int!
+  reportingYear: Int
+  status: ProjectStatus
+  researchArea: String
+  description: String
+  projectId: ID
+  project: RepositoryLinkedRecord
+}
+
 type Query {
   hello: String!
+  academicReportSemesters: [AcademicChartSemester!]!
+  academicReport(filters: AcademicReportQuery!): AcademicReportTable!
+  academicCharts(filters: AcademicChartFilters): AcademicChartSummary!
   assistantships(filters: AssistantshipFilters): AssistantshipPage!
+  assistantship(id: ID!): AssistantshipView
   assistantshipOptions: AssistantshipOptions!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
+  repositoryProjectOptions(filters: RepositoryProjectOptionFilters): RepositoryProjectOptionPage!
+  repositoryProject(id: ID!): RepositoryProjectDetail!
+  repositoryResearchDetail(id: ID!): RepositoryResearchDetail!
+  repositoryResearchOutput(id: ID!): ResearchOutputListRecord!
+  repositoryProjects(filters: RepositoryListFilters): RepositoryListPage!
+  repositoryResearch(filters: RepositoryListFilters): RepositoryListPage!
+  repositoryResearchOutputs(filters: ResearchOutputListFilters): ResearchOutputListPage!
+}
+
+input AcademicReportQuery {
+  dataset: String! = "assistantships"
+  semesterId: ID
+  page: Int
+  pageSize: Int
+  reportingYear: Int
+  search: String
+  startsOn: String
+  endsOn: String
+}
+
+input AcademicChartFilters {
+  reportingYear: Int
+  semesterId: ID
+  startsOn: String
+  endsOn: String
 }
 
 input AssistantshipFilters {
@@ -92,6 +363,32 @@ input AssistantshipFilters {
   search: String
   page: Int! = 1
   pageSize: Int! = 20
+}
+
+input RepositoryProjectOptionFilters {
+  page: Int! = 1
+  pageSize: Int! = 100
+}
+
+input RepositoryListFilters {
+  page: Int! = 1
+  pageSize: Int! = 10
+  search: String
+  status: ProjectStatus
+  reportingYear: Int
+  sortBy: String
+  sortOrder: String
+}
+
+input ResearchOutputListFilters {
+  page: Int! = 1
+  pageSize: Int! = 10
+  search: String
+  researchId: ID
+  kind: ResearchOutputKind
+  reportingYear: Int
+  sortBy: String
+  sortOrder: String
 }
 
 type Mutation {
