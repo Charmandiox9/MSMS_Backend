@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { AssistantshipState } from '../assistantships/assistantships.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { findCurriculumCourseMatch } from './curriculum-course-match';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
@@ -262,6 +263,43 @@ export class AcademicService {
     });
   }
 
+  async updateActiveSemester(
+    id: string,
+    name: string,
+    startsOnValue: string,
+    endsOnValue: string,
+  ) {
+    const semesterName = name.trim();
+    if (!semesterName || semesterName.length > MAX_SEMESTER_NAME)
+      throw new BadRequestException('El nombre del semestre no es válido');
+    const startsOn = this.parseDate(startsOnValue);
+    const endsOn = this.parseDate(endsOnValue);
+    if (endsOn <= startsOn)
+      throw new BadRequestException(
+        'La fecha de término debe ser posterior al inicio',
+      );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const result = await tx.academicSemester.updateMany({
+          where: { id, isActive: true },
+          data: { name: semesterName, startsOn, endsOn },
+        });
+        if (result.count !== 1)
+          throw new ConflictException(
+            'El semestre activo cambió. Recarga antes de editar',
+          );
+        return tx.academicSemester.findFirst({ where: { id } });
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException('Ya existe un semestre con ese nombre');
+      throw error;
+    }
+  }
+
   async activateSemester(
     name: string,
     startsOnValue: string,
@@ -412,7 +450,9 @@ export class AcademicService {
       where: { teachingAssignment: { teacherId: id, semesterId: semester.id } },
       include: {
         teachingAssignment: { include: { course: true } },
-        approval: { include: { assistant: true } },
+        course: true,
+        semester: true,
+        approval: { include: { assistant: { include: { student: true } } } },
         schedules: true,
       },
     });
@@ -462,14 +502,14 @@ export class AcademicService {
         ...assistantshipSlot(schedule),
         startsAt: clock(schedule.startsAtMinute),
         endsAt: clock(schedule.endsAtMinute),
-        nrc: item.teachingAssignment.nrc,
+        nrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? '',
         assistantshipNrc: item.nrc,
-        course: courseOf(item.teachingAssignment.course),
+        course: courseOf(item.course),
         location: schedule.location,
         assistant: {
           id: item.approval.assistant.id,
-          name: item.approval.assistant.name,
-          email: item.approval.assistant.email,
+          name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
+          email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
         },
         state: stateOf(item),
         conflict: false,
@@ -674,13 +714,30 @@ export class AcademicService {
           { block: 'asc' },
           { course: { name: 'asc' } },
         ],
-        include: { course: true, semester: true },
+        include: {
+          course: {
+            include: {
+              curriculumCourses: {
+                include: {
+                  curriculumVersion: {
+                    select: {
+                      career: { select: { id: true, code: true, name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          semester: true,
+        },
       }),
       this.prisma.assistantship.findMany({
-        where: { teachingAssignment: { semester: { isActive: true } } },
+        where: { semester: { isActive: true } },
         include: {
           teachingAssignment: { include: { course: true, semester: true } },
-          approval: { include: { assistant: true } },
+          course: true,
+          semester: true,
+          approval: { include: { assistant: { include: { student: true } } } },
           schedules: true,
         },
       }),
@@ -690,18 +747,18 @@ export class AcademicService {
       ...assistantships.flatMap((item) =>
         item.schedules.map((schedule) => ({
           id: schedule.id,
-          nrc: item.teachingAssignment.nrc,
+          nrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? '',
           assistantshipNrc: item.nrc,
           ...assistantshipSlot(schedule),
           startsAtMinute: schedule.startsAtMinute,
           endsAtMinute: schedule.endsAtMinute,
           location: schedule.location,
           assistant: {
-            name: item.approval.assistant.name,
-            email: item.approval.assistant.email,
+            name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
+            email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
           },
-          course: item.teachingAssignment.course,
-          semester: item.teachingAssignment.semester,
+          course: item.course,
+          semester: item.semester,
           startsOn: item.startsOn,
           endsOn: item.endsOn,
           kind: 'ASSISTANTSHIP',
@@ -783,6 +840,12 @@ export class AcademicService {
     name: string,
     code?: string,
   ) {
+    const curriculumMatch = await findCurriculumCourseMatch(
+      transaction,
+      name,
+      code?.trim() || null,
+    );
+    if (curriculumMatch) return curriculumMatch;
     if (code?.trim())
       return transaction.course.upsert({
         where: { code_name: { code: code.trim(), name } },

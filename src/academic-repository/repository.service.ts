@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ResearchOutputKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ParticipantInputDto,
@@ -32,7 +32,9 @@ const researchInclude = {
 const outputInclude = {
   research: { select: { id: true, title: true, code: true } },
   authors: { orderBy: { position: 'asc' as const } },
-  projects: { include: { project: { select: { id: true, title: true, code: true } } } },
+  projects: {
+    include: { project: { select: { id: true, title: true, code: true } } },
+  },
 } satisfies Prisma.ResearchOutputInclude;
 const date = (value?: string | null) =>
   value ? new Date(`${value}T00:00:00.000Z`) : null;
@@ -83,8 +85,19 @@ export class RepositoryService {
   async projects(query: RepositoryQueryDto) {
     const { page, pageSize, search } = query;
     const sortBy = query.sortBy ?? 'reportingYear';
-    if (!['title', 'reportingYear', 'startsOn', 'totalAmount', 'status', 'createdAt'].includes(sortBy))
-      throw new BadRequestException('El criterio de orden no corresponde a proyectos');
+    if (
+      ![
+        'title',
+        'reportingYear',
+        'startsOn',
+        'totalAmount',
+        'status',
+        'createdAt',
+      ].includes(sortBy)
+    )
+      throw new BadRequestException(
+        'El criterio de orden no corresponde a proyectos',
+      );
     const sortOrder = query.sortOrder ?? 'desc';
     const where: Prisma.ProjectWhereInput = {
       ...(query.status ? { status: query.status } : {}),
@@ -162,37 +175,89 @@ export class RepositoryService {
   async researchOutputs(query: ResearchOutputQueryDto) {
     const { page, pageSize, search } = query;
     const sortBy = query.sortBy ?? 'reportingYear';
-    if (!['title', 'reportingYear', 'publicationDate', 'createdAt', 'kind'].includes(sortBy))
-      throw new BadRequestException('El criterio de orden no corresponde a resultados académicos');
+    if (
+      ![
+        'title',
+        'reportingYear',
+        'publicationDate',
+        'createdAt',
+        'kind',
+      ].includes(sortBy)
+    )
+      throw new BadRequestException(
+        'El criterio de orden no corresponde a resultados académicos',
+      );
     const where: Prisma.ResearchOutputWhereInput = {
       ...(query.researchId ? { researchId: query.researchId } : {}),
       ...(query.kind ? { kind: query.kind } : {}),
       ...(query.reportingYear ? { reportingYear: query.reportingYear } : {}),
-      ...(search ? { OR: [{ title: textFilter(search) }, { doi: textFilter(search) }, { journal: textFilter(search) }] } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: textFilter(search) },
+              { doi: textFilter(search) },
+              { journal: textFilter(search) },
+            ],
+          }
+        : {}),
     };
     const [total, items] = await this.prisma.$transaction([
       this.prisma.researchOutput.count({ where }),
       this.prisma.researchOutput.findMany({
-        where, include: outputInclude,
+        where,
+        include: outputInclude,
         orderBy: [{ [sortBy]: query.sortOrder ?? 'desc' }, { id: 'asc' }],
-        skip: (page - 1) * pageSize, take: pageSize,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
       }),
     ]);
-    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
 
   async researchOutput(id: string) {
-    const row = await this.prisma.researchOutput.findUnique({ where: { id }, include: outputInclude });
+    const row = await this.prisma.researchOutput.findUnique({
+      where: { id },
+      include: outputInclude,
+    });
     if (!row) throw new NotFoundException('Resultado académico no encontrado');
     return row;
   }
 
   private outputData(input: ResearchOutputInputDto) {
+    const hasIntellectualPropertyMetadata = [
+      input.intellectualPropertyType,
+      input.phase,
+      input.phaseDate,
+    ].some((value) => value !== undefined && value !== null && value !== '');
+    if (
+      input.kind !== ResearchOutputKind.INTELLECTUAL_PROPERTY &&
+      hasIntellectualPropertyMetadata
+    )
+      throw new BadRequestException(
+        'Los metadatos de propiedad intelectual solo corresponden a resultados de ese tipo',
+      );
     if (input.authors?.some((author) => author.teacherId && author.studentId))
-      throw new BadRequestException('Una autoría no puede vincular a un profesor y estudiante simultáneamente');
-    if (input.authors && new Set(input.authors.map(({ position }) => position)).size !== input.authors.length)
-      throw new BadRequestException('Las posiciones de autoría deben ser únicas');
+      throw new BadRequestException(
+        'Una autoría no puede vincular a un profesor y estudiante simultáneamente',
+      );
+    if (
+      input.authors &&
+      new Set(input.authors.map(({ position }) => position)).size !==
+        input.authors.length
+    )
+      throw new BadRequestException(
+        'Las posiciones de autoría deben ser únicas',
+      );
     return {
+      ...(input.departmentId === undefined
+        ? {}
+        : { departmentId: input.departmentId }),
       researchId: input.researchId,
       kind: input.kind,
       reportingYear: input.reportingYear,
@@ -202,7 +267,10 @@ export class RepositoryService {
       issn: input.issn ?? null,
       isbn: input.isbn ?? null,
       quartile: input.quartile ?? null,
-      fiveYearImpactFactor: input.fiveYearImpactFactor == null ? null : new Prisma.Decimal(input.fiveYearImpactFactor),
+      fiveYearImpactFactor:
+        input.fiveYearImpactFactor == null
+          ? null
+          : new Prisma.Decimal(input.fiveYearImpactFactor),
       publicationDate: date(input.publicationDate),
       indexation: input.indexation ?? null,
       publisher: input.publisher ?? null,
@@ -216,20 +284,65 @@ export class RepositoryService {
     } satisfies Prisma.ResearchOutputUncheckedCreateInput;
   }
 
-  private async validateOutputRelations(tx: Prisma.TransactionClient, input: ResearchOutputInputDto) {
-    if (!(await tx.research.findUnique({ where: { id: input.researchId }, select: { id: true } })))
+  private async validateOutputRelations(
+    tx: Prisma.TransactionClient,
+    input: ResearchOutputInputDto,
+  ) {
+    await this.validateDepartment(tx, input.departmentId);
+    if (
+      !(await tx.research.findUnique({
+        where: { id: input.researchId },
+        select: { id: true },
+      }))
+    )
       throw new BadRequestException('La investigación seleccionada no existe');
     const projectIds = [...new Set(input.projectIds ?? [])];
-    const teacherIds = [...new Set((input.authors ?? []).flatMap(({ teacherId }) => teacherId ? [teacherId] : []))];
-    const studentIds = [...new Set((input.authors ?? []).flatMap(({ studentId }) => studentId ? [studentId] : []))];
+    const teacherIds = [
+      ...new Set(
+        (input.authors ?? []).flatMap(({ teacherId }) =>
+          teacherId ? [teacherId] : [],
+        ),
+      ),
+    ];
+    const studentIds = [
+      ...new Set(
+        (input.authors ?? []).flatMap(({ studentId }) =>
+          studentId ? [studentId] : [],
+        ),
+      ),
+    ];
     const [projects, teachers, students] = await Promise.all([
-      projectIds.length ? tx.project.findMany({ where: { id: { in: projectIds } }, select: { id: true } }) : [],
-      teacherIds.length ? tx.teacher.findMany({ where: { id: { in: teacherIds } }, select: { id: true } }) : [],
-      studentIds.length ? tx.student.findMany({ where: { id: { in: studentIds } }, select: { id: true } }) : [],
+      projectIds.length
+        ? tx.project.findMany({
+            where: { id: { in: projectIds } },
+            select: { id: true },
+          })
+        : [],
+      teacherIds.length
+        ? tx.teacher.findMany({
+            where: { id: { in: teacherIds } },
+            select: { id: true },
+          })
+        : [],
+      studentIds.length
+        ? tx.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true },
+          })
+        : [],
     ]);
-    if (projects.length !== projectIds.length) throw new BadRequestException('Uno o más proyectos seleccionados no existen');
-    if (teachers.length !== teacherIds.length) throw new BadRequestException('Uno o más profesores seleccionados no existen');
-    if (students.length !== studentIds.length) throw new BadRequestException('Uno o más estudiantes seleccionados no existen');
+    if (projects.length !== projectIds.length)
+      throw new BadRequestException(
+        'Uno o más proyectos seleccionados no existen',
+      );
+    if (teachers.length !== teacherIds.length)
+      throw new BadRequestException(
+        'Uno o más profesores seleccionados no existen',
+      );
+    if (students.length !== studentIds.length)
+      throw new BadRequestException(
+        'Uno o más estudiantes seleccionados no existen',
+      );
     return projectIds;
   }
 
@@ -240,9 +353,18 @@ export class RepositoryService {
       return tx.researchOutput.create({
         data: {
           ...data,
-          authors: { create: (input.authors ?? []).map((author) => ({ ...author, teacherId: author.teacherId ?? null, studentId: author.studentId ?? null, affiliation: author.affiliation ?? null, isStudent: author.isStudent ?? null })) },
+          authors: {
+            create: (input.authors ?? []).map((author) => ({
+              ...author,
+              teacherId: author.teacherId ?? null,
+              studentId: author.studentId ?? null,
+              affiliation: author.affiliation ?? null,
+              isStudent: author.isStudent ?? null,
+            })),
+          },
           projects: { create: projectIds.map((projectId) => ({ projectId })) },
-        }, include: outputInclude,
+        },
+        include: outputInclude,
       });
     });
   }
@@ -250,23 +372,58 @@ export class RepositoryService {
   updateResearchOutput(id: string, input: UpdateResearchOutputDto) {
     const data = this.outputData(input);
     return this.mutate(async (tx) => {
-      this.checkVersion(await tx.researchOutput.findUnique({ where: { id }, select: { updatedAt: true } }), input.expectedUpdatedAt);
+      this.checkVersion(
+        await tx.researchOutput.findUnique({
+          where: { id },
+          select: { updatedAt: true },
+        }),
+        input.expectedUpdatedAt,
+      );
       const projectIds = await this.validateOutputRelations(tx, input);
       return tx.researchOutput.update({
         where: { id, updatedAt: new Date(input.expectedUpdatedAt) },
         data: {
           ...data,
-          ...(input.authors === undefined ? {} : { authors: { deleteMany: {}, create: input.authors.map((author) => ({ ...author, teacherId: author.teacherId ?? null, studentId: author.studentId ?? null, affiliation: author.affiliation ?? null, isStudent: author.isStudent ?? null })) } }),
-          ...(input.projectIds === undefined ? {} : { projects: { deleteMany: {}, create: projectIds.map((projectId) => ({ projectId })) } }),
-        }, include: outputInclude,
+          ...(input.authors === undefined
+            ? {}
+            : {
+                authors: {
+                  deleteMany: {},
+                  create: input.authors.map((author) => ({
+                    ...author,
+                    teacherId: author.teacherId ?? null,
+                    studentId: author.studentId ?? null,
+                    affiliation: author.affiliation ?? null,
+                    isStudent: author.isStudent ?? null,
+                  })),
+                },
+              }),
+          ...(input.projectIds === undefined
+            ? {}
+            : {
+                projects: {
+                  deleteMany: {},
+                  create: projectIds.map((projectId) => ({ projectId })),
+                },
+              }),
+        },
+        include: outputInclude,
       });
     });
   }
 
   deleteResearchOutput(id: string, expectedUpdatedAt: string) {
     return this.mutate(async (tx) => {
-      this.checkVersion(await tx.researchOutput.findUnique({ where: { id }, select: { updatedAt: true } }), expectedUpdatedAt);
-      await tx.researchOutput.delete({ where: { id, updatedAt: new Date(expectedUpdatedAt) } });
+      this.checkVersion(
+        await tx.researchOutput.findUnique({
+          where: { id },
+          select: { updatedAt: true },
+        }),
+        expectedUpdatedAt,
+      );
+      await tx.researchOutput.delete({
+        where: { id, updatedAt: new Date(expectedUpdatedAt) },
+      });
       return { success: true };
     });
   }
@@ -313,6 +470,9 @@ export class RepositoryService {
     )
       throw new BadRequestException('Indica la moneda cuando registres montos');
     return {
+      ...(input.departmentId === undefined
+        ? {}
+        : { departmentId: input.departmentId }),
       title: input.title,
       academicUnit: input.academicUnit,
       code: input.code ?? null,
@@ -454,9 +614,21 @@ export class RepositoryService {
     }
   }
 
+  private async validateDepartment(
+    tx: Prisma.TransactionClient,
+    id?: string | null,
+  ) {
+    if (
+      id &&
+      !(await tx.career.findUnique({ where: { id }, select: { id: true } }))
+    )
+      throw new BadRequestException('El departamento seleccionado no existe');
+  }
+
   createProject(input: ProjectInputDto) {
     const data = this.projectData(input);
     return this.mutate(async (tx) => {
+      await this.validateDepartment(tx, input.departmentId);
       const participants = await this.participants(
         tx,
         input.participants ?? [],
@@ -471,6 +643,7 @@ export class RepositoryService {
   updateProject(id: string, input: UpdateProjectDto) {
     const data = this.projectData(input);
     return this.mutate(async (tx) => {
+      await this.validateDepartment(tx, input.departmentId);
       this.checkVersion(
         await tx.project.findUnique({
           where: { id },

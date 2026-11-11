@@ -28,6 +28,9 @@ model User {
   createdJustifications Justification[]              @relation("JustificationCreatedBy")
   decidedJustifications Justification[]              @relation("JustificationDecidedBy")
   justificationHistory  JustificationStatusHistory[]
+  dataRightsRequests    DataRightsRequest[]          @relation("DataRightsSubject")
+  dataRightsActions     DataRightsRequestEvent[]     @relation("DataRightsActor")
+  legalTermsAcceptances LegalTermsAcceptance[]
 
   isActive Boolean @default(true)
 
@@ -39,6 +42,7 @@ enum AcademicImportType {
   PROJECTS
   RESEARCH
   HOURLY
+  CURRICULUM
 }
 
 enum AcademicImportStatus {
@@ -46,6 +50,80 @@ enum AcademicImportStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum DataRightsRequestType {
+  ACCESS
+  RECTIFICATION
+  SUPPRESSION
+  OPPOSITION
+  PORTABILITY
+  BLOCKING
+}
+
+enum DataRightsRequestStatus {
+  RECEIVED
+  VERIFYING
+  IN_PROGRESS
+  COMPLETED
+  DENIED
+  CLOSED
+}
+
+enum DataRightsRequestEventType {
+  SUBMITTED
+  STATUS_CHANGED
+  DEADLINE_EXTENDED
+}
+
+model DataRightsRequest {
+  id            String                   @id @default(uuid())
+  subjectUserId String?
+  rightType     DataRightsRequestType
+  status        DataRightsRequestStatus  @default(RECEIVED)
+  details       String?                  @db.Text
+  responseNote  String?                  @db.Text
+  dueAt         DateTime
+  extendedAt    DateTime?
+  extensionNote String?                  @db.Text
+  respondedAt   DateTime?
+  piiVersion    Int                      @default(0)
+  subject       User?                    @relation("DataRightsSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  events        DataRightsRequestEvent[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  closedAt      DateTime?
+
+  @@index([subjectUserId, createdAt])
+  @@index([status, dueAt])
+}
+
+model DataRightsRequestEvent {
+  id         String                     @id @default(uuid())
+  requestId  String
+  actorId    String?
+  eventType  DataRightsRequestEventType
+  fromStatus DataRightsRequestStatus?
+  toStatus   DataRightsRequestStatus
+  request    DataRightsRequest          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor      User?                      @relation("DataRightsActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime                   @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+model LegalTermsAcceptance {
+  id              String   @id @default(uuid())
+  userId          String
+  version         String
+  locale          String
+  contentHash     String
+  contentSnapshot Json
+  acceptedAt      DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version])
+  @@index([userId, acceptedAt])
 }
 
 /// Durable academic import queue; the workbook payload is application-encrypted.
@@ -78,18 +156,25 @@ enum JustificationInboxStatus {
   READ
 }
 
+enum CourseAttemptOutcome {
+  PASSED
+  FAILED
+}
+
 model AcademicSemester {
-  id                 String               @id @default(uuid())
+  id                 String                 @id @default(uuid())
   name               String
   startsOn           DateTime
   endsOn             DateTime
-  isActive           Boolean              @default(false)
+  isActive           Boolean                @default(false)
   assignments        TeachingAssignment[]
   courseSchedules    CourseSchedule[]
   studentEnrollments StudentEnrollment[]
+  courseAttempts     StudentCourseAttempt[]
   hourlyPayRates     HourlyPayRate[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  assistantships     Assistantship[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@unique([name])
   @@index([isActive])
@@ -131,6 +216,9 @@ model Course {
   schedules          CourseSchedule[]
   assistantApprovals AssistantCourseApproval[]
   studentEnrollments StudentEnrollment[]
+  curriculumCourses  CurriculumCourse[]
+  courseAttempts     StudentCourseAttempt[]
+  assistantships     Assistantship[]
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -143,15 +231,19 @@ model Student {
   piiVersion Int     @default(0)
   emailHash  String? @unique
 
-  id                 String                 @id @default(uuid())
-  name               String
-  email              String                 @unique
-  enrollments        StudentEnrollment[]
-  justificationInbox JustificationInbox[]
-  justifications     Justification[]
-  outputAuthorships  ResearchOutputAuthor[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  id                        String                 @id @default(uuid())
+  name                      String
+  email                     String                 @unique
+  enrollments               StudentEnrollment[]
+  careerCurriculumVersionId String?
+  careerCurriculumVersion   CurriculumVersion?     @relation(fields: [careerCurriculumVersionId], references: [id], onDelete: Restrict)
+  courseAttempts            StudentCourseAttempt[]
+  justificationInbox        JustificationInbox[]
+  justifications            Justification[]
+  outputAuthorships         ResearchOutputAuthor[]
+  teachingAssistant         TeachingAssistant?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
 }
 
 /// A student attends an NRC in a semester, independently of teachers or time slots.
@@ -168,6 +260,68 @@ model StudentEnrollment {
 
   @@unique([studentId, semesterId, nrc])
   @@index([semesterId, nrc])
+  @@index([courseId])
+}
+
+/// A student's result for one course in a particular semester. Repeated
+/// attempts are retained and numbered; they are independent from editable rosters.
+model StudentCourseAttempt {
+  id            String               @id @default(uuid())
+  studentId     String
+  semesterId    String
+  courseId      String
+  attemptNumber Int
+  outcome       CourseAttemptOutcome
+  nrc           String?
+  student       Student              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  semester      AcademicSemester     @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  course        Course               @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  createdAt     DateTime             @default(now())
+
+  @@unique([studentId, courseId, attemptNumber])
+  @@index([studentId, semesterId])
+  @@index([courseId])
+}
+
+/// A career groups one or more curricula assigned to student cohorts.
+model Career {
+  id                 String              @id @default(uuid())
+  code               String              @unique
+  name               String              @unique
+  isActive           Boolean             @default(true)
+  departmentProjects Project[]
+  departmentOutputs  ResearchOutput[]
+  curriculumVersions CurriculumVersion[]
+  assistantships     Assistantship[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+/// Curriculum version applied to an admission cohort; versions remain stable
+/// so historical student progress keeps its original course requirements.
+model CurriculumVersion {
+  id         String             @id @default(uuid())
+  careerId   String
+  cohortYear Int
+  career     Career             @relation(fields: [careerId], references: [id], onDelete: Restrict)
+  students   Student[]
+  courses    CurriculumCourse[]
+  createdAt  DateTime           @default(now())
+
+  @@unique([careerId, cohortYear])
+  @@index([careerId])
+}
+
+/// A global course included in one version of a career's curriculum.
+model CurriculumCourse {
+  id                  String            @id @default(uuid())
+  curriculumVersionId String
+  courseId            String
+  termNumber          Int
+  curriculumVersion   CurriculumVersion @relation(fields: [curriculumVersionId], references: [id], onDelete: Cascade)
+  course              Course            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@index([curriculumVersionId, courseId])
   @@index([courseId])
 }
 
@@ -194,7 +348,7 @@ model TeachingAssignment {
   @@index([teacherId])
 }
 
-/// Academic student record; independent from administrative login accounts.
+/// Assistant profile linked to the global academic student; legacy links may be absent.
 model TeachingAssistant {
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion      Int     @default(0)
@@ -202,6 +356,8 @@ model TeachingAssistant {
   studentCodeHash String? @unique
 
   id          String                    @id @default(uuid())
+  studentId   String?                   @unique
+  student     Student?                  @relation(fields: [studentId], references: [id], onDelete: Restrict)
   name        String
   email       String                    @unique
   studentCode String?                   @unique
@@ -228,12 +384,15 @@ model AssistantCourseApproval {
   @@index([courseId])
 }
 
-/// Semester, course NRC and supervising teacher come from the teaching assignment.
+/// Semester and course remain queryable without a historical teaching assignment.
 /// nrc identifies the assistantship itself and can differ from the course NRC.
 model Assistantship {
   id                   String                  @id @default(uuid())
   nrc                  String?
-  teachingAssignmentId String
+  teachingAssignmentId String?
+  semesterId           String
+  careerId             String?
+  courseNrc            String?
   assistantId          String
   courseId             String
   /// Must match the approval record; SQL checks approval precedes startsOn.
@@ -241,7 +400,10 @@ model Assistantship {
   startsOn             DateTime                @db.Date
   endsOn               DateTime?               @db.Date
   weeklyHours          Decimal?                @db.Decimal(5, 2)
-  teachingAssignment   TeachingAssignment      @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  teachingAssignment   TeachingAssignment?     @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
+  semester             AcademicSemester        @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  course               Course                  @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  career               Career?                 @relation(fields: [careerId], references: [id], onDelete: Restrict)
   approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
   schedules            AssistantshipSchedule[]
   createdAt            DateTime                @default(now())
@@ -250,6 +412,7 @@ model Assistantship {
   @@unique([teachingAssignmentId, assistantId])
   @@index([assistantId, courseId, approvedOn])
   @@index([teachingAssignmentId, courseId])
+  @@index([semesterId, courseId])
 }
 
 /// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).
@@ -523,6 +686,9 @@ enum ProjectStatus {
 
 /// General register: research, training, services, agreements and academic programs.
 model Project {
+  departmentId String?
+  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
 
@@ -561,6 +727,7 @@ model Project {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
+  @@index([departmentId])
   @@index([reportingYear, academicUnit])
   @@index([status])
 }
@@ -637,6 +804,9 @@ enum ResearchOutputKind {
 }
 
 model ResearchOutput {
+  departmentId String?
+  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
 
@@ -667,6 +837,7 @@ model ResearchOutput {
   createdAt                  DateTime                @default(now())
   updatedAt                  DateTime                @updatedAt
 
+  @@index([departmentId])
   @@index([reportingYear, kind])
   @@index([researchId])
 }

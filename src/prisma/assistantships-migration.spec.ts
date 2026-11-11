@@ -76,6 +76,39 @@ describeDatabase('assistantship database integrity', () => {
       [courseId, approvedOn, startsOn, endsOn, weeklyHours],
     );
 
+  it('migrates existing assistantships and preserves history without assignments or NRCs', async () => {
+    await insertAssistantship();
+    await client.query(
+      'CREATE TABLE "Student" (id TEXT PRIMARY KEY); CREATE TABLE "Career" (id TEXT PRIMARY KEY); ALTER TABLE "Assistantship" ADD COLUMN nrc TEXT;',
+    );
+    await client.query(
+      migration('20261020010000_link_student_historical_assistantships'),
+    );
+    const migrated = await client.query(
+      'SELECT "semesterId", "courseNrc", "teachingAssignmentId" FROM "Assistantship"',
+    );
+    expect(migrated.rows[0]).toEqual({
+      semesterId: 'semester',
+      courseNrc: '12345',
+      teachingAssignmentId: 'assignment',
+    });
+    await client.query(`INSERT INTO "Assistantship" (id, "semesterId", "assistantId", "courseId", "approvedOn", "startsOn", "updatedAt")
+      VALUES ('historical', 'semester', 'assistant', 'course', '2026-07-01', '2026-08-01', NOW())`);
+    const history = await client.query(
+      'SELECT nrc, "courseNrc", "teachingAssignmentId" FROM "Assistantship" WHERE id = $1',
+      ['historical'],
+    );
+    expect(history.rows[0]).toEqual({
+      nrc: null,
+      courseNrc: null,
+      teachingAssignmentId: null,
+    });
+    await expect(
+      client.query(`INSERT INTO "Assistantship" (id, "semesterId", "assistantId", "courseId", "approvedOn", "startsOn", "updatedAt")
+      VALUES ('duplicate-history', 'semester', 'assistant', 'course', '2026-07-01', '2026-08-01', NOW())`),
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
   it('preserves existing teachers and allows an eligible assistantship', async () => {
     await insertAssistantship();
     const result = await client.query<{

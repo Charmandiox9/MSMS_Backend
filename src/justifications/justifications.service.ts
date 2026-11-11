@@ -368,7 +368,7 @@ export class JustificationsService {
       },
       include: {
         teachingAssignment: true,
-        approval: { include: { assistant: true } },
+        approval: { include: { assistant: { include: { student: true } } } },
         schedules: true,
       },
     });
@@ -381,7 +381,7 @@ export class JustificationsService {
       const day = absenceDate.getUTCDay() || 7;
       const matching = records.filter(
         (record) =>
-          record.teachingAssignment.nrc === row.nrc?.trim() &&
+          record.teachingAssignment?.nrc === row.nrc?.trim() &&
           record.startsOn <= absenceDate &&
           (!record.endsOn || record.endsOn >= absenceDate) &&
           record.schedules.some(
@@ -403,8 +403,8 @@ export class JustificationsService {
       return [
         ...new Map(
           matching.map(({ approval: { assistant } }) => [
-            assistant.email.toLowerCase(),
-            { name: assistant.name, email: assistant.email },
+            (assistant.student?.email ?? assistant.email).toLowerCase(),
+            { name: assistant.student?.name ?? assistant.name, email: assistant.student?.email ?? assistant.email },
           ]),
         ).values(),
       ];

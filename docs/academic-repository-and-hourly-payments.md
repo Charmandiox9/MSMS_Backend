@@ -25,9 +25,34 @@ La migración `20261014000000_academic_repository_and_hourly_teaching` amplía
 Los proyectos e investigaciones tienen pantallas CRUD en
 `/dashboard/projects` y `/dashboard/research`, disponibles para administración,
 secretaría docente y análisis de procesos académicos. La navegación lateral y
-los accesos de Información académica incluyen ambas páginas. No se importan
-automáticamente las planillas: las fechas inválidas y montos desconocidos deben
-resolverse antes de una futura importación.
+los accesos de Información académica incluyen ambas páginas.
+
+## Carga inicial desde planillas entregadas
+
+La carga es manual, requiere sesión y permiso de repositorio, y nunca se ejecuta
+automáticamente al iniciar el sistema. Los formatos fuente disponibles y
+soportados son:
+
+- `proyectos 2025-2026.xlsx`: hoja `proyectos`, con el marcador `AÑO` en A2.
+  Los registros empiezan en la fila 3. El sistema revisa cada fila antes de
+  confirmar la importación.
+- `Epryma 2026.xlsx`: hojas `Publicaciones`, `Libros` y `Propiedad intelectual`.
+  La hoja `Publicaciones` debe tener `Titulo` en C5. Las publicaciones, libros
+  y registros de propiedad intelectual se convierten en `ResearchOutput`.
+
+La interfaz acepta `.xlsx` de hasta 12 MB y muestra una vista previa con filas
+importables, errores, duplicados y advertencias. La confirmación crea un trabajo
+asíncrono; el contenido del archivo se cifra mientras el trabajo está pendiente
+y se elimina del registro al terminar, tanto si tiene éxito como si falla. Los
+archivos fuente no se guardan en este repositorio.
+
+No se encontraron planillas de convenios, pasantías ni movilidad entre los
+archivos entregados. No se inventan formatos para esas categorías; se agregan
+cuando exista una fuente acordada y un modelo que las represente.
+
+Las fechas inválidas y los montos desconocidos del origen no se convierten en
+valores válidos por defecto: la vista previa informa los problemas antes de
+persistir datos.
 
 ## CRUD de proyectos e investigaciones
 
@@ -46,8 +71,16 @@ El formulario de proyectos cubre identificación, origen, fechas, siete montos
 decimales, moneda, documentación y participantes. Vacío significa desconocido,
 incluyendo montos: no se convierte a cero. Los importes viajan como strings
 decimales de hasta dos cifras decimales; registrar cualquier monto exige moneda.
-Las fechas se validan en el backend. Investigaciones registra descripción,
-área, fechas, equipo y un proyecto opcional; la base asegura un vínculo único.
+Las fechas se validan en el backend y los cierres no pueden preceder al inicio.
+Investigaciones registra descripción, área, fechas, equipo y un proyecto
+opcional; la base asegura un vínculo único.
+
+Los resultados académicos validan año, fechas, longitudes y precisión decimal.
+El factor de impacto admite hasta cuatro decimales. Los metadatos de propiedad
+intelectual solo se aceptan cuando el tipo del resultado es propiedad intelectual;
+el formulario oculta esos campos para otros tipos y los limpia al cambiar el tipo.
+La API también valida que cada autor tenga como máximo un vínculo personal y que
+las posiciones de autoría no se repitan.
 
 Un participante puede ser externo o vincularse a un profesor global existente.
 El backend obtiene del padrón el nombre del profesor, valida el equipo completo

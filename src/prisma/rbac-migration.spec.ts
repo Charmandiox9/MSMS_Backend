@@ -46,3 +46,35 @@ describe('RBAC permission matrix migration', () => {
     expect(migration).not.toContain("('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_NOTIFY')");
   });
 });
+
+describe('Secretaría docente permissions migration', () => {
+  const migration = readFileSync(
+    join(
+      process.cwd(),
+      'prisma/migrations/20261019020000_expand_academic_secretary_permissions/migration.sql',
+    ),
+    'utf8',
+  );
+
+  it('grants academic workload capabilities without system administration', () => {
+    expect(migration).toContain("'ACADEMIC_WORKLOAD_MANAGE'");
+    expect(migration).toContain("'SCHEDULES_MANAGE'");
+    expect(migration).not.toContain("'USERS_MANAGE'");
+    expect(migration).not.toContain("'AUDIT_LOG_VIEW'");
+  });
+});
+
+describe('Secretaría docente titulation permissions migration', () => {
+  const migration = readFileSync(
+    join(
+      process.cwd(),
+      'prisma/migrations/20261019030000_secretary_titulation_permissions/migration.sql',
+    ),
+    'utf8',
+  );
+
+  it('grants consultation and management of titulation processes', () => {
+    expect(migration).toContain("'TITULATION_VIEW'");
+    expect(migration).toContain("'TITULATION_MANAGE'");
+  });
+});

@@ -20,9 +20,7 @@ const env = {
   S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_REGION: 'us-east-1',
   S3_BUCKET_NAME: 'marsys-test-evidence', S3_ACCESS_KEY: `app${secret().slice(0, 16)}`, S3_SECRET_KEY: secret(),
   MINIO_ROOT_USER: `root${secret().slice(0, 16)}`, MINIO_ROOT_PASSWORD: secret(),
-  // Installed legacy images are selected explicitly for local compatibility testing only.
-  MINIO_IMAGE: 'minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e',
-  MC_IMAGE: 'minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727', NGINX_HTTP_PORT: '80', S3_TEST_PORT: '19000',
+  NGINX_HTTP_PORT: '80', S3_TEST_PORT: '19000',
 };
 writeFileSync('.env.docker-test', Object.entries(env).map(([key, value]) => `${key}='${value}'`).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
 console.log('Creado .env.docker-test con secretos locales nuevos; no se imprimen valores.');

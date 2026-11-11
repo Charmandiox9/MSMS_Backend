@@ -71,6 +71,7 @@ export class RepositoryParticipantView {
 
 @ObjectType()
 export class RepositoryListRecord {
+  @Field(() => ID, { nullable: true }) departmentId?: string | null;
   @Field(() => ID) id!: string;
   @Field() title!: string;
   @Field() academicUnit!: string;
@@ -186,6 +187,7 @@ export class ResearchOutputProjectLinkView {
 
 @ObjectType()
 export class ResearchOutputListRecord {
+  @Field(() => ID, { nullable: true }) departmentId?: string | null;
   @Field(() => ID) id!: string;
   @Field(() => ID, { nullable: true }) researchId!: string | null;
   @Field(() => ResearchOutputKind) kind!: ResearchOutputKind;

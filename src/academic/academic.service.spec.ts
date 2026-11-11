@@ -24,6 +24,7 @@ describe('AcademicService', () => {
     course: {
       upsert: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 'course-1' }),
     },
     teachingAssignment: {
@@ -45,6 +46,50 @@ describe('AcademicService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new AcademicService(prisma as unknown as PrismaService);
+  });
+
+  describe('updateActiveSemester', () => {
+    it('edita por identificador sin crear ni activar otro semestre', async () => {
+      prisma.academicSemester.updateMany.mockResolvedValue({ count: 1 });
+      prisma.academicSemester.findFirst.mockResolvedValue({ id: 'sem-1' });
+      await service.updateActiveSemester(
+        'sem-1',
+        ' 2026-20 ',
+        '2026-08-01',
+        '2026-12-15',
+      );
+      expect(prisma.academicSemester.updateMany).toHaveBeenCalledWith({
+        where: { id: 'sem-1', isActive: true },
+        data: {
+          name: '2026-20',
+          startsOn: new Date('2026-08-01'),
+          endsOn: new Date('2026-12-15'),
+        },
+      });
+      expect(prisma.academicSemester.upsert).not.toHaveBeenCalled();
+    });
+    it('rechaza editar un semestre que dejó de estar activo', async () => {
+      prisma.academicSemester.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.updateActiveSemester(
+          'old',
+          '2026-20',
+          '2026-08-01',
+          '2026-12-15',
+        ),
+      ).rejects.toThrow('El semestre activo cambió');
+    });
+    it('rechaza fechas invertidas antes de modificar datos', async () => {
+      await expect(
+        service.updateActiveSemester(
+          'sem-1',
+          '2026-20',
+          '2026-12-15',
+          '2026-08-01',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.academicSemester.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('activateSemester', () => {
@@ -917,6 +962,7 @@ describe('AcademicService', () => {
       ) => ({
         nrc,
         ...dates,
+        course: course('10001'),
         teachingAssignment: { nrc: '10001', course: course('10001') },
         approval: {
           assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
@@ -1088,6 +1134,8 @@ describe('AcademicService', () => {
           nrc: '20001',
           startsOn: new Date('2026-08-01'),
           endsOn: null,
+          course: { name: 'Biología' },
+          semester: { name: '2026-2' },
           teachingAssignment: {
             nrc: '10001',
             course: { name: 'Biología' },

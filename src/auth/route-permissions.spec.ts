@@ -10,6 +10,7 @@ import { AppController } from '../app.controller';
 import { AcademicManagementController } from '../academic/academic-management.controller';
 import { HourlyPaymentsController } from '../academic/hourly-payments.controller';
 import { StudentsController } from '../students/students.controller';
+import { CareersController } from '../careers/careers.controller';
 import {
   AcademicController,
   AcademicCoursesController,
@@ -20,6 +21,7 @@ import { JustificationsController } from '../justifications/justifications.contr
 import { StorageController } from '../storage/storage.controller';
 import { StorageTransferController } from '../storage/storage-transfer.controller';
 import { UsersController } from '../users/users.controller';
+import { DataRightsController } from '../privacy-rights/data-rights.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { ROLES_KEY } from './decorators/roles.decorator';
@@ -31,10 +33,12 @@ const controllers: Type[] = [
   ResearchController,
   HourlyPaymentsController,
   StudentsController,
+  CareersController,
   AcademicManagementController,
   AppController,
   AuthController,
   UsersController,
+  DataRightsController,
   AcademicController,
   AcademicCoursesController,
   AcademicSemestersController,
@@ -109,9 +113,25 @@ describe('Matriz de permisos por endpoint', () => {
       'HourlyPaymentsController.preview': REPOSITORY,
       'StudentsController.list': ACADEMIC_READERS,
       'StudentsController.get': ACADEMIC_READERS,
+      'StudentsController.progress': ACADEMIC_READERS,
+      'StudentsController.recordAttempt': SECRETARY,
       'StudentsController.create': SECRETARY,
       'StudentsController.update': SECRETARY,
       'StudentsController.importCsv': SECRETARY,
+      'CareersController.courseOptions': REPOSITORY,
+      'CareersController.options': REPOSITORY,
+      'CareersController.list': [
+        'ACADEMIC_PROCESS_ANALYST',
+        'ACADEMIC_SECRETARY',
+        'SYSTEM_ADMIN',
+        'TEACHING_SUPPORT_COORDINATOR',
+      ],
+      'CareersController.create': SECRETARY,
+      'CareersController.update': SECRETARY,
+      'CareersController.delete': SECRETARY,
+      'CareersController.addCurriculumVersion': SECRETARY,
+      'CareersController.importCurriculum': SECRETARY,
+      'CareersController.updateCurriculumVersion': SECRETARY,
       'AcademicManagementController.currentCourses': ACADEMIC_READERS,
       'AcademicManagementController.createTeacher': REPOSITORY,
       'AcademicManagementController.updateTeacher': REPOSITORY,
@@ -134,6 +154,12 @@ describe('Matriz de permisos por endpoint', () => {
       'UsersController.setActive': ['SYSTEM_ADMIN'],
       'UsersController.permanentlyDelete': ['SYSTEM_ADMIN'],
 
+      'DataRightsController.create': 'AUTHENTICATED',
+      'DataRightsController.listMine': 'AUTHENTICATED',
+      'DataRightsController.listQueue': ['PRIVACY_OFFICER'],
+      'DataRightsController.updateStatus': ['PRIVACY_OFFICER'],
+      'DataRightsController.extendDeadline': ['PRIVACY_OFFICER'],
+
       'AcademicController.listTeachers': REPOSITORY,
       'AcademicController.getTeacher': REPOSITORY,
       'AcademicController.getTeacherSchedule': REPOSITORY,
@@ -145,6 +171,7 @@ describe('Matriz de permisos por endpoint', () => {
       'AcademicCoursesController.importCourseSchedules': SECRETARY,
       'AcademicSemestersController.listSemesters': ACADEMIC_READERS,
       'AcademicSemestersController.activateSemester': SECRETARY,
+      'AcademicSemestersController.updateActiveSemester': SECRETARY,
 
       'DashboardController.systemAdmin': ['SYSTEM_ADMIN'],
       'DashboardController.academicSecretary': SECRETARY,
