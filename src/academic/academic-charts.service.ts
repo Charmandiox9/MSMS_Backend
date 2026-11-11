@@ -81,6 +81,61 @@ export class AcademicChartsService {
         }),
         this.reports.semesterOptions(),
       ]);
+    const [departments, projectDepartments, publicationDepartments] =
+      await Promise.all([
+        this.prisma.career.findMany({
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        }),
+        this.prisma.project.groupBy({
+          by: ['departmentId'],
+          where: {
+            ...(filters.reportingYear
+              ? { reportingYear: filters.reportingYear }
+              : {}),
+            ...(filters.startsOn || filters.endsOn
+              ? {
+                  startsOn: {
+                    ...(filters.startsOn
+                      ? { gte: new Date(filters.startsOn) }
+                      : {}),
+                    ...(filters.endsOn
+                      ? { lte: new Date(filters.endsOn) }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.researchOutput.groupBy({
+          by: ['departmentId'],
+          where: {
+            kind: { in: ['ARTICLE', 'BOOK', 'BOOK_CHAPTER'] },
+            ...(filters.reportingYear
+              ? { reportingYear: filters.reportingYear }
+              : {}),
+          },
+          _count: { _all: true },
+        }),
+      ]);
+    const departmentCounts = (
+      rows: { departmentId: string | null; _count: { _all: number } }[],
+    ) => [
+      ...departments.map((department) => ({
+        label: department.name,
+        value: String(
+          rows.find((row) => row.departmentId === department.id)?._count._all ??
+            0,
+        ),
+      })),
+      {
+        label: '',
+        value: String(
+          rows.find((row) => row.departmentId === null)?._count._all ?? 0,
+        ),
+      },
+    ];
     const researchYears = new Map<string, number>();
     for (const row of research) {
       const year = row.startsOn ? String(row.startsOn.getUTCFullYear()) : '';
@@ -99,6 +154,8 @@ export class AcademicChartsService {
       hourly.set(contract.component, previous);
     }
     return {
+      projectsByDepartment: departmentCounts(projectDepartments),
+      publicationsByDepartment: departmentCounts(publicationDepartments),
       projects: reportTable({
         ...projects,
         columns: projects.columns.filter((column) => budgetColumns.has(column)),

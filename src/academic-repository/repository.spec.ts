@@ -52,6 +52,7 @@ describe('CRUD del repositorio académico', () => {
     delete: jest.fn(),
   });
   const prisma = {
+    career: delegate(),
     project: delegate(),
     research: delegate(),
     researchOutput: delegate(),
@@ -65,7 +66,11 @@ describe('CRUD del repositorio académico', () => {
   let outputs: ResearchOutputsController;
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [ProjectsController, ResearchController, ResearchOutputsController],
+      controllers: [
+        ProjectsController,
+        ResearchController,
+        ResearchOutputsController,
+      ],
       providers: [
         RepositoryService,
         { provide: PrismaService, useValue: prisma },
@@ -85,11 +90,20 @@ describe('CRUD del repositorio académico', () => {
     );
     prisma.project.findUnique.mockResolvedValue(row);
     prisma.research.findUnique.mockResolvedValue({ ...row, project: null });
-    prisma.researchOutput.findUnique.mockResolvedValue({ id, updatedAt: new Date(version) });
+    prisma.researchOutput.findUnique.mockResolvedValue({
+      id,
+      updatedAt: new Date(version),
+    });
     prisma.researchOutput.count.mockResolvedValue(1);
     prisma.researchOutput.findMany.mockResolvedValue([]);
-    prisma.researchOutput.create.mockResolvedValue({ id, updatedAt: new Date(version) });
-    prisma.researchOutput.update.mockResolvedValue({ id, updatedAt: new Date(version) });
+    prisma.researchOutput.create.mockResolvedValue({
+      id,
+      updatedAt: new Date(version),
+    });
+    prisma.researchOutput.update.mockResolvedValue({
+      id,
+      updatedAt: new Date(version),
+    });
     prisma.researchOutput.delete.mockResolvedValue({ id });
     prisma.project.findMany.mockResolvedValue([]);
     prisma.teacher.findMany.mockResolvedValue([]);
@@ -99,6 +113,39 @@ describe('CRUD del repositorio académico', () => {
     prisma.research.create.mockResolvedValue({ ...row, project: null });
     prisma.research.update.mockResolvedValue({ ...row, project: null });
     prisma.teacher.findMany.mockResolvedValue([]);
+  });
+
+  it('stores, clears and preserves publication departments explicitly', async () => {
+    const input: ResearchOutputInputDto = {researchId: id, title: 'Artículo', kind: 'ARTICLE', reportingYear: 2026, departmentId: id};
+    prisma.career.findUnique.mockResolvedValue({id});
+    await service.createResearchOutput(input);
+    expect(prisma.researchOutput.create).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({departmentId: id})}));
+    await service.updateResearchOutput(id, {...input, departmentId: null, expectedUpdatedAt: version});
+    expect(prisma.researchOutput.update).toHaveBeenLastCalledWith(expect.objectContaining({data: expect.objectContaining({departmentId: null})}));
+    const {departmentId: _department, ...withoutDepartment} = input;
+    await service.updateResearchOutput(id, {...withoutDepartment, expectedUpdatedAt: version});
+    expect(prisma.researchOutput.update.mock.calls.at(-1)?.[0].data).not.toHaveProperty('departmentId');
+  });
+
+  it('rejects invalid department ids in both input contracts', async () => {
+    const projectErrors = await validate(plainToInstance(ProjectInputDto, {...project, departmentId: 'bad'}));
+    const publicationErrors = await validate(plainToInstance(ResearchOutputInputDto, {researchId: id, kind: 'ARTICLE', reportingYear: 2026, title: 'Artículo', departmentId: 'bad'}));
+    expect(projectErrors.some(error => error.property === 'departmentId')).toBe(true);
+    expect(publicationErrors.some(error => error.property === 'departmentId')).toBe(true);
+  });
+
+  it('validates and stores a project department without guessing existing assignments', async () => {
+    prisma.career.findUnique.mockResolvedValue({ id });
+    await service.createProject({ ...project, departmentId: id });
+    expect(prisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ departmentId: id }),
+      }),
+    );
+    prisma.career.findUnique.mockResolvedValue(null);
+    await expect(
+      service.createProject({ ...project, departmentId: id }),
+    ).rejects.toThrow('departamento');
   });
 
   it('pagina opciones con el vínculo de investigación sin cargar participantes ni metadatos', async () => {
@@ -296,21 +343,55 @@ describe('CRUD del repositorio académico', () => {
     await expect(research.get(id)).rejects.toThrow(NotFoundException);
   });
   it('crea resultados enlazados a investigación, valida relaciones y conserva vínculos opcionales en edición', async () => {
-    const input = { researchId: id, kind: 'ARTICLE' as const, reportingYear: 2026, title: 'Artículo científico', authors: [{ name: 'Autora', position: 1 }] };
+    const input = {
+      researchId: id,
+      kind: 'ARTICLE' as const,
+      reportingYear: 2026,
+      title: 'Artículo científico',
+      authors: [{ name: 'Autora', position: 1 }],
+    };
     prisma.research.findUnique.mockResolvedValue({ id });
     await outputs.create(input);
     expect(prisma.researchOutput.create.mock.calls[0][0].data).toMatchObject({
-      researchId: id, title: 'Artículo científico', authors: { create: [{ name: 'Autora', position: 1, teacherId: null, studentId: null, affiliation: null, isStudent: null }] },
+      researchId: id,
+      title: 'Artículo científico',
+      authors: {
+        create: [
+          {
+            name: 'Autora',
+            position: 1,
+            teacherId: null,
+            studentId: null,
+            affiliation: null,
+            isStudent: null,
+          },
+        ],
+      },
     });
-    await outputs.update(id, { ...input, authors: undefined, expectedUpdatedAt: version });
-    expect(prisma.researchOutput.update.mock.calls[0][0].data.authors).toBeUndefined();
+    await outputs.update(id, {
+      ...input,
+      authors: undefined,
+      expectedUpdatedAt: version,
+    });
+    expect(
+      prisma.researchOutput.update.mock.calls[0][0].data.authors,
+    ).toBeUndefined();
     prisma.research.findUnique.mockResolvedValue(null);
     await expect(outputs.create(input)).rejects.toThrow(BadRequestException);
   });
   it('lista resultados asociados con filtros, orden y paginación, y elimina con versión vigente', async () => {
-    await outputs.list(plainToInstance(RepositoryQueryDto, { page: 2, pageSize: 10, sortBy: 'reportingYear', sortOrder: 'asc' }));
+    await outputs.list(
+      plainToInstance(RepositoryQueryDto, {
+        page: 2,
+        pageSize: 10,
+        sortBy: 'reportingYear',
+        sortOrder: 'asc',
+      }),
+    );
     expect(prisma.researchOutput.findMany.mock.calls[0][0]).toMatchObject({
-      where: {}, skip: 10, take: 10,
+      where: {},
+      skip: 10,
+      take: 10,
       orderBy: [{ reportingYear: 'asc' }, { id: 'asc' }],
     });
     await outputs.remove(id, { expectedUpdatedAt: version });
@@ -348,7 +429,11 @@ describe('CRUD del repositorio académico', () => {
     'permite todos los endpoints a %s y bloquea coordinación',
     (role) => {
       const guard = new RolesGuard(new Reflector());
-      for (const controller of [ProjectsController, ResearchController, ResearchOutputsController])
+      for (const controller of [
+        ProjectsController,
+        ResearchController,
+        ResearchOutputsController,
+      ])
         for (const method of [
           'list',
           'get',
@@ -418,11 +503,27 @@ describe('Validación de entradas del repositorio', () => {
     ).toBeGreaterThan(0);
   });
   it('valida el tipo, investigación y año de los resultados académicos', async () => {
-    expect(await validate(plainToInstance(ResearchOutputInputDto, {
-      researchId: id, kind: 'ARTICLE', reportingYear: 2026, title: 'Resultado',
-    }))).toHaveLength(0);
-    expect((await validate(plainToInstance(ResearchOutputInputDto, {
-      researchId: 'invalid', kind: 'OTHER', reportingYear: 1800, title: '',
-    }))).length).toBeGreaterThan(0);
+    expect(
+      await validate(
+        plainToInstance(ResearchOutputInputDto, {
+          researchId: id,
+          kind: 'ARTICLE',
+          reportingYear: 2026,
+          title: 'Resultado',
+        }),
+      ),
+    ).toHaveLength(0);
+    expect(
+      (
+        await validate(
+          plainToInstance(ResearchOutputInputDto, {
+            researchId: 'invalid',
+            kind: 'OTHER',
+            reportingYear: 1800,
+            title: '',
+          }),
+        )
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });

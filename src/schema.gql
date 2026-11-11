@@ -151,6 +151,8 @@ type AcademicChartSemester {
 }
 
 type AcademicChartSummary {
+  projectsByDepartment: [AcademicChartPoint!]!
+  publicationsByDepartment: [AcademicChartPoint!]!
   projects: AcademicReportTable!
   researchByYear: [AcademicChartPoint!]!
   outputs: [AcademicOutputChartPoint!]!
@@ -168,6 +170,7 @@ type RepositoryParticipantView {
 }
 
 type RepositoryListRecord {
+  departmentId: ID
   id: ID!
   title: String!
   academicUnit: String!
@@ -247,6 +250,7 @@ type ResearchOutputProjectLinkView {
 }
 
 type ResearchOutputListRecord {
+  departmentId: ID
   id: ID!
   researchId: ID
   kind: ResearchOutputKind!
@@ -297,6 +301,7 @@ type RepositoryLinkedRecord {
 }
 
 type RepositoryProjectDetail {
+  departmentId: ID
   id: ID!
   title: String!
   academicUnit: String!
@@ -335,6 +340,7 @@ type RepositoryProjectDetail {
 }
 
 type RepositoryResearchDetail {
+  departmentId: ID
   id: ID!
   title: String!
   academicUnit: String!

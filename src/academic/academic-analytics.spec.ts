@@ -19,6 +19,8 @@ import {
 
 describe('indicadores y reportes GraphQL', () => {
   const prisma = {
+    career: { findMany: jest.fn() },
+    project: { groupBy: jest.fn() },
     research: { groupBy: jest.fn() },
     researchOutput: { groupBy: jest.fn() },
     hourlyTeachingContract: { findMany: jest.fn() },
@@ -52,6 +54,8 @@ describe('indicadores y reportes GraphQL', () => {
       rows: [{ title: 'Proyecto' }],
     });
     reports.semesterOptions.mockResolvedValue([]);
+    prisma.career.findMany.mockResolvedValue([]);
+    prisma.project.groupBy.mockResolvedValue([]);
     prisma.research.groupBy.mockResolvedValue([]);
     prisma.researchOutput.groupBy.mockResolvedValue([]);
     prisma.hourlyTeachingContract.findMany.mockResolvedValue([]);
@@ -112,8 +116,65 @@ describe('indicadores y reportes GraphQL', () => {
       },
     });
     expect(prisma.research.groupBy).toHaveBeenCalledTimes(1);
-    expect(prisma.researchOutput.groupBy).toHaveBeenCalledTimes(1);
+    expect(prisma.researchOutput.groupBy).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(result)).not.toContain('teacher');
+  });
+
+  it('counts all projects and only publications per department, including unassigned and zero totals', async () => {
+    prisma.career.findMany.mockResolvedValue([
+      { id: 'd1', name: 'Biología Marina' },
+      { id: 'd2', name: 'IPRYMA' },
+    ]);
+    prisma.project.groupBy.mockResolvedValue([
+      { departmentId: 'd1', _count: { _all: 3 } },
+      { departmentId: null, _count: { _all: 2 } },
+    ]);
+    prisma.researchOutput.groupBy.mockImplementation(
+      (query: { by: string[] }) =>
+        Promise.resolve(
+          query.by.includes('departmentId')
+            ? [
+                { departmentId: 'd2', _count: { _all: 4 } },
+                { departmentId: null, _count: { _all: 1 } },
+              ]
+            : [],
+        ),
+    );
+    const result = await charts.summary({
+      reportingYear: 2026,
+      startsOn: '2026-01-01',
+      endsOn: '2026-12-31',
+    });
+    expect(result.projectsByDepartment).toEqual([
+      { label: 'Biología Marina', value: '3' },
+      { label: 'IPRYMA', value: '0' },
+      { label: '', value: '2' },
+    ]);
+    expect(result.publicationsByDepartment).toEqual([
+      { label: 'Biología Marina', value: '0' },
+      { label: 'IPRYMA', value: '4' },
+      { label: '', value: '1' },
+    ]);
+    expect(prisma.researchOutput.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['departmentId'],
+        where: {
+          kind: { in: ['ARTICLE', 'BOOK', 'BOOK_CHAPTER'] },
+          reportingYear: 2026,
+        },
+      }),
+    );
+    expect(prisma.project.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          reportingYear: 2026,
+          startsOn: {
+            gte: new Date('2026-01-01'),
+            lte: new Date('2026-12-31'),
+          },
+        },
+      }),
+    );
   });
 
   it('filtra año en investigación, resultados, presupuestos y contratos sin confundir sus fechas', async () => {

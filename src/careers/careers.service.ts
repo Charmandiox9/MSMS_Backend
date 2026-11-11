@@ -325,7 +325,7 @@ export class CareersService {
         ['P2003', 'P2034'].includes(cause.code)
       )
         throw new ConflictException(
-          'La carrera cambió o tiene registros vinculados. Recarga antes de eliminar',
+          'La carrera cambió o tiene registros vinculados (estudiantes, ayudantías, proyectos o publicaciones). Recarga antes de eliminar',
         );
       throw cause;
     }

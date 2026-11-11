@@ -104,6 +104,7 @@ export class RepositoryInputDto {
 }
 
 export class ProjectInputDto extends RepositoryInputDto {
+  @IsOptional() @IsUUID() departmentId?: string | null;
   @IsInt() @Min(1900) @Max(2200) reportingYear!: number;
   @IsEnum(ProjectStatus) status!: ProjectStatus;
   @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) faculty?:
@@ -206,33 +207,77 @@ export class ResearchOutputAuthorInputDto {
   @Type(() => Number) @IsInt() @Min(1) @Max(100) position!: number;
   @IsOptional() @IsUUID() teacherId?: string | null;
   @IsOptional() @IsUUID() studentId?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) affiliation?: string | null;
+  @IsOptional()
+  @Transform(optionalText)
+  @IsString()
+  @MaxLength(200)
+  affiliation?: string | null;
   @IsOptional() @IsBoolean() isStudent?: boolean | null;
 }
 
 export class ResearchOutputInputDto {
+  @IsOptional() @IsUUID() departmentId?: string | null;
   @IsUUID() researchId!: string;
   @IsEnum(ResearchOutputKind) kind!: ResearchOutputKind;
   @Type(() => Number) @IsInt() @Min(1900) @Max(2200) reportingYear!: number;
   @Transform(trim) @IsString() @MinLength(1) @MaxLength(1000) title!: string;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) doi?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(500) journal?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(50) issn?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(50) isbn?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(20) quartile?: string | null;
-  @IsOptional() @Matches(/^\d{1,6}(\.\d{1,4})?$/) fiveYearImpactFactor?: string | null;
-  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) publicationDate?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) indexation?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(300) publisher?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) publicationPlace?: string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) doi?:
+    string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(500) journal?:
+    string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(50) issn?:
+    string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(50) isbn?:
+    string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(20) quartile?:
+    string | null;
+  @IsOptional() @Matches(/^\d{1,6}(\.\d{1,4})?$/) fiveYearImpactFactor?:
+    string | null;
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  publicationDate?: string | null;
+  @IsOptional()
+  @Transform(optionalText)
+  @IsString()
+  @MaxLength(200)
+  indexation?: string | null;
+  @IsOptional()
+  @Transform(optionalText)
+  @IsString()
+  @MaxLength(300)
+  publisher?: string | null;
+  @IsOptional()
+  @Transform(optionalText)
+  @IsString()
+  @MaxLength(200)
+  publicationPlace?: string | null;
   @IsOptional() @IsBoolean() studentParticipation?: boolean | null;
   @IsOptional() @IsBoolean() internationalParticipation?: boolean | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) intellectualPropertyType?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) phase?: string | null;
-  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) phaseDate?: string | null;
-  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(10000) notes?: string | null;
-  @IsOptional() @IsArray() @ArrayMaxSize(100) @IsUUID('4', { each: true }) projectIds?: string[];
-  @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => ResearchOutputAuthorInputDto) authors?: ResearchOutputAuthorInputDto[];
+  @IsOptional()
+  @Transform(optionalText)
+  @IsString()
+  @MaxLength(200)
+  intellectualPropertyType?: string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(200) phase?:
+    string | null;
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  phaseDate?: string | null;
+  @IsOptional() @Transform(optionalText) @IsString() @MaxLength(10000) notes?:
+    string | null;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  projectIds?: string[];
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ResearchOutputAuthorInputDto)
+  authors?: ResearchOutputAuthorInputDto[];
 }
 
 export class UpdateResearchOutputDto extends ResearchOutputInputDto {

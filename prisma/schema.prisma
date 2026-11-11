@@ -289,6 +289,8 @@ model Career {
   code               String              @unique
   name               String              @unique
   isActive           Boolean             @default(true)
+  departmentProjects Project[]
+  departmentOutputs  ResearchOutput[]
   curriculumVersions CurriculumVersion[]
   assistantships     Assistantship[]
   createdAt          DateTime            @default(now())
@@ -684,6 +686,9 @@ enum ProjectStatus {
 
 /// General register: research, training, services, agreements and academic programs.
 model Project {
+  departmentId String?
+  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
 
@@ -722,6 +727,7 @@ model Project {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
+  @@index([departmentId])
   @@index([reportingYear, academicUnit])
   @@index([status])
 }
@@ -798,6 +804,9 @@ enum ResearchOutputKind {
 }
 
 model ResearchOutput {
+  departmentId String?
+  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
 
@@ -828,6 +837,7 @@ model ResearchOutput {
   createdAt                  DateTime                @default(now())
   updatedAt                  DateTime                @updatedAt
 
+  @@index([departmentId])
   @@index([reportingYear, kind])
   @@index([researchId])
 }
