@@ -31,4 +31,39 @@ describe('AcademicImportsController', () => {
     await controller.getJobStatus('job-id');
     expect(getStatus).toHaveBeenCalledWith('job-id');
   });
+
+  it('queues a new career and its first imported curriculum with the requesting actor', async () => {
+    const input = {
+      code: 'BIO-MAR',
+      name: 'Biología Marina',
+      cohortYear: 2026,
+      courses: [{ courseName: 'Biología', termNumber: 1 }],
+    };
+    const user = { id: 'secretary-1', roles: ['ACADEMIC_SECRETARY'] };
+
+    await controller.importCareerCurriculum(input, user);
+
+    expect(enqueue).toHaveBeenCalledWith(
+      AcademicImportType.CURRICULUM,
+      { operation: 'CREATE_CAREER', input },
+      'secretary-1',
+    );
+  });
+
+  it('queues a new cohort curriculum for an existing career', async () => {
+    const careerId = '11111111-1111-4111-8111-111111111111';
+    const input = {
+      cohortYear: 2026,
+      courses: [{ courseName: 'Biología', termNumber: 1 }],
+    };
+    const user = { id: 'secretary-1', roles: ['ACADEMIC_SECRETARY'] };
+
+    await controller.importCurriculum(careerId, input, user);
+
+    expect(enqueue).toHaveBeenCalledWith(
+      AcademicImportType.CURRICULUM,
+      { operation: 'ADD_VERSION', careerId, input },
+      'secretary-1',
+    );
+  });
 });

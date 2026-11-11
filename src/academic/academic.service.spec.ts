@@ -24,6 +24,7 @@ describe('AcademicService', () => {
     course: {
       upsert: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 'course-1' }),
     },
     teachingAssignment: {
@@ -961,6 +962,7 @@ describe('AcademicService', () => {
       ) => ({
         nrc,
         ...dates,
+        course: course('10001'),
         teachingAssignment: { nrc: '10001', course: course('10001') },
         approval: {
           assistant: { id: 'ta-1', name: 'Pedro', email: 'pedro@ucn.cl' },
@@ -1132,6 +1134,8 @@ describe('AcademicService', () => {
           nrc: '20001',
           startsOn: new Date('2026-08-01'),
           endsOn: null,
+          course: { name: 'Biología' },
+          semester: { name: '2026-2' },
           teachingAssignment: {
             nrc: '10001',
             course: { name: 'Biología' },

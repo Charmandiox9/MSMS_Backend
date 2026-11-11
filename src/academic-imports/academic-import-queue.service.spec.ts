@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { testPiiCrypto } from '../privacy/pii-test-config';
 import { AcademicImportsService } from './academic-imports.service';
 import { AcademicImportQueueService } from './academic-import-queue.service';
+import { CareersService } from '../careers/careers.service';
 
 describe('AcademicImportQueueService', () => {
   const crypto = testPiiCrypto();
@@ -15,7 +16,11 @@ describe('AcademicImportQueueService', () => {
     $transaction: jest.fn().mockResolvedValue(null),
   } as unknown as PrismaService;
   const imports = {} as AcademicImportsService;
-  const service = new AcademicImportQueueService(prisma, crypto, imports);
+  const careers = {
+    create: jest.fn(),
+    importVersion: jest.fn(),
+  } as unknown as CareersService;
+  const service = new AcademicImportQueueService(prisma, crypto, imports, careers);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -47,6 +52,30 @@ describe('AcademicImportQueueService', () => {
       }),
       select: { id: true, status: true, createdAt: true },
     });
+  });
+
+  it('persists a career curriculum import as an encrypted background job', async () => {
+    const input = {
+      operation: 'CREATE_CAREER' as const,
+      input: {
+        code: 'BIO-MAR',
+        name: 'Biología Marina',
+        cohortYear: 2026,
+        courses: [{ courseName: 'Biología', termNumber: 1 }],
+      },
+    };
+    const response = await service.enqueue(
+      AcademicImportType.CURRICULUM,
+      input,
+      'user-1',
+    );
+
+    expect(response).toEqual({ id: expect.any(String), status: 'QUEUED' });
+    const payload = create.mock.calls[0][0].data.payload as string;
+    expect(
+      JSON.parse(crypto.decrypt(payload, `AcademicImportJob.${response.id}.payload`)),
+    ).toEqual(input);
+    expect(create.mock.calls[0][0].data.type).toBe(AcademicImportType.CURRICULUM);
   });
 
   it('returns only the public job status fields', async () => {
@@ -119,6 +148,7 @@ describe('AcademicImportQueueService', () => {
       {
         importProjects: () => pendingImport,
       } as unknown as AcademicImportsService,
+      careers,
     );
     try {
       await worker.onModuleInit();
@@ -164,6 +194,7 @@ describe('AcademicImportQueueService', () => {
       } as unknown as PrismaService,
       crypto,
       imports,
+      careers,
     );
     await worker.onModuleInit();
     let stopped = false;
@@ -187,6 +218,7 @@ describe('AcademicImportQueueService', () => {
       } as unknown as PrismaService,
       crypto,
       imports,
+      careers,
     );
     try {
       await worker.onModuleInit();

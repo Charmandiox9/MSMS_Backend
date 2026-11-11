@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { AssistantshipState } from '../assistantships/assistantships.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { findCurriculumCourseMatch } from './curriculum-course-match';
 import { ListTeachersQueryDto } from './list-teachers-query.dto';
 import { academicScheduleBlocks } from './schedule-blocks';
 import { academicScheduleDays, UpdateCourseDto } from './update-course.dto';
@@ -449,7 +450,9 @@ export class AcademicService {
       where: { teachingAssignment: { teacherId: id, semesterId: semester.id } },
       include: {
         teachingAssignment: { include: { course: true } },
-        approval: { include: { assistant: true } },
+        course: true,
+        semester: true,
+        approval: { include: { assistant: { include: { student: true } } } },
         schedules: true,
       },
     });
@@ -499,14 +502,14 @@ export class AcademicService {
         ...assistantshipSlot(schedule),
         startsAt: clock(schedule.startsAtMinute),
         endsAt: clock(schedule.endsAtMinute),
-        nrc: item.teachingAssignment.nrc,
+        nrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? '',
         assistantshipNrc: item.nrc,
-        course: courseOf(item.teachingAssignment.course),
+        course: courseOf(item.course),
         location: schedule.location,
         assistant: {
           id: item.approval.assistant.id,
-          name: item.approval.assistant.name,
-          email: item.approval.assistant.email,
+          name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
+          email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
         },
         state: stateOf(item),
         conflict: false,
@@ -711,13 +714,30 @@ export class AcademicService {
           { block: 'asc' },
           { course: { name: 'asc' } },
         ],
-        include: { course: true, semester: true },
+        include: {
+          course: {
+            include: {
+              curriculumCourses: {
+                include: {
+                  curriculumVersion: {
+                    select: {
+                      career: { select: { id: true, code: true, name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          semester: true,
+        },
       }),
       this.prisma.assistantship.findMany({
-        where: { teachingAssignment: { semester: { isActive: true } } },
+        where: { semester: { isActive: true } },
         include: {
           teachingAssignment: { include: { course: true, semester: true } },
-          approval: { include: { assistant: true } },
+          course: true,
+          semester: true,
+          approval: { include: { assistant: { include: { student: true } } } },
           schedules: true,
         },
       }),
@@ -727,18 +747,18 @@ export class AcademicService {
       ...assistantships.flatMap((item) =>
         item.schedules.map((schedule) => ({
           id: schedule.id,
-          nrc: item.teachingAssignment.nrc,
+          nrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? '',
           assistantshipNrc: item.nrc,
           ...assistantshipSlot(schedule),
           startsAtMinute: schedule.startsAtMinute,
           endsAtMinute: schedule.endsAtMinute,
           location: schedule.location,
           assistant: {
-            name: item.approval.assistant.name,
-            email: item.approval.assistant.email,
+            name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
+            email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
           },
-          course: item.teachingAssignment.course,
-          semester: item.teachingAssignment.semester,
+          course: item.course,
+          semester: item.semester,
           startsOn: item.startsOn,
           endsOn: item.endsOn,
           kind: 'ASSISTANTSHIP',
@@ -820,6 +840,12 @@ export class AcademicService {
     name: string,
     code?: string,
   ) {
+    const curriculumMatch = await findCurriculumCourseMatch(
+      transaction,
+      name,
+      code?.trim() || null,
+    );
+    if (curriculumMatch) return curriculumMatch;
     if (code?.trim())
       return transaction.course.upsert({
         where: { code_name: { code: code.trim(), name } },

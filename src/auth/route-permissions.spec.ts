@@ -10,6 +10,7 @@ import { AppController } from '../app.controller';
 import { AcademicManagementController } from '../academic/academic-management.controller';
 import { HourlyPaymentsController } from '../academic/hourly-payments.controller';
 import { StudentsController } from '../students/students.controller';
+import { CareersController } from '../careers/careers.controller';
 import {
   AcademicController,
   AcademicCoursesController,
@@ -32,6 +33,7 @@ const controllers: Type[] = [
   ResearchController,
   HourlyPaymentsController,
   StudentsController,
+  CareersController,
   AcademicManagementController,
   AppController,
   AuthController,
@@ -111,9 +113,25 @@ describe('Matriz de permisos por endpoint', () => {
       'HourlyPaymentsController.preview': REPOSITORY,
       'StudentsController.list': ACADEMIC_READERS,
       'StudentsController.get': ACADEMIC_READERS,
+      'StudentsController.progress': ACADEMIC_READERS,
+      'StudentsController.recordAttempt': SECRETARY,
       'StudentsController.create': SECRETARY,
       'StudentsController.update': SECRETARY,
       'StudentsController.importCsv': SECRETARY,
+      'CareersController.courseOptions': REPOSITORY,
+      'CareersController.options': REPOSITORY,
+      'CareersController.list': [
+        'ACADEMIC_PROCESS_ANALYST',
+        'ACADEMIC_SECRETARY',
+        'SYSTEM_ADMIN',
+        'TEACHING_SUPPORT_COORDINATOR',
+      ],
+      'CareersController.create': SECRETARY,
+      'CareersController.update': SECRETARY,
+      'CareersController.delete': SECRETARY,
+      'CareersController.addCurriculumVersion': SECRETARY,
+      'CareersController.importCurriculum': SECRETARY,
+      'CareersController.updateCurriculumVersion': SECRETARY,
       'AcademicManagementController.currentCourses': ACADEMIC_READERS,
       'AcademicManagementController.createTeacher': REPOSITORY,
       'AcademicManagementController.updateTeacher': REPOSITORY,

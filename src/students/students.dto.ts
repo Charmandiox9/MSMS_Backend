@@ -1,9 +1,11 @@
 import { Transform, Type } from 'class-transformer';
+import { CourseAttemptOutcome } from '@prisma/client';
 import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsEmail,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -31,6 +33,10 @@ export class StudentInputDto {
   @MaxLength(254)
   email!: string;
 
+  @IsOptional()
+  @IsUUID()
+  careerCurriculumVersionId?: string | null;
+
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsUUID()
   semesterId?: string;
@@ -50,6 +56,23 @@ export class StudentInputDto {
   @IsNotEmpty({ each: true })
   @MaxLength(50, { each: true })
   nrcs?: string[];
+}
+
+export class StudentCourseAttemptInputDto {
+  @IsUUID()
+  courseId!: string;
+
+  @IsUUID()
+  semesterId!: string;
+
+  @IsEnum(CourseAttemptOutcome)
+  outcome!: CourseAttemptOutcome;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(50)
+  nrc?: string;
 }
 
 export class ListStudentsDto {

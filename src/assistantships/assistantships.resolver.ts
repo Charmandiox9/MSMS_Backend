@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { IsUUID } from 'class-validator';
+import { IsUUID, IsEmail, MaxLength } from 'class-validator';
 import { ArgsType, Field } from '@nestjs/graphql';
 import {
   AssistantshipAssignmentOption,
@@ -9,6 +9,8 @@ import {
   AssistantshipPage,
   AssistantshipView,
   RegisterAssistantshipInput,
+  AssistantshipStudentOption,
+  AssistantshipCourseOption,
 } from './assistantships.dto';
 import { AssistantshipsGuard } from './assistantships.guard';
 import { AssistantshipsService } from './assistantships.service';
@@ -21,6 +23,16 @@ export class AssistantshipSemesterArgs {
 @ArgsType()
 export class AssistantshipIdArgs {
   @Field(() => ID) @IsUUID() id!: string;
+}
+
+@ArgsType()
+export class AssistantshipEmailArgs {
+  @Field() @IsEmail() @MaxLength(254) email!: string;
+}
+
+@ArgsType()
+export class AssistantshipCareerArgs {
+  @Field(() => ID) @IsUUID() careerId!: string;
 }
 
 @Resolver()
@@ -44,6 +56,16 @@ export class AssistantshipsResolver {
   @Query(() => AssistantshipOptions)
   assistantshipOptions() {
     return this.service.options();
+  }
+
+  @Query(() => AssistantshipStudentOption, { nullable: true })
+  assistantshipStudent(@Args() args: AssistantshipEmailArgs) {
+    return this.service.student(args.email);
+  }
+
+  @Query(() => [AssistantshipCourseOption])
+  assistantshipCareerCourses(@Args() args: AssistantshipCareerArgs) {
+    return this.service.careerCourses(args.careerId);
   }
 
   @Query(() => [AssistantshipAssignmentOption])

@@ -29,6 +29,7 @@ import { AcademicImportsModule } from './academic-imports/academic-imports.modul
 import { DataRightsModule } from './privacy-rights/data-rights.module';
 import { LegalTermsModule } from './legal-terms/legal-terms.module';
 import { TermsAcceptanceGuard } from './legal-terms/terms-acceptance.guard';
+import { CareersModule } from './careers/careers.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -73,6 +74,7 @@ const devProviders =
     AcademicImportsModule,
     DataRightsModule,
     LegalTermsModule,
+    CareersModule,
     HealthModule,
   ],
   controllers: [AppController],

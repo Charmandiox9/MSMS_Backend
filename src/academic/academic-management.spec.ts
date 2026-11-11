@@ -48,7 +48,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
       findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
     },
-    course: { findFirst: jest.fn(), create: jest.fn() },
+    course: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
     courseSchedule: { findMany: jest.fn(), createMany: jest.fn() },
     teachingAssignment: {
       findMany: jest.fn(),
@@ -109,6 +109,7 @@ describe('Gestión individual de docentes y asignaturas', () => {
     prisma.assistantship.count.mockResolvedValue(0);
     prisma.hourlyTeachingContract.count.mockResolvedValue(0);
     prisma.course.findFirst.mockResolvedValue(null);
+    prisma.course.findMany.mockResolvedValue([]);
     prisma.course.create.mockResolvedValue(course);
   });
 
@@ -158,6 +159,19 @@ describe('Gestión individual de docentes y asignaturas', () => {
     });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: 'Serializable',
+    });
+  });
+  it('reutiliza una asignatura de la malla por nombre aunque el NRC tenga código', async () => {
+    prisma.courseSchedule.findMany.mockResolvedValue([]);
+    prisma.course.findMany.mockResolvedValue([
+      { id: 'curriculum-course', name: 'Biología Marina', code: null },
+    ]);
+    await service.createCourse(courseInput);
+    expect(prisma.course.create).not.toHaveBeenCalled();
+    expect(prisma.courseSchedule.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ courseId: 'curriculum-course', nrc: '10001' }),
+      ],
     });
   });
   it('edita el perfil, conserva los vínculos elegidos y elimina solo el vínculo del semestre activo', async () => {

@@ -13,6 +13,8 @@ import {
 } from '@prisma/client';
 import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CareersService } from '../careers/careers.service';
+import { CreateCareerFromCsvDto, ImportCurriculumDto } from '../careers/careers.dto';
 import { WorkbookImportDto } from './academic-imports.dto';
 import { AcademicImportsService } from './academic-imports.service';
 
@@ -20,13 +22,15 @@ const POLL_INTERVAL_MS = 5_000;
 const STALE_JOB_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 3;
 
-type ImportResult = {
-  imported: number;
-  skipped: number;
-  errors: { row: number; message: string }[];
-  duplicates: { row: number; message: string }[];
-  totalAmountClp?: string;
-};
+type CurriculumJobPayload =
+  | { operation: 'CREATE_CAREER'; input: CreateCareerFromCsvDto }
+  | {
+      operation: 'ADD_VERSION';
+      careerId: string;
+      input: ImportCurriculumDto;
+    };
+
+type AcademicImportPayload = WorkbookImportDto | CurriculumJobPayload;
 
 @Injectable()
 export class AcademicImportQueueService
@@ -43,6 +47,7 @@ export class AcademicImportQueueService
     private readonly prisma: PrismaService,
     private readonly crypto: PiiCryptoService,
     private readonly imports: AcademicImportsService,
+    private readonly careers: CareersService,
   ) {}
 
   async onModuleInit() {
@@ -60,7 +65,7 @@ export class AcademicImportQueueService
 
   async enqueue(
     type: AcademicImportType,
-    input: WorkbookImportDto,
+    input: AcademicImportPayload,
     requestedById: string,
   ) {
     const id = crypto.randomUUID();
@@ -197,7 +202,7 @@ export class AcademicImportQueueService
       if (!job.payload) throw new Error('El trabajo no contiene el archivo');
       const input = JSON.parse(
         this.crypto.decrypt(job.payload, this.payloadContext(job.id)),
-      ) as WorkbookImportDto;
+      ) as AcademicImportPayload;
       const result = await this.run(job.type, input);
       await this.prisma.academicImportJob.update({
         where: { id: job.id },
@@ -226,14 +231,39 @@ export class AcademicImportQueueService
     }
   }
 
-  private run(type: AcademicImportType, input: WorkbookImportDto) {
+  private async run(type: AcademicImportType, input: AcademicImportPayload) {
     switch (type) {
       case AcademicImportType.PROJECTS:
+        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
         return this.imports.importProjects(input.fileBase64);
       case AcademicImportType.RESEARCH:
+        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
         return this.imports.importResearch(input.fileBase64);
       case AcademicImportType.HOURLY:
+        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
         return this.imports.importHourly(input.fileBase64, input.teacherEmails);
+      case AcademicImportType.CURRICULUM:
+        if (!('operation' in input)) throw new Error('El trabajo no contiene la malla curricular');
+        if (input.operation === 'CREATE_CAREER') {
+          const career = await this.careers.create({
+            code: input.input.code,
+            name: input.input.name,
+            cohortYear: input.input.cohortYear,
+            curriculumCourses: input.input.courses,
+          });
+          return {
+            careerId: career.id,
+            careerName: career.name,
+            cohortYear: input.input.cohortYear,
+            imported: input.input.courses.length,
+          };
+        }
+        await this.careers.importVersion(input.careerId, input.input);
+        return {
+          careerId: input.careerId,
+          cohortYear: input.input.cohortYear,
+          imported: input.input.courses.length,
+        };
     }
   }
 

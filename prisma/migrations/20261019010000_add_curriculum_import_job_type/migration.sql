@@ -1,0 +1,1 @@
+ALTER TYPE "AcademicImportType" ADD VALUE 'CURRICULUM';

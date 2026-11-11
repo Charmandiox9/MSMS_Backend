@@ -47,6 +47,17 @@ describe('AssistantshipsGuard', () => {
         .permission.code.in,
     ).toEqual(['TEACHING_ASSISTANTS_MANAGE']);
   });
+  it.each(['assistantshipStudent', 'assistantshipCareerCourses'])(
+    'requires management permission for registration lookup %s',
+    async (handler) => {
+      findFirst.mockResolvedValue({ id: 'user' });
+      await guard.canActivate(context({ id: 'user' }, handler));
+      expect(
+        findFirst.mock.calls[0][0].where.userRoles.some.role.permissions.some
+          .permission.code.in,
+      ).toEqual(['TEACHING_ASSISTANTS_MANAGE']);
+    },
+  );
   it('checks active accounts and database permissions, regardless of role names', async () => {
     findFirst.mockResolvedValue({ id: 'user' });
     expect(await guard.canActivate(context({ id: 'user' }))).toBe(true);
