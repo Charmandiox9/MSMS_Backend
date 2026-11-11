@@ -26,6 +26,9 @@ import { AssistantshipsModule } from './assistantships/assistantships.module';
 import { StudentsModule } from './students/students.module';
 import { AcademicRepositoryModule } from './academic-repository/repository.module';
 import { AcademicImportsModule } from './academic-imports/academic-imports.module';
+import { DataRightsModule } from './privacy-rights/data-rights.module';
+import { LegalTermsModule } from './legal-terms/legal-terms.module';
+import { TermsAcceptanceGuard } from './legal-terms/terms-acceptance.guard';
 import { CareersModule } from './careers/careers.module';
 
 const devProviders =
@@ -69,6 +72,8 @@ const devProviders =
     StudentsModule,
     AcademicRepositoryModule,
     AcademicImportsModule,
+    DataRightsModule,
+    LegalTermsModule,
     CareersModule,
     HealthModule,
   ],
@@ -77,6 +82,7 @@ const devProviders =
     AppService,
     AppResolver,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: TermsAcceptanceGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     ...devProviders,
   ],

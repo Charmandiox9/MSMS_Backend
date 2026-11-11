@@ -169,6 +169,10 @@ export class AcademicChartSemester {
 
 @ObjectType()
 export class AcademicChartSummary {
+  @Field(() => [AcademicChartPoint])
+  projectsByDepartment!: AcademicChartPoint[];
+  @Field(() => [AcademicChartPoint])
+  publicationsByDepartment!: AcademicChartPoint[];
   @Field(() => AcademicReportTable) projects!: AcademicReportTable;
   @Field(() => [AcademicChartPoint]) researchByYear!: AcademicChartPoint[];
   @Field(() => [AcademicOutputChartPoint]) outputs!: AcademicOutputChartPoint[];

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -12,6 +13,7 @@ import { ACADEMIC_REPOSITORY_ROLES } from '../academic/repository-access';
 import {
   AddCurriculumVersionDto,
   CreateCareerDto,
+  DeleteCareerDto,
   ImportCurriculumDto,
   UpdateCareerDto,
   UpdateCurriculumVersionDto,
@@ -54,6 +56,15 @@ export class CareersController {
     @Body() input: UpdateCareerDto,
   ) {
     return this.service.update(id, input);
+  }
+
+  @Delete(':id')
+  @Roles('ACADEMIC_SECRETARY')
+  delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: DeleteCareerDto,
+  ) {
+    return this.service.delete(id, input.updatedAt);
   }
 
   @Post(':id/curricula')

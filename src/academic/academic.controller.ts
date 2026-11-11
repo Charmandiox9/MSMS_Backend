@@ -121,6 +121,19 @@ export class AcademicSemestersController {
     return this.service.listSemesters();
   }
 
+  @Patch(':id')
+  updateActiveSemester(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SemesterDto,
+  ) {
+    return this.service.updateActiveSemester(
+      id,
+      body.name,
+      body.startsOn,
+      body.endsOn,
+    );
+  }
+
   @Post('activate')
   activateSemester(@Body() body: SemesterDto) {
     return this.service.activateSemester(body.name, body.startsOn, body.endsOn);

@@ -4,6 +4,24 @@ import { testPiiCrypto } from './pii-test-config';
 describe('Persistencia cifrada y contratos de consulta Prisma', () => {
   const crypto = testPiiCrypto();
   const codec = new PiiStorageCodec(crypto);
+  it('cifra las respuestas de solicitudes de derechos antes de persistirlas', () => {
+    const row = codec.write('DataRightsRequest', {
+      id: 'request-1',
+      details: 'Corregir mi correo de contacto',
+      responseNote:
+        'La solicitud quedó resuelta según el procedimiento institucional.',
+    }) as Record<string, unknown>;
+
+    expect(JSON.stringify(row)).not.toContain('solicitud quedó resuelta');
+    expect(row.piiVersion).toBe(1);
+    expect(codec.read('DataRightsRequest', row)).toEqual({
+      id: 'request-1',
+      details: 'Corregir mi correo de contacto',
+      responseNote:
+        'La solicitud quedó resuelta según el procedimiento institucional.',
+    });
+  });
+
   it('cifra nombres, correo y RUT, conserva nulos y crea índices únicos normalizados', () => {
     const row = codec.write('Teacher', {
       id: 'id',

@@ -17,6 +17,7 @@ describe('Controladores académicos', () => {
     listCourseSchedules: jest.fn().mockResolvedValue(['schedule']),
     importCourseSchedules: jest.fn().mockResolvedValue({ importedRows: 2 }),
     listSemesters: jest.fn().mockResolvedValue(['semester']),
+    updateActiveSemester: jest.fn().mockResolvedValue({ id: 'sem-1' }),
     activateSemester: jest.fn().mockResolvedValue({ id: 'sem-1' }),
   };
   const academicService = service as unknown as AcademicService;
@@ -69,6 +70,21 @@ describe('Controladores académicos', () => {
 
     expect(service.activateSemester).toHaveBeenCalledWith(
       '2026-2',
+      '2026-08-01',
+      '2026-12-15',
+    );
+  });
+
+  it('delega la edición del semestre por identificador', async () => {
+    const controller = new AcademicSemestersController(academicService);
+    await controller.updateActiveSemester('sem-1', {
+      name: '2026-20',
+      startsOn: '2026-08-01',
+      endsOn: '2026-12-15',
+    });
+    expect(service.updateActiveSemester).toHaveBeenCalledWith(
+      'sem-1',
+      '2026-20',
       '2026-08-01',
       '2026-12-15',
     );

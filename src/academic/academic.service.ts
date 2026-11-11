@@ -263,6 +263,43 @@ export class AcademicService {
     });
   }
 
+  async updateActiveSemester(
+    id: string,
+    name: string,
+    startsOnValue: string,
+    endsOnValue: string,
+  ) {
+    const semesterName = name.trim();
+    if (!semesterName || semesterName.length > MAX_SEMESTER_NAME)
+      throw new BadRequestException('El nombre del semestre no es válido');
+    const startsOn = this.parseDate(startsOnValue);
+    const endsOn = this.parseDate(endsOnValue);
+    if (endsOn <= startsOn)
+      throw new BadRequestException(
+        'La fecha de término debe ser posterior al inicio',
+      );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const result = await tx.academicSemester.updateMany({
+          where: { id, isActive: true },
+          data: { name: semesterName, startsOn, endsOn },
+        });
+        if (result.count !== 1)
+          throw new ConflictException(
+            'El semestre activo cambió. Recarga antes de editar',
+          );
+        return tx.academicSemester.findFirst({ where: { id } });
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException('Ya existe un semestre con ese nombre');
+      throw error;
+    }
+  }
+
   async activateSemester(
     name: string,
     startsOnValue: string,

@@ -4,6 +4,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -167,3 +168,7 @@ export class UpdateCurriculumVersionDto {
   courses!: CurriculumCourseInputDto[];
 }
 
+export class DeleteCareerDto {
+  @IsDateString()
+  updatedAt!: string;
+}
