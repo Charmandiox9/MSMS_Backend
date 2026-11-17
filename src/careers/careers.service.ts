@@ -216,7 +216,7 @@ export class CareersService {
               manualCourses.map(({ courseId }) => courseId),
             );
           const career = await tx.career.create({
-            data: { code: input.code.trim(), name: input.name.trim() },
+            data: { code: input.code?.trim() || null, name: input.name.trim() },
           });
           if (importedCourses) {
             await this.createImportedVersion(
@@ -259,7 +259,9 @@ export class CareersService {
       return await this.prisma.career.update({
         where: { id },
         data: {
-          ...(input.code === undefined ? {} : { code: input.code.trim() }),
+          ...(input.code === undefined
+            ? {}
+            : { code: input.code?.trim() || null }),
           ...(input.name === undefined ? {} : { name: input.name.trim() }),
           ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
         },

@@ -234,6 +234,16 @@ model Student {
   id                        String                 @id @default(uuid())
   name                      String
   email                     String                 @unique
+  givenNames                String?
+  rut                       String?
+  rutHash                   String?                @unique
+  personalEmail             String?
+  admission                 Int?
+  paternalSurname           String?
+  maternalSurname           String?
+  birthDate                 String?
+  careerId                  String?
+  career                    Career?                @relation(fields: [careerId], references: [id], onDelete: Restrict)
   enrollments               StudentEnrollment[]
   careerCurriculumVersionId String?
   careerCurriculumVersion   CurriculumVersion?     @relation(fields: [careerCurriculumVersionId], references: [id], onDelete: Restrict)
@@ -286,12 +296,13 @@ model StudentCourseAttempt {
 /// A career groups one or more curricula assigned to student cohorts.
 model Career {
   id                 String              @id @default(uuid())
-  code               String              @unique
+  code               String?             @unique
   name               String              @unique
   isActive           Boolean             @default(true)
   departmentProjects Project[]
   departmentOutputs  ResearchOutput[]
   curriculumVersions CurriculumVersion[]
+  students           Student[]
   assistantships     Assistantship[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt

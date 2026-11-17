@@ -10,6 +10,7 @@ describe('CSV de estudiantes', () => {
     ).toEqual([
       {
         line: 3,
+        registry: false,
         name: 'Ana Soto',
         email: 'ana@example.com',
         nrcs: ['10001', '10002'],
@@ -63,5 +64,38 @@ describe('CSV de estudiantes', () => {
     expect(() =>
       parseStudentCsv(csv + '\nOtro;otro@example.com;10001'),
     ).toThrow('hasta 5000 estudiantes');
+  });
+
+  it('importa el padrón genérico con admisión, carrera, RUT y fecha de nacimiento', () => {
+    const rows = parseStudentCsv(
+      [
+        '"codigo_carrera";"carrera";"ADMISION";"RUT";"NOMBRE";"AP_PATERNO";"AP_MATERNO";"NIVEL_CURRICULAR";"EMAIL_ESTUDIANTE";"EMAIL_PERSONAL";"FECHA_NACIMIENTO"',
+        '8506;"Ing. Prev. Riesgo y M.Ambiente";202510;195556210;"NICOLE ALEJANDRA";ESCOBAR;ORMEÑO;8506-S02;nicole@example.test;personal@example.test;8/23/1997',
+      ].join('\n'),
+    );
+    expect(rows[0]).toMatchObject({
+      name: 'NICOLE ALEJANDRA',
+      email: 'nicole@example.test',
+      careerCode: '8506',
+      careerName: 'Ing. Prev. Riesgo y M.Ambiente',
+      admission: 202510,
+      rut: '195556210',
+      paternalSurname: 'ESCOBAR',
+      maternalSurname: 'ORMEÑO',
+      personalEmail: 'personal@example.test',
+      birthDate: '1997-08-23',
+      nrcs: [],
+    });
+  });
+
+  it('rechaza una admisión cuyo semestre no sea 10 ni 20', () => {
+    expect(() =>
+      parseStudentCsv(
+        [
+          'codigo_carrera;carrera;ADMISION;RUT;NOMBRE;AP_PATERNO;AP_MATERNO;EMAIL_ESTUDIANTE',
+          '8506;Biología;202530;123456789;Ana;Soto;Paz;ana@example.test',
+        ].join('\n'),
+      ),
+    ).toThrow('terminar en 10 o 20');
   });
 });

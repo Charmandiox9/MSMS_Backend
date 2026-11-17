@@ -14,12 +14,19 @@ import {
   Max,
   MaxLength,
   Min,
+  IsDateString,
   ValidateIf,
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 export class StudentInputDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  givenNames?: string | null;
+
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
@@ -32,6 +39,46 @@ export class StudentInputDto {
   @IsEmail()
   @MaxLength(254)
   email!: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(20)
+  rut?: string | null;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  @MaxLength(254)
+  personalEmail?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(190010)
+  @Max(220020)
+  admission?: number | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  paternalSurname?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  maternalSurname?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  careerId?: string | null;
 
   @IsOptional()
   @IsUUID()
@@ -101,6 +148,6 @@ export class ListStudentsDto {
 }
 
 export class ImportStudentsDto {
-  @IsUUID() semesterId!: string;
+  @IsOptional() @IsUUID() semesterId?: string;
   @IsString() @IsNotEmpty() @MaxLength(2_000_000) csv!: string;
 }

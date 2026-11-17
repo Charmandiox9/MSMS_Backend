@@ -46,11 +46,11 @@ export class CurriculumVersionInputDto {
 }
 
 export class CreateCareerDto {
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(30)
-  code!: string;
+  code?: string | null;
 
   @Transform(trim)
   @IsString()
@@ -87,7 +87,7 @@ export class UpdateCareerDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(30)
-  code?: string;
+  code?: string | null;
 
   @IsOptional()
   @Transform(trim)
@@ -133,11 +133,11 @@ export class ImportCurriculumDto {
 }
 
 export class CreateCareerFromCsvDto {
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(30)
-  code!: string;
+  code?: string;
 
   @Transform(trim)
   @IsString()
