@@ -173,11 +173,61 @@ model AcademicSemester {
   courseAttempts     StudentCourseAttempt[]
   hourlyPayRates     HourlyPayRate[]
   assistantships     Assistantship[]
+  budget             SemesterBudget?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
   @@unique([name])
   @@index([isActive])
+}
+
+/// Planned CLP budget for a semester. Thresholds track distributed category budgets.
+model SemesterBudget {
+  id             String                     @id @default(uuid())
+  semesterId     String                     @unique
+  totalAmountClp Decimal                    @db.Decimal(14, 0)
+  semester       AcademicSemester           @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  allocations    SemesterBudgetAllocation[]
+  thresholds     SemesterBudgetThreshold[]
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+}
+
+model SemesterBudgetAllocation {
+  id        String         @id @default(uuid())
+  budgetId  String
+  name      String         @db.VarChar(80)
+  amountClp Decimal        @db.Decimal(14, 0)
+  budget    SemesterBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([budgetId, name])
+  @@index([budgetId])
+}
+
+model SemesterBudgetThreshold {
+  id             String                        @id @default(uuid())
+  budgetId       String
+  percentage     Int
+  budget         SemesterBudget                @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  recipientRoles SemesterBudgetThresholdRole[]
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  @@unique([budgetId, percentage])
+  @@index([budgetId])
+}
+
+model SemesterBudgetThresholdRole {
+  thresholdId String
+  roleId      String
+  threshold   SemesterBudgetThreshold @relation(fields: [thresholdId], references: [id], onDelete: Cascade)
+  role        Role                    @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedAt  DateTime                @default(now())
+
+  @@id([thresholdId, roleId])
+  @@index([roleId])
 }
 
 model Teacher {
@@ -551,16 +601,17 @@ model JustificationStatusHistory {
 }
 
 model Role {
-  id          String              @id @default(uuid())
-  code        String              @unique
-  name        String              @unique
-  description String?
-  isSystem    Boolean             @default(false)
-  userRoles   UserRole[]
-  preloads    PreloadedUserRole[]
-  permissions RolePermission[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id                    String                        @id @default(uuid())
+  code                  String                        @unique
+  name                  String                        @unique
+  description           String?
+  isSystem              Boolean                       @default(false)
+  userRoles             UserRole[]
+  preloads              PreloadedUserRole[]
+  permissions           RolePermission[]
+  budgetAlertThresholds SemesterBudgetThresholdRole[]
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
 }
 
 model Permission {
