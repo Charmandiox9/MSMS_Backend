@@ -27,6 +27,14 @@ const client = new PrismaClient({
   }),
 });
 const rotate = process.argv.includes('--rotate');
+const requestedModel = process.argv
+  .find((argument) => argument.startsWith('--model='))
+  ?.slice('--model='.length);
+if (requestedModel && !(requestedModel in piiPolicies))
+  throw new Error('--model debe nombrar un modelo con política PII');
+const modelsToProcess = Object.entries(piiPolicies).filter(
+  ([model]) => !requestedModel || model === requestedModel,
+);
 let currentModel = 'inicio';
 
 async function diagnoseUserEmailHashCollisions(): Promise<void> {
@@ -138,7 +146,7 @@ async function main() {
     return;
   }
 
-  for (const [model, policy] of Object.entries(piiPolicies)) {
+  for (const [model, policy] of modelsToProcess) {
     currentModel = model;
     let cursor: string | undefined;
     let converted = 0;

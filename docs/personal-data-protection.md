@@ -119,12 +119,13 @@ instalación que ya tiene estudiantes, mantener la aplicación detenida y aplica
 primero todas las migraciones pendientes con `prisma migrate deploy`. La
 migración `20261116010000_encrypt_student_admission` convierte la columna de
 entero a texto, pero no cifra los valores. Luego ejecutar
-`ts-node --transpile-only scripts/backfill-pii.ts --apply --rotate` con las
-mismas claves PII y la conexión directa a esa base. `--rotate` es necesario
+`ts-node --transpile-only scripts/backfill-pii.ts --apply --rotate --model=Student`
+con las mismas claves PII y la conexión directa a esa base. `--rotate` es necesario
 porque estudiantes existentes pueden tener `piiVersion = 1` aunque la columna
-`admission` se haya agregado después de su cifrado original. El script convierte
-la admisión a texto y cifra todos los campos PII del estudiante en una
-transacción por lote. Verificar la lectura y búsqueda antes de volver a iniciar
+`admission` se haya agregado después de su cifrado original. `--model=Student`
+limita la rotación a estudiantes para no recifrar innecesariamente el resto de
+los modelos. El script convierte la admisión a texto y cifra todos los campos
+PII del estudiante en una transacción por lote. Verificar la lectura y búsqueda antes de volver a iniciar
 la aplicación. Si Prisma informa que esperaba texto y recibió un número, la
 migración de tipo todavía no está aplicada; no ejecutar la versión nueva del
 backend hasta completar migración y backfill.
