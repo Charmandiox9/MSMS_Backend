@@ -31,6 +31,10 @@ type AssistantshipView {
   startsOn: String!
   endsOn: String
   weeklyHours: Float
+  tariffId: ID
+  tariffName: String
+  tariffRateClp: Float
+  estimatedAmountClp: Float
   state: AssistantshipState!
   schedules: [AssistantshipScheduleView!]!
 }
@@ -39,6 +43,23 @@ enum AssistantshipState {
   SCHEDULED
   ACTIVE
   COMPLETED
+}
+
+type AssistantshipTariffOption {
+  id: ID!
+  semesterId: ID!
+  name: String!
+  monthlyRateClp: Float!
+}
+
+type AssistantshipBudgetSummary {
+  semesterId: ID!
+  semesterName: String!
+  allocatedAmountClp: Float!
+  occupiedAmountClp: Float!
+  percentage: Float!
+  assistantships: Int!
+  unpricedCount: Int!
 }
 
 type AssistantshipPage {
@@ -371,6 +392,8 @@ type Query {
   assistantshipStudents(search: String!): [AssistantshipStudentOption!]!
   assistantshipCareerCourses(careerId: ID!): [AssistantshipCourseOption!]!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
+  assistantshipTariffs(semesterId: ID!): [AssistantshipTariffOption!]!
+  assistantshipBudgetSummary(semesterId: ID!): AssistantshipBudgetSummary!
   repositoryProjectOptions(filters: RepositoryProjectOptionFilters): RepositoryProjectOptionPage!
   repositoryProject(id: ID!): RepositoryProjectDetail!
   repositoryResearchDetail(id: ID!): RepositoryResearchDetail!
@@ -434,8 +457,17 @@ input ResearchOutputListFilters {
 }
 
 type Mutation {
+  saveAssistantshipTariff(input: SaveAssistantshipTariffInput!): AssistantshipTariffOption!
+  deleteAssistantshipTariff(id: ID!): Boolean!
   registerAssistantship(input: RegisterAssistantshipInput!): AssistantshipView!
   updateAssistantship(id: ID!, input: RegisterAssistantshipInput!): AssistantshipView!
+}
+
+input SaveAssistantshipTariffInput {
+  id: ID
+  semesterId: ID!
+  name: String!
+  monthlyRateClp: Float!
 }
 
 input RegisterAssistantshipInput {
@@ -445,6 +477,7 @@ input RegisterAssistantshipInput {
   courseId: ID
   careerId: ID
   studentId: ID!
+  tariffId: ID
   courseNrc: String
   studentCode: String
   approvedOn: String!

@@ -15,7 +15,9 @@ import {
   AssistantshipState,
   AssistantshipView,
   RegisterAssistantshipInput,
+  SaveAssistantshipTariffInput,
 } from './assistantships.dto';
+import { SemesterBudgetsService } from '../semester-budgets/semester-budgets.service';
 const include = {
   approval: {
     include: {
@@ -35,6 +37,7 @@ const include = {
     include: { teacher: true, course: true, semester: true },
   },
   schedules: { orderBy: [{ weekday: 'asc' }, { startsAtMinute: 'asc' }] },
+  tariff: true,
 } satisfies Prisma.AssistantshipInclude;
 type AssistantshipRecord = Prisma.AssistantshipGetPayload<{
   include: typeof include;
@@ -48,6 +51,7 @@ export class AssistantshipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly semesterBudgets: SemesterBudgetsService,
   ) {}
   private today(): Date {
     const parts = new Intl.DateTimeFormat('en', {
@@ -91,6 +95,27 @@ export class AssistantshipsService {
       startsOn: isoDate(record.startsOn),
       endsOn: record.endsOn ? isoDate(record.endsOn) : null,
       weeklyHours: record.weeklyHours?.toNumber() ?? null,
+      tariffId: record.tariffId,
+      tariffName: record.tariff?.name ?? null,
+      tariffRateClp: record.tariffRateClp?.toNumber() ?? null,
+      estimatedAmountClp:
+        record.weeklyHours && record.tariffRateClp
+          ? record.tariffRateClp
+              .mul(record.weeklyHours)
+              .mul(
+                Math.max(
+                  0,
+                  Math.floor(
+                    ((record.endsOn ?? record.semester.endsOn).getTime() -
+                      record.startsOn.getTime()) /
+                      86_400_000,
+                  ) + 1,
+                ),
+              )
+              .div(30)
+              .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP)
+              .toNumber()
+          : null,
       schedules: record.schedules,
       state:
         record.startsOn > today
@@ -229,6 +254,106 @@ export class AssistantshipsService {
       teachers: teachers.sort((a, b) => a.name.localeCompare(b.name, 'es')),
       blocks: academicScheduleBlocks,
     };
+  }
+  async tariffs(semesterId: string) {
+    const semester = await this.prisma.academicSemester.findUnique({
+      where: { id: semesterId },
+      select: { id: true },
+    });
+    if (!semester) throw new NotFoundException('Semestre no encontrado');
+    const tariffs = await this.prisma.assistantshipTariff.findMany({
+      where: { semesterId },
+      orderBy: { name: 'asc' },
+    });
+    return tariffs.map((tariff) => ({
+      ...tariff,
+      monthlyRateClp: tariff.monthlyRateClp.toNumber(),
+    }));
+  }
+  async budgetSummary(semesterId: string) {
+    return this.semesterBudgets.assistantshipSummary(semesterId);
+  }
+  async saveTariff(input: SaveAssistantshipTariffInput) {
+    const semester = await this.prisma.academicSemester.findUnique({
+      where: { id: input.semesterId },
+      select: { id: true },
+    });
+    if (!semester) throw new NotFoundException('Semestre no encontrado');
+    const duplicate = await this.prisma.assistantshipTariff.findFirst({
+      where: {
+        semesterId: input.semesterId,
+        name: { equals: input.name.trim(), mode: 'insensitive' },
+        ...(input.id ? { id: { not: input.id } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicate)
+      throw new ConflictException(
+        'Ya existe una tarifa con ese nombre en el semestre',
+      );
+    try {
+      if (input.id) {
+        const current = await this.prisma.assistantshipTariff.findFirst({
+          where: { id: input.id, semesterId: input.semesterId },
+          select: { id: true },
+        });
+        if (!current)
+          throw new NotFoundException('Tarifa no encontrada para el semestre');
+        const tariff = await this.prisma.assistantshipTariff.update({
+          where: { id: input.id },
+          data: {
+            name: input.name.trim(),
+            monthlyRateClp: new Prisma.Decimal(input.monthlyRateClp),
+          },
+        });
+        return { ...tariff, monthlyRateClp: tariff.monthlyRateClp.toNumber() };
+      }
+      const tariff = await this.prisma.assistantshipTariff.create({
+        data: {
+          semesterId: input.semesterId,
+          name: input.name.trim(),
+          monthlyRateClp: new Prisma.Decimal(input.monthlyRateClp),
+        },
+      });
+      return { ...tariff, monthlyRateClp: tariff.monthlyRateClp.toNumber() };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException(
+          'Ya existe una tarifa con ese nombre en el semestre',
+        );
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException('No se pudo guardar la tarifa');
+    }
+  }
+  async deleteTariff(id: string) {
+    const [tariff, usageCount] = await Promise.all([
+      this.prisma.assistantshipTariff.findUnique({
+        where: { id },
+        select: { id: true },
+      }),
+      this.prisma.assistantship.count({ where: { tariffId: id } }),
+    ]);
+    if (!tariff) throw new NotFoundException('Tarifa no encontrada');
+    if (usageCount > 0)
+      throw new ConflictException(
+        'No se puede quitar una tarifa que ya está asignada a ayudantías',
+      );
+    try {
+      await this.prisma.assistantshipTariff.delete({ where: { id } });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      )
+        throw new ConflictException(
+          'No se puede quitar una tarifa que ya está asignada a ayudantías',
+        );
+      throw new InternalServerErrorException('No se pudo eliminar la tarifa');
+    }
+    return true;
   }
   async assignments(semesterId: string) {
     const assignments = await this.prisma.teachingAssignment.findMany({
@@ -482,10 +607,13 @@ export class AssistantshipsService {
     try {
       const record = await this.prisma.$transaction(
         async (transaction) => {
-          if (
-            id &&
-            !(await transaction.assistantship.findUnique({ where: { id } }))
-          )
+          const existing = id
+            ? await transaction.assistantship.findUnique({
+                where: { id },
+                select: { id: true, tariffId: true, tariffRateClp: true },
+              })
+            : null;
+          if (id && !existing)
             throw new NotFoundException({
               code: 'NOT_FOUND',
               message: 'La ayudantía no existe',
@@ -497,6 +625,20 @@ export class AssistantshipsService {
               startsOn,
               endsOn,
             );
+          if (!input.tariffId)
+            invalid('TARIFF_REQUIRED', 'Selecciona una tarifa de ayudantía');
+          const tariff = await transaction.assistantshipTariff.findFirst({
+            where: { id: input.tariffId, semesterId: semester!.id },
+          });
+          if (!tariff)
+            invalid(
+              'INVALID_TARIFF',
+              'La tarifa no pertenece al semestre seleccionado',
+            );
+          const tariffRateClp =
+            existing?.tariffId === tariff!.id && existing.tariffRateClp
+              ? existing.tariffRateClp
+              : tariff!.monthlyRateClp;
           const assistant = await this.resolveAssistant(transaction, input);
           const approval = await transaction.assistantCourseApproval.findUnique(
             {
@@ -561,6 +703,8 @@ export class AssistantshipsService {
             startsOn,
             endsOn,
             weeklyHours: input.weeklyHours ?? null,
+            tariffId: tariff!.id,
+            tariffRateClp,
             schedules: {
               ...(id ? { deleteMany: {} } : {}),
               create: schedules.map((schedule) => ({

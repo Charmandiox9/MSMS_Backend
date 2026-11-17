@@ -161,21 +161,27 @@ enum CourseAttemptOutcome {
   FAILED
 }
 
+enum SemesterBudgetCategoryCode {
+  HOURLY_TEACHERS
+  ASSISTANTSHIPS
+}
+
 model AcademicSemester {
-  id                 String                 @id @default(uuid())
-  name               String
-  startsOn           DateTime
-  endsOn             DateTime
-  isActive           Boolean                @default(false)
-  assignments        TeachingAssignment[]
-  courseSchedules    CourseSchedule[]
-  studentEnrollments StudentEnrollment[]
-  courseAttempts     StudentCourseAttempt[]
-  hourlyPayRates     HourlyPayRate[]
-  assistantships     Assistantship[]
-  budget             SemesterBudget?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  id                   String                 @id @default(uuid())
+  name                 String
+  startsOn             DateTime
+  endsOn               DateTime
+  isActive             Boolean                @default(false)
+  assignments          TeachingAssignment[]
+  courseSchedules      CourseSchedule[]
+  studentEnrollments   StudentEnrollment[]
+  courseAttempts       StudentCourseAttempt[]
+  hourlyPayRates       HourlyPayRate[]
+  assistantships       Assistantship[]
+  assistantshipTariffs AssistantshipTariff[]
+  budget               SemesterBudget?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   @@unique([name])
   @@index([isActive])
@@ -194,15 +200,17 @@ model SemesterBudget {
 }
 
 model SemesterBudgetAllocation {
-  id        String         @id @default(uuid())
+  id        String                      @id @default(uuid())
   budgetId  String
-  name      String         @db.VarChar(80)
-  amountClp Decimal        @db.Decimal(14, 0)
-  budget    SemesterBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  name      String                      @db.VarChar(80)
+  code      SemesterBudgetCategoryCode?
+  amountClp Decimal                     @db.Decimal(14, 0)
+  budget    SemesterBudget              @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
 
   @@unique([budgetId, name])
+  @@unique([budgetId, code])
   @@index([budgetId])
 }
 
@@ -461,6 +469,9 @@ model Assistantship {
   startsOn             DateTime                @db.Date
   endsOn               DateTime?               @db.Date
   weeklyHours          Decimal?                @db.Decimal(5, 2)
+  tariffId             String?
+  tariffRateClp        Decimal?                @db.Decimal(12, 2)
+  tariff               AssistantshipTariff?    @relation(fields: [tariffId, semesterId], references: [id, semesterId], onDelete: Restrict)
   teachingAssignment   TeachingAssignment?     @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
   semester             AcademicSemester        @relation(fields: [semesterId], references: [id], onDelete: Restrict)
   course               Course                  @relation(fields: [courseId], references: [id], onDelete: Restrict)
@@ -474,6 +485,22 @@ model Assistantship {
   @@index([assistantId, courseId, approvedOn])
   @@index([teachingAssignmentId, courseId])
   @@index([semesterId, courseId])
+}
+
+/// Monthly CLP rate per weekly assistantship hour.
+model AssistantshipTariff {
+  id             String           @id @default(uuid())
+  semesterId     String
+  name           String           @db.VarChar(80)
+  monthlyRateClp Decimal          @db.Decimal(12, 2)
+  semester       AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  assistantships Assistantship[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([id, semesterId])
+  @@unique([semesterId, name])
+  @@index([semesterId])
 }
 
 /// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).

@@ -12,6 +12,9 @@ import {
   AssistantshipStudentOption,
   AssistantshipStudentsArgs,
   AssistantshipCourseOption,
+  AssistantshipTariffOption,
+  AssistantshipBudgetSummary,
+  SaveAssistantshipTariffInput,
 } from './assistantships.dto';
 import { AssistantshipsGuard } from './assistantships.guard';
 import { AssistantshipsService } from './assistantships.service';
@@ -67,6 +70,26 @@ export class AssistantshipsResolver {
   @Query(() => [AssistantshipAssignmentOption])
   assistantshipAssignments(@Args() args: AssistantshipSemesterArgs) {
     return this.service.assignments(args.semesterId);
+  }
+
+  @Query(() => [AssistantshipTariffOption])
+  assistantshipTariffs(@Args() args: AssistantshipSemesterArgs) {
+    return this.service.tariffs(args.semesterId);
+  }
+
+  @Query(() => AssistantshipBudgetSummary)
+  assistantshipBudgetSummary(@Args() args: AssistantshipSemesterArgs) {
+    return this.service.budgetSummary(args.semesterId);
+  }
+
+  @Mutation(() => AssistantshipTariffOption)
+  saveAssistantshipTariff(@Args('input') input: SaveAssistantshipTariffInput) {
+    return this.service.saveTariff(input);
+  }
+
+  @Mutation(() => Boolean)
+  deleteAssistantshipTariff(@Args() args: AssistantshipIdArgs) {
+    return this.service.deleteTariff(args.id);
   }
 
   @Mutation(() => AssistantshipView)

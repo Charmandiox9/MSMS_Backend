@@ -47,6 +47,17 @@ describe('AssistantshipsGuard', () => {
         .permission.code.in,
     ).toEqual(['TEACHING_ASSISTANTS_MANAGE']);
   });
+  it.each(['assistantshipTariffs', 'assistantshipBudgetSummary'])(
+    'allows academic readers to inspect tariff and budget data with %s',
+    async (handler) => {
+      findFirst.mockResolvedValue({ id: 'user' });
+      await guard.canActivate(context({ id: 'user' }, handler));
+      expect(
+        findFirst.mock.calls[0][0].where.userRoles.some.role.permissions.some
+          .permission.code.in,
+      ).toContain('ACADEMIC_RECORDS_VIEW');
+    },
+  );
   it.each(['assistantshipStudents', 'assistantshipCareerCourses'])(
     'requires management permission for registration lookup %s',
     async (handler) => {

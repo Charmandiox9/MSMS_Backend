@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssistantshipsService } from './assistantships.service';
+import { SemesterBudgetsService } from '../semester-budgets/semester-budgets.service';
 import {
   AssistantshipFilters,
   AssistantshipState,
@@ -38,6 +39,13 @@ const record = {
   endsOn: new Date('2026-12-31'),
   approvedOn: new Date('2026-07-01'),
   weeklyHours: new Prisma.Decimal(4),
+  tariffId: 'tariff',
+  tariffRateClp: new Prisma.Decimal(10000),
+  tariff: {
+    id: 'tariff',
+    name: 'Base',
+    monthlyRateClp: new Prisma.Decimal(10000),
+  },
   schedules: [],
   approval: { assistant },
   teachingAssignmentId: assignment.id,
@@ -54,6 +62,7 @@ const validInput = (): RegisterAssistantshipInput =>
     semesterId: 'semester',
     assistantshipNrc: '20001',
     studentId: 'student',
+    tariffId: 'tariff',
     teachingAssignmentId: 'assignment',
     approvedOn: '2026-07-01',
     startsOn: '2026-08-01',
@@ -83,6 +92,7 @@ describe('AssistantshipsService', () => {
       update: jest.fn(),
       findUnique: jest.fn(),
     },
+    assistantshipTariff: { findFirst: jest.fn() },
   };
   const prisma = {
     findPiiIds: jest.fn(),
@@ -97,10 +107,18 @@ describe('AssistantshipsService', () => {
       >(),
     },
     teachingAssignment: { findMany: jest.fn() },
-    academicSemester: { findMany: jest.fn() },
+    academicSemester: { findMany: jest.fn(), findUnique: jest.fn() },
     teacher: { findMany: jest.fn() },
     career: { findMany: jest.fn() },
     student: { findUnique: jest.fn(), findMany: jest.fn() },
+    assistantshipTariff: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+      delete: jest.fn(),
+    },
     course: { findMany: jest.fn() },
   };
   beforeEach(async () => {
@@ -131,16 +149,86 @@ describe('AssistantshipsService', () => {
     transaction.assistantCourseApproval.findUnique.mockResolvedValue(null);
     transaction.assistantship.findMany.mockResolvedValue([]);
     transaction.assistantship.create.mockResolvedValue(record);
+    transaction.assistantshipTariff.findFirst.mockResolvedValue({
+      id: 'tariff',
+      semesterId: 'semester',
+      name: 'Base',
+      monthlyRateClp: new Prisma.Decimal(10000),
+    });
+    prisma.assistantshipTariff.findMany.mockResolvedValue([]);
     const module = await Test.createTestingModule({
       providers: [
         AssistantshipsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: () => 'America/Santiago' } },
+        {
+          provide: SemesterBudgetsService,
+          useValue: { assistantshipSummary: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get(AssistantshipsService);
   });
   afterEach(() => jest.useRealTimers());
+
+  it('assigns a semester tariff and calculates the estimated amount using 30-day months', async () => {
+    const result = await service.register(validInput());
+    expect(transaction.assistantship.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tariffId: 'tariff',
+          tariffRateClp: new Prisma.Decimal(10000),
+        }),
+      }),
+    );
+    expect(result.tariffName).toBe('Base');
+    expect(result.estimatedAmountClp).toBe(204000);
+  });
+
+  it('preserves the historical tariff snapshot when the configured rate changes', async () => {
+    const previous = { ...record, tariffRateClp: new Prisma.Decimal(9000) };
+    transaction.assistantship.findUnique.mockResolvedValue(previous);
+    transaction.assistantship.update.mockResolvedValue(previous);
+    const result = await service.update('assistantship', validInput());
+    expect(transaction.assistantship.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tariffRateClp: previous.tariffRateClp,
+        }),
+      }),
+    );
+    expect(result.estimatedAmountClp).toBe(183600);
+  });
+
+  it('creates semester-scoped tariffs using CLP decimal storage', async () => {
+    prisma.academicSemester.findUnique.mockResolvedValue({ id: 'semester' });
+    prisma.assistantshipTariff.findFirst.mockResolvedValue(null);
+    prisma.assistantshipTariff.create.mockResolvedValue({
+      id: 'tariff',
+      semesterId: 'semester',
+      name: 'Base',
+      monthlyRateClp: new Prisma.Decimal(30000),
+    });
+    await expect(
+      service.saveTariff({
+        semesterId: 'semester',
+        name: ' Base ',
+        monthlyRateClp: 30000,
+      }),
+    ).resolves.toMatchObject({
+      id: 'tariff',
+      semesterId: 'semester',
+      name: 'Base',
+      monthlyRateClp: 30000,
+    });
+    expect(prisma.assistantshipTariff.create).toHaveBeenCalledWith({
+      data: {
+        semesterId: 'semester',
+        name: 'Base',
+        monthlyRateClp: new Prisma.Decimal(30000),
+      },
+    });
+  });
 
   it('updates the NRC and replaces schedules, excluding its own record from conflicts', async () => {
     transaction.assistantship.findUnique.mockResolvedValue(record);

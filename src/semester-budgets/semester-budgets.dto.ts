@@ -1,10 +1,13 @@
 import { Type } from 'class-transformer';
+import { SemesterBudgetCategoryCode } from '@prisma/client';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsEnum,
   IsInt,
+  IsOptional,
   IsString,
   Max,
   MaxLength,
@@ -14,6 +17,10 @@ import {
 } from 'class-validator';
 
 export class BudgetAllocationDto {
+  @IsOptional()
+  @IsEnum(SemesterBudgetCategoryCode)
+  code?: SemesterBudgetCategoryCode;
+
   @IsString()
   @MinLength(2)
   @MaxLength(80)

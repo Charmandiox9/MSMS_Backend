@@ -99,6 +99,10 @@ export class RegisterAssistantshipInput {
   @Field(() => ID)
   @IsUUID()
   studentId!: string;
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  tariffId?: string;
   @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
@@ -125,6 +129,34 @@ export class RegisterAssistantshipInput {
   @ValidateNested({ each: true })
   @Type(() => AssistantshipScheduleInput)
   schedules!: AssistantshipScheduleInput[];
+}
+
+@InputType()
+export class SaveAssistantshipTariffInput {
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
+  @Field(() => ID)
+  @IsUUID()
+  semesterId!: string;
+
+  @Field()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name!: string;
+
+  @Field(() => Float)
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(1_000_000_000)
+  monthlyRateClp!: number;
 }
 
 @ObjectType()
@@ -159,9 +191,32 @@ export class AssistantshipView {
   @Field() startsOn!: string;
   @Field(() => String, { nullable: true }) endsOn!: string | null;
   @Field(() => Float, { nullable: true }) weeklyHours!: number | null;
+  @Field(() => ID, { nullable: true }) tariffId!: string | null;
+  @Field(() => String, { nullable: true }) tariffName!: string | null;
+  @Field(() => Float, { nullable: true }) tariffRateClp!: number | null;
+  @Field(() => Float, { nullable: true }) estimatedAmountClp!: number | null;
   @Field(() => AssistantshipState) state!: AssistantshipState;
   @Field(() => [AssistantshipScheduleView])
   schedules!: AssistantshipScheduleView[];
+}
+
+@ObjectType()
+export class AssistantshipTariffOption {
+  @Field(() => ID) id!: string;
+  @Field(() => ID) semesterId!: string;
+  @Field() name!: string;
+  @Field(() => Float) monthlyRateClp!: number;
+}
+
+@ObjectType()
+export class AssistantshipBudgetSummary {
+  @Field(() => ID) semesterId!: string;
+  @Field() semesterName!: string;
+  @Field(() => Float) allocatedAmountClp!: number;
+  @Field(() => Float) occupiedAmountClp!: number;
+  @Field(() => Float) percentage!: number;
+  @Field(() => Int) assistantships!: number;
+  @Field(() => Int) unpricedCount!: number;
 }
 
 @ObjectType()
