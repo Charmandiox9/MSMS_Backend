@@ -43,6 +43,16 @@ pnpm start:prod
 
 `start:dev:swc` es una alternativa de arranque en modo watch que usa el builder SWC para acelerar la compilación. El script `start:dev` estándar se mantiene disponible. La API escucha en el puerto `3001` por defecto; puedes cambiarlo con `PORT`.
 
+## Docker con configuración de producción
+
+Para levantar localmente el stack completo con la configuración de `.env.production`, ejecuta desde `backend/`:
+
+```powershell
+docker compose --env-file .env.production up -d --build
+```
+
+La guía de [simulación local de producción con Docker](docs/docker-local.md) incluye también los comandos para revisar el estado y los logs, y para detener los servicios conservando los datos.
+
 ## API
 
 - GraphQL: `http://localhost:3001/api/graphql`.
