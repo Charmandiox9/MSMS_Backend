@@ -53,15 +53,14 @@ const validInput = (): RegisterAssistantshipInput =>
   Object.assign(new RegisterAssistantshipInput(), {
     semesterId: 'semester',
     assistantshipNrc: '20001',
+    studentId: 'student',
     teachingAssignmentId: 'assignment',
-    assistantName: 'Estudiante',
-    assistantEmail: 'STUDENT@example.test',
     approvedOn: '2026-07-01',
     startsOn: '2026-08-01',
     endsOn: '2026-12-31',
     approvalConfirmed: true,
     weeklyHours: 4,
-    schedules: [],
+    schedules: [{ weekday: 1, startsAtMinute: 490, endsAtMinute: 580 }],
   });
 
 describe('AssistantshipsService', () => {
@@ -101,7 +100,7 @@ describe('AssistantshipsService', () => {
     academicSemester: { findMany: jest.fn() },
     teacher: { findMany: jest.fn() },
     career: { findMany: jest.fn() },
-    student: { findUnique: jest.fn() },
+    student: { findUnique: jest.fn(), findMany: jest.fn() },
     course: { findMany: jest.fn() },
   };
   beforeEach(async () => {
@@ -164,7 +163,17 @@ describe('AssistantshipsService', () => {
         where: { id: 'assistantship' },
         data: expect.objectContaining({
           nrc: '20002',
-          schedules: { deleteMany: {}, create: [] },
+          schedules: {
+            deleteMany: {},
+            create: [
+              {
+                weekday: 1,
+                startsAtMinute: 490,
+                endsAtMinute: 580,
+                location: null,
+              },
+            ],
+          },
         }),
       }),
     );
@@ -203,8 +212,46 @@ describe('AssistantshipsService', () => {
       endsAtMinute: 1380,
     });
   });
+  it('searches registered students by protected name, email or RUT and returns their career', async () => {
+    prisma.findPiiIds.mockResolvedValue(['student']);
+    prisma.student.findMany.mockResolvedValue([
+      {
+        id: 'student',
+        name: 'Ana Pérez Soto',
+        givenNames: 'Ana',
+        paternalSurname: 'Pérez',
+        maternalSurname: 'Soto',
+        email: 'ana@example.test',
+        rut: '12345678-9',
+        careerId: 'career',
+        career: { id: 'career', name: 'Biología Marina' },
+        careerCurriculumVersionId: null,
+        careerCurriculumVersion: null,
+      },
+    ]);
+    await expect(service.students('  12345678-9  ')).resolves.toEqual([
+      {
+        id: 'student',
+        name: 'Ana Pérez Soto',
+        email: 'ana@example.test',
+        rut: '12345678-9',
+        careerCurriculumVersionId: null,
+        careerId: 'career',
+        careerName: 'Biología Marina',
+      },
+    ]);
+    expect(prisma.findPiiIds).toHaveBeenCalledWith('Student', '12345678-9', [
+      'name',
+      'givenNames',
+      'paternalSurname',
+      'maternalSurname',
+      'email',
+      'personalEmail',
+      'rut',
+    ]);
+  });
 
-  it('registers the student, their course approval and the assistantship atomically', async () => {
+  it('links an existing student, records course approval and creates the assistantship atomically', async () => {
     const result = await service.register(validInput());
     expect(result).toMatchObject({
       nrc: '12345',
@@ -269,6 +316,17 @@ describe('AssistantshipsService', () => {
       response: { code: 'INACTIVE_PROFILE' },
     });
   });
+  it('requires an existing student, weekly hours and at least one schedule', async () => {
+    await expect(
+      service.register({ ...validInput(), studentId: '' }),
+    ).rejects.toMatchObject({ response: { code: 'STUDENT_REQUIRED' } });
+    await expect(
+      service.register({ ...validInput(), weeklyHours: 0 }),
+    ).rejects.toMatchObject({ response: { code: 'INVALID_INPUT' } });
+    await expect(
+      service.register({ ...validInput(), schedules: [] }),
+    ).rejects.toMatchObject({ response: { code: 'INVALID_SCHEDULE' } });
+  });
   it('rejects inactive students', async () => {
     transaction.teachingAssistant.findFirst.mockResolvedValue({
       ...assistant,
@@ -278,11 +336,12 @@ describe('AssistantshipsService', () => {
       response: { code: 'INACTIVE_PROFILE' },
     });
   });
-  it('rejects an email that no longer matches the selected student', async () => {
+  it('rejects a student ID that does not exist', async () => {
+    transaction.student.findUnique.mockResolvedValue(null);
     await expect(
       service.register({ ...validInput(), studentId: 'other-student' }),
     ).rejects.toMatchObject({
-      response: { code: 'ASSISTANT_IDENTITY' },
+      response: { code: 'STUDENT_REQUIRED' },
     });
   });
   it('uses the registered student identity and links the existing assistant', async () => {
@@ -293,41 +352,20 @@ describe('AssistantshipsService', () => {
     await service.register(validInput());
     expect(transaction.teachingAssistant.update).toHaveBeenCalledWith({
       where: { id: assistant.id },
-      data: { studentId: 'student' },
-    });
-    expect(transaction.student.create).not.toHaveBeenCalled();
-  });
-  it('creates an academic student with their selected curriculum atomically', async () => {
-    transaction.student.findUnique.mockResolvedValue(null);
-    transaction.curriculumVersion.findUnique.mockResolvedValue({
-      id: 'curriculum',
-      career: { isActive: true },
-    });
-    transaction.student.create.mockResolvedValue({
-      id: 'student',
-      name: assistant.name,
-      email: assistant.email,
-    });
-    await service.register({
-      ...validInput(),
-      careerCurriculumVersionId: 'curriculum',
-    });
-    expect(transaction.student.create).toHaveBeenCalledWith({
       data: {
-        name: assistant.name,
-        email: assistant.email,
-        careerCurriculumVersionId: 'curriculum',
+        studentId: 'student',
+        name: 'Estudiante',
+        email: 'student@example.test',
       },
     });
-  });
-  it('requires a curriculum for unregistered students', async () => {
-    transaction.student.findUnique.mockResolvedValue(null);
-    await expect(service.register(validInput())).rejects.toMatchObject({
-      response: { code: 'CAREER_REQUIRED' },
-    });
     expect(transaction.student.create).not.toHaveBeenCalled();
   });
-  it('registers a past course without a teaching assignment or NRC', async () => {
+  it('never creates or modifies a student while registering an assistantship', async () => {
+    await service.register(validInput());
+    expect(transaction.student.create).not.toHaveBeenCalled();
+    expect(transaction.student.update).not.toHaveBeenCalled();
+  });
+  it('registers a past course without a teaching assignment but with an assistantship NRC', async () => {
     const semester = {
       ...assignment.semester,
       id: 'past',
@@ -356,7 +394,6 @@ describe('AssistantshipsService', () => {
       courseId: 'course',
       careerId: 'career',
       teachingAssignmentId: undefined,
-      assistantshipNrc: undefined,
       approvedOn: '2025-07-01',
       startsOn: '2025-08-01',
       endsOn: '2025-12-31',
@@ -372,7 +409,7 @@ describe('AssistantshipsService', () => {
         data: expect.objectContaining({
           semesterId: 'past',
           courseId: 'course',
-          nrc: null,
+          nrc: '20001',
           courseNrc: null,
           teachingAssignmentId: null,
         }),

@@ -92,6 +92,7 @@ type AssistantshipStudentOption {
   id: ID!
   name: String!
   email: String!
+  rut: String
   careerCurriculumVersionId: ID
   careerId: ID
   careerName: String
@@ -367,7 +368,7 @@ type Query {
   assistantships(filters: AssistantshipFilters): AssistantshipPage!
   assistantship(id: ID!): AssistantshipView
   assistantshipOptions: AssistantshipOptions!
-  assistantshipStudent(email: String!): AssistantshipStudentOption
+  assistantshipStudents(search: String!): [AssistantshipStudentOption!]!
   assistantshipCareerCourses(careerId: ID!): [AssistantshipCourseOption!]!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
   repositoryProjectOptions(filters: RepositoryProjectOptionFilters): RepositoryProjectOptionPage!
@@ -438,23 +439,20 @@ type Mutation {
 }
 
 input RegisterAssistantshipInput {
-  assistantshipNrc: String
+  assistantshipNrc: String!
   teachingAssignmentId: ID
   semesterId: ID!
   courseId: ID
   careerId: ID
-  careerCurriculumVersionId: ID
-  studentId: ID
+  studentId: ID!
   courseNrc: String
-  assistantName: String!
-  assistantEmail: String!
   studentCode: String
   approvedOn: String!
   startsOn: String!
   endsOn: String!
   approvalConfirmed: Boolean!
-  weeklyHours: Float
-  schedules: [AssistantshipScheduleInput!]
+  weeklyHours: Float!
+  schedules: [AssistantshipScheduleInput!]!
 }
 
 input AssistantshipScheduleInput {

@@ -79,14 +79,18 @@ export class PrismaService
         ...Object.fromEntries(searchableFields.map((field) => [field, true])),
       },
     });
-    const needle = normalizePiiSearch(search);
     return rows
       .filter((row) =>
-        searchableFields.some(
-          (field) =>
-            typeof row[field] === 'string' &&
-            normalizePiiSearch(row[field]).includes(needle),
-        ),
+        searchableFields.some((field) => {
+          if (typeof row[field] !== 'string') return false;
+          const normalize = (value: string) => {
+            const normalized = normalizePiiSearch(value);
+            return field === 'rut'
+              ? normalized.replace(/[.\s-]/g, '')
+              : normalized;
+          };
+          return normalize(row[field]).includes(normalize(search));
+        }),
       )
       .map((row) => String(row.id));
   }

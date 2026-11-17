@@ -244,21 +244,52 @@ export class AssistantshipsService {
       teacherName: assignment.teacher.name,
     }));
   }
-  async student(email: string) {
-    const student = await this.prisma.student.findUnique({
-      where: { email: email.trim().toLowerCase() },
-      include: { careerCurriculumVersion: { include: { career: true } } },
+  async students(search: string) {
+    const term = search.trim();
+    if (term.length < 2) return [];
+    const ids = await this.prisma.findPiiIds('Student', term, [
+      'name',
+      'givenNames',
+      'paternalSurname',
+      'maternalSurname',
+      'email',
+      'personalEmail',
+      'rut',
+    ]);
+    if (!ids.length) return [];
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: ids } },
+      include: {
+        career: { select: { id: true, name: true } },
+        careerCurriculumVersion: {
+          include: { career: { select: { id: true, name: true } } },
+        },
+      },
     });
-    return student
-      ? {
-          id: student.id,
-          name: student.name,
-          email: student.email,
-          careerCurriculumVersionId: student.careerCurriculumVersionId,
-          careerId: student.careerCurriculumVersion?.careerId ?? null,
-          careerName: student.careerCurriculumVersion?.career.name ?? null,
-        }
-      : null;
+    const fullName = (student: (typeof students)[number]) =>
+      [student.givenNames, student.paternalSurname, student.maternalSurname]
+        .filter(Boolean)
+        .join(' ') || student.name;
+    return students
+      .sort((left, right) =>
+        fullName(left).localeCompare(fullName(right), 'es', {
+          sensitivity: 'base',
+        }),
+      )
+      .slice(0, 20)
+      .map((student) => ({
+        id: student.id,
+        name: fullName(student),
+        email: student.email,
+        rut: student.rut,
+        careerCurriculumVersionId: student.careerCurriculumVersionId,
+        careerId:
+          student.careerId ?? student.careerCurriculumVersion?.careerId ?? null,
+        careerName:
+          student.career?.name ??
+          student.careerCurriculumVersion?.career.name ??
+          null,
+      }));
   }
   async careerCourses(careerId: string) {
     return this.prisma.course.findMany({
@@ -325,7 +356,7 @@ export class AssistantshipsService {
         'INACTIVE_PROFILE',
         'El profesor debe estar activo y tener un NRC',
       );
-    if (!historical && !input.assistantshipNrc?.trim())
+    if (!input.assistantshipNrc.trim())
       invalid('INVALID_INPUT', 'Indica el NRC de la ayudantía');
     if (
       startsOn < new Date(isoDate(semester!.startsOn)) ||
@@ -357,43 +388,12 @@ export class AssistantshipsService {
     transaction: Prisma.TransactionClient,
     input: RegisterAssistantshipInput,
   ) {
-    const email = input.assistantEmail.trim().toLowerCase();
-    let student = await transaction.student.findUnique({ where: { email } });
-    if (input.studentId && student?.id !== input.studentId)
-      invalid(
-        'ASSISTANT_IDENTITY',
-        'El estudiante o su correo cambió. Busca nuevamente',
-      );
-    if (!student?.careerCurriculumVersionId) {
-      if (!input.careerCurriculumVersionId)
-        invalid('CAREER_REQUIRED', 'Indica la carrera y malla del estudiante');
-      const curriculum = await transaction.curriculumVersion.findUnique({
-        where: { id: input.careerCurriculumVersionId },
-        include: { career: true },
-      });
-      if (!curriculum?.career.isActive)
-        invalid('CAREER_REQUIRED', 'Selecciona una carrera activa');
-      student = student
-        ? await transaction.student.update({
-            where: { id: student.id },
-            data: { careerCurriculumVersionId: curriculum!.id },
-          })
-        : await transaction.student.create({
-            data: {
-              name: input.assistantName.trim(),
-              email,
-              careerCurriculumVersionId: curriculum!.id,
-            },
-          });
-    } else if (
-      input.careerCurriculumVersionId &&
-      input.careerCurriculumVersionId !== student.careerCurriculumVersionId
-    ) {
-      invalid(
-        'ASSISTANT_IDENTITY',
-        'La carrera del estudiante cambió. Busca nuevamente',
-      );
-    }
+    const student = await transaction.student.findUnique({
+      where: { id: input.studentId },
+    });
+    if (!student)
+      invalid('STUDENT_REQUIRED', 'Selecciona un estudiante registrado');
+    const email = student!.email.trim().toLowerCase();
     const studentCode = input.studentCode?.trim() || null;
     const existing = await transaction.teachingAssistant.findFirst({
       where: { OR: [{ studentId: student!.id }, { email }] },
@@ -408,7 +408,7 @@ export class AssistantshipsService {
     const assistant = existing
       ? await transaction.teachingAssistant.update({
           where: { id: existing.id },
-          data: { studentId: student!.id },
+          data: { studentId: student!.id, name: student!.name, email },
         })
       : await transaction.teachingAssistant.create({
           data: {
@@ -436,6 +436,14 @@ export class AssistantshipsService {
     const approvedOn = date(input.approvedOn),
       startsOn = date(input.startsOn),
       endsOn = date(input.endsOn);
+    if (!input.studentId)
+      invalid('STUDENT_REQUIRED', 'Selecciona un estudiante registrado');
+    if (
+      !Number.isFinite(input.weeklyHours) ||
+      input.weeklyHours <= 0 ||
+      input.weeklyHours > 168
+    )
+      invalid('INVALID_INPUT', 'Indica las horas semanales (0,01 a 168)');
     if (!input.approvalConfirmed)
       invalid(
         'APPROVAL_REQUIRED',
@@ -451,6 +459,8 @@ export class AssistantshipsService {
     if ((input.schedules?.length ?? 0) > 14)
       invalid('INVALID_SCHEDULE', 'Máximo 14 horarios');
     const schedules = input.schedules ?? [];
+    if (!schedules.length)
+      invalid('INVALID_SCHEDULE', 'Agrega al menos un horario');
     for (const [index, schedule] of schedules.entries()) {
       if (schedule.endsAtMinute <= schedule.startsAtMinute)
         invalid(
@@ -538,7 +548,7 @@ export class AssistantshipsService {
               'El ayudante tiene otra ayudantía con horario incompatible',
             );
           const data = {
-            nrc: input.assistantshipNrc?.trim() || null,
+            nrc: input.assistantshipNrc.trim(),
             teachingAssignmentId: assignment?.id ?? null,
             semesterId: semester!.id,
             careerId: historical ? input.careerId : null,

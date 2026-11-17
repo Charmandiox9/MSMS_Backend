@@ -47,7 +47,7 @@ describe('AssistantshipsGuard', () => {
         .permission.code.in,
     ).toEqual(['TEACHING_ASSISTANTS_MANAGE']);
   });
-  it.each(['assistantshipStudent', 'assistantshipCareerCourses'])(
+  it.each(['assistantshipStudents', 'assistantshipCareerCourses'])(
     'requires management permission for registration lookup %s',
     async (handler) => {
       findFirst.mockResolvedValue({ id: 'user' });

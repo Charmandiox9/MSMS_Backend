@@ -11,6 +11,7 @@ import { AssistantshipsResolver } from './assistantships.resolver';
 import { AssistantshipsService } from './assistantships.service';
 import {
   AssistantshipFilters,
+  AssistantshipStudentsArgs,
   RegisterAssistantshipInput,
 } from './assistantships.dto';
 
@@ -19,7 +20,7 @@ describe('AssistantshipsResolver contract', () => {
     list: jest.fn(),
     get: jest.fn(),
     options: jest.fn(),
-    student: jest.fn(),
+    students: jest.fn(),
     careerCourses: jest.fn(),
     assignments: jest.fn(),
     register: jest.fn(),
@@ -61,17 +62,16 @@ describe('AssistantshipsResolver contract', () => {
     expect(service.update).toHaveBeenCalledWith('assistantship', input);
     expect(service.assignments).toHaveBeenCalledWith('semester');
   });
-  it('delegates protected student and career course lookups', () => {
-    void resolver.assistantshipStudent({ email: 'student@example.test' });
+  it('delegates protected student search and career course lookups', () => {
+    void resolver.assistantshipStudents({ search: 'ana' });
     void resolver.assistantshipCareerCourses({ careerId: 'career' });
-    expect(service.student).toHaveBeenCalledWith('student@example.test');
+    expect(service.students).toHaveBeenCalledWith('ana');
     expect(service.careerCourses).toHaveBeenCalledWith('career');
   });
   it('validates IDs, email, confirmation, dates, hours and nested schedules', () => {
     const input = plainToInstance(RegisterAssistantshipInput, {
       teachingAssignmentId: 'bad',
-      assistantName: ' ',
-      assistantEmail: 'bad',
+      assistantshipNrc: ' ',
       approvedOn: 'bad',
       startsOn: 'bad',
       endsOn: 'bad',
@@ -83,8 +83,8 @@ describe('AssistantshipsResolver contract', () => {
     expect(fields).toEqual(
       expect.arrayContaining([
         'teachingAssignmentId',
-        'assistantName',
-        'assistantEmail',
+        'assistantshipNrc',
+        'studentId',
         'approvedOn',
         'startsOn',
         'endsOn',
@@ -92,6 +92,13 @@ describe('AssistantshipsResolver contract', () => {
         'weeklyHours',
         'schedules',
       ]),
+    );
+  });
+  it('requires at least two characters for protected student search', () => {
+    const input = plainToInstance(AssistantshipStudentsArgs, { search: ' a ' });
+    expect(input.search).toBe('a');
+    expect(validateSync(input).map((error) => error.property)).toContain(
+      'search',
     );
   });
   it('rejects excessive page sizes and invalid states', () => {
@@ -121,6 +128,7 @@ describe('Assistantships GraphQL schema', () => {
         'assistantship',
         'assistantshipOptions',
         'assistantshipAssignments',
+        'assistantshipStudents',
       ]),
     );
     expect(

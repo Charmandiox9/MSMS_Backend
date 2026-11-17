@@ -1,4 +1,5 @@
 import {
+  ArgsType,
   Field,
   Float,
   ID,
@@ -12,8 +13,8 @@ import {
   IsBoolean,
   IsArray,
   ArrayMaxSize,
+  ArrayMinSize,
   IsDateString,
-  IsEmail,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -23,6 +24,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  MinLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -73,11 +75,14 @@ export class AssistantshipScheduleInput {
 
 @InputType()
 export class RegisterAssistantshipInput {
-  @Field(() => String, { nullable: true })
-  @IsOptional()
+  @Field()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
+  @IsNotEmpty()
   @MaxLength(50)
-  assistantshipNrc?: string;
+  assistantshipNrc!: string;
   @Field(() => ID, { nullable: true })
   @IsOptional()
   @IsUUID()
@@ -91,34 +96,14 @@ export class RegisterAssistantshipInput {
   @IsOptional()
   @IsUUID()
   careerId?: string;
-  @Field(() => ID, { nullable: true })
-  @IsOptional()
+  @Field(() => ID)
   @IsUUID()
-  careerCurriculumVersionId?: string;
-  @Field(() => ID, { nullable: true })
-  @IsOptional()
-  @IsUUID()
-  studentId?: string;
+  studentId!: string;
   @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   courseNrc?: string;
-  @Field()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  assistantName!: string;
-  @Field()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
-  @IsEmail()
-  @MaxLength(254)
-  assistantEmail!: string;
   @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
@@ -128,19 +113,18 @@ export class RegisterAssistantshipInput {
   @Field() @IsDateString({ strict: true }) startsOn!: string;
   @Field() @IsDateString({ strict: true }) endsOn!: string;
   @Field() @IsBoolean() approvalConfirmed!: boolean;
-  @Field(() => Float, { nullable: true })
-  @IsOptional()
+  @Field(() => Float)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   @Max(168)
-  weeklyHours?: number;
-  @Field(() => [AssistantshipScheduleInput], { nullable: true })
-  @IsOptional()
+  weeklyHours!: number;
+  @Field(() => [AssistantshipScheduleInput])
   @IsArray()
+  @ArrayMinSize(1)
   @ArrayMaxSize(14)
   @ValidateNested({ each: true })
   @Type(() => AssistantshipScheduleInput)
-  schedules?: AssistantshipScheduleInput[];
+  schedules!: AssistantshipScheduleInput[];
 }
 
 @ObjectType()
@@ -244,10 +228,23 @@ export class AssistantshipStudentOption {
   @Field(() => ID) id!: string;
   @Field() name!: string;
   @Field() email!: string;
+  @Field(() => String, { nullable: true }) rut!: string | null;
   @Field(() => ID, { nullable: true }) careerCurriculumVersionId!:
     string | null;
   @Field(() => ID, { nullable: true }) careerId!: string | null;
   @Field(() => String, { nullable: true }) careerName!: string | null;
+}
+
+@ArgsType()
+export class AssistantshipStudentsArgs {
+  @Field(() => String)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  search!: string;
 }
 
 @ObjectType()

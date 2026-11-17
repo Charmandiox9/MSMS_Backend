@@ -65,6 +65,16 @@ describe('PrismaService', () => {
       service.findPiiIds('Student', '2026', ['createdAt']),
     ).rejects.toThrow('Los campos no permiten búsqueda PII');
   });
+  it('busca RUT con o sin puntuación', async () => {
+    jest
+      .spyOn(service.student, 'findMany')
+      .mockResolvedValue([
+        { id: 'a', rut: '12.345.678-9' },
+      ] as unknown as Awaited<ReturnType<typeof service.student.findMany>>);
+    expect(await service.findPiiIds('Student', '12345678-9', ['rut'])).toEqual([
+      'a',
+    ]);
+  });
   it('bloquea el inicio si existen datos personales pendientes de conversión', async () => {
     jest.spyOn(service, '$connect').mockResolvedValue();
     jest.spyOn(service.user, 'count').mockResolvedValue(1);
