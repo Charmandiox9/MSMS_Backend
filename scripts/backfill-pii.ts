@@ -5,10 +5,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PiiCryptoService } from '../src/privacy/pii-crypto.service';
 import { PiiStorageCodec } from '../src/privacy/pii-storage-codec';
-import {
-  normalizePiiLookup,
-  piiPolicies,
-} from '../src/privacy/pii-policy';
+import { normalizePiiLookup, piiPolicies } from '../src/privacy/pii-policy';
 
 const apply = process.argv.includes('--apply');
 const diagnose = process.argv.includes('--diagnose');
@@ -165,11 +162,23 @@ async function main() {
             const plain = Object.fromEntries(
               policy.fields.map((field) => {
                 const value = row[field];
+                // Student.admission was originally introduced as INTEGER.
+                // After the migration PostgreSQL returns TEXT, but keeping
+                // this conversion makes the backfill safe with legacy rows and
+                // Prisma clients that still expose the pre-migration number.
+                const normalized =
+                  model === 'Student' &&
+                  field === 'admission' &&
+                  typeof value === 'number' &&
+                  Number.isSafeInteger(value)
+                    ? String(value)
+                    : value;
                 return [
                   field,
-                  typeof value === 'string' && crypto.isEncrypted(value)
-                    ? crypto.decrypt(value, `${model}.${field}`)
-                    : value,
+                  typeof normalized === 'string' &&
+                  crypto.isEncrypted(normalized)
+                    ? crypto.decrypt(normalized, `${model}.${field}`)
+                    : normalized,
                 ];
               }),
             );
