@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ValidationPipe } from '@nestjs/common';
 import {
   GraphQLSchemaBuilderModule,
   GraphQLSchemaFactory,
@@ -56,11 +57,23 @@ describe('AssistantshipsResolver contract', () => {
   it('delegates registration and assignment queries to the service', () => {
     const input = new RegisterAssistantshipInput();
     void resolver.registerAssistantship(input);
-    void resolver.updateAssistantship({ id: 'assistantship' }, input);
+    void resolver.updateAssistantship('assistantship', input);
     void resolver.assistantshipAssignments({ semesterId: 'semester' });
     expect(service.register).toHaveBeenCalledWith(input);
     expect(service.update).toHaveBeenCalledWith('assistantship', input);
     expect(service.assignments).toHaveBeenCalledWith('semester');
+  });
+  it('validates the update ID separately without rejecting the sibling input argument', async () => {
+    const types: unknown[] = Reflect.getMetadata(
+      'design:paramtypes', AssistantshipsResolver.prototype, 'updateAssistantship',
+    );
+    expect(types[0]).toBe(String);
+    const pipe = new ValidationPipe({
+      whitelist: true, forbidNonWhitelisted: true, transform: true,
+    });
+    await expect(pipe.transform('11111111-1111-4111-8111-111111111111', {
+      type: 'body', metatype: String, data: 'id',
+    })).resolves.toBe('11111111-1111-4111-8111-111111111111');
   });
   it('delegates protected student search and career course lookups', () => {
     void resolver.assistantshipStudents({ search: 'ana' });

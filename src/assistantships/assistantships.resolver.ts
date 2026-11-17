@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { IsUUID } from 'class-validator';
 import { ArgsType, Field } from '@nestjs/graphql';
@@ -99,9 +99,9 @@ export class AssistantshipsResolver {
 
   @Mutation(() => AssistantshipView)
   updateAssistantship(
-    @Args() args: AssistantshipIdArgs,
+    @Args('id', { type: () => ID }, new ParseUUIDPipe()) id: string,
     @Args('input') input: RegisterAssistantshipInput,
   ) {
-    return this.service.update(args.id, input);
+    return this.service.update(id, input);
   }
 }
