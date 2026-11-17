@@ -83,13 +83,36 @@ export class StudentsService {
     }));
   }
 
-  async list({ page, pageSize, search, nrc }: ListStudentsDto) {
+  async list({
+    page,
+    pageSize,
+    search,
+    nrc,
+    careerId,
+    cohortYear,
+    sortBy,
+    sortOrder = 'asc',
+  }: ListStudentsDto) {
+    const piiFilters: string[][] = [];
+    if (search)
+      piiFilters.push(await this.prisma.findPiiIds('Student', search));
+    if (cohortYear)
+      piiFilters.push(
+        await this.prisma.findPiiIds('Student', String(cohortYear), [
+          'admission',
+        ]),
+      );
+    const matchingIds = piiFilters.length
+      ? piiFilters
+          .slice(1)
+          .reduce(
+            (current, ids) => current.filter((id) => ids.includes(id)),
+            piiFilters[0],
+          )
+      : null;
     const where: Prisma.StudentWhereInput = {
-      ...(search
-        ? {
-            id: { in: await this.prisma.findPiiIds('Student', search) },
-          }
-        : {}),
+      ...(matchingIds ? { id: { in: matchingIds } } : {}),
+      ...(careerId ? { careerId } : {}),
       ...(nrc
         ? { enrollments: { some: { nrc, semester: { isActive: true } } } }
         : {}),
@@ -98,9 +121,10 @@ export class StudentsService {
       [
         this.prisma.student.findMany({
           where,
-          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-          skip: (page - 1) * pageSize,
-          take: pageSize,
+          orderBy: sortBy
+            ? { id: 'asc' }
+            : [{ createdAt: 'desc' }, { id: 'asc' }],
+          ...(!sortBy ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
           include: {
             enrollments: currentEnrollments,
             careerCurriculumVersion: studentCareer,
@@ -111,8 +135,30 @@ export class StudentsService {
       ],
       { maxWait: 10_000, timeout: 30_000 },
     );
+    const orderedItems = sortBy
+      ? items.sort((left, right) => {
+          const leftValue =
+            sortBy === 'name'
+              ? (left.givenNames ?? left.name)
+              : `${left.paternalSurname ?? ''} ${left.maternalSurname ?? ''} ${left.givenNames ?? left.name}`;
+          const rightValue =
+            sortBy === 'name'
+              ? (right.givenNames ?? right.name)
+              : `${right.paternalSurname ?? ''} ${right.maternalSurname ?? ''} ${right.givenNames ?? right.name}`;
+          const comparison = leftValue.localeCompare(rightValue, 'es', {
+            sensitivity: 'base',
+          });
+          return (
+            (sortOrder === 'desc' ? -comparison : comparison) ||
+            left.id.localeCompare(right.id)
+          );
+        })
+      : items;
+    const pageItems = sortBy
+      ? orderedItems.slice((page - 1) * pageSize, page * pageSize)
+      : orderedItems;
     return {
-      items: await this.withAssistantships(items),
+      items: await this.withAssistantships(pageItems),
       total,
       page,
       pageSize,
@@ -285,7 +331,7 @@ export class StudentsService {
         input.careerId ?? data.careerId ?? existingStudent?.careerId;
       if (effectiveCareerId && input.admission) {
         data.careerId = effectiveCareerId;
-        const cohortYear = Math.floor(input.admission / 100);
+        const cohortYear = Number(input.admission.slice(0, 4));
         const curriculum = await tx.curriculumVersion.findUnique({
           where: {
             careerId_cohortYear: { careerId: effectiveCareerId, cohortYear },
@@ -566,7 +612,7 @@ export class StudentsService {
                 where: {
                   careerId_cohortYear: {
                     careerId: career.id,
-                    cohortYear: Math.floor(row.admission / 100),
+                    cohortYear: Number(row.admission.slice(0, 4)),
                   },
                 },
                 select: { id: true },

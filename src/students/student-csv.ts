@@ -9,7 +9,7 @@ export interface StudentCsvRow {
   nrcs: string[];
   personalEmail?: string;
   rut?: string;
-  admission?: number;
+  admission?: string;
   paternalSurname?: string;
   maternalSurname?: string;
   birthDate?: string;
@@ -104,7 +104,7 @@ export function parseStudentCsv(csv: string): StudentCsvRow[] {
     const personalEmail = field(values, 'emailpersonal').toLowerCase();
     if (personalEmail && !isEmail(personalEmail))
       throw new BadRequestException(`Fila ${line}: correo personal inválido`);
-    let admission: number | undefined;
+    let admission: string | undefined;
     if (generic) {
       const rawAdmission = field(values, 'admision');
       if (
@@ -114,7 +114,7 @@ export function parseStudentCsv(csv: string): StudentCsvRow[] {
         throw new BadRequestException(
           `Fila ${line}: admisión debe tener seis dígitos y terminar en 10 o 20`,
         );
-      admission = Number(rawAdmission);
+      admission = rawAdmission;
     }
     const rawDate = field(values, 'fechanacimiento');
     let birthDate: string | undefined;

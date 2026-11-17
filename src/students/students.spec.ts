@@ -214,6 +214,54 @@ describe('Módulo de estudiantes', () => {
       expect.objectContaining({ where: {} }),
     );
   });
+  it('filtra por carrera y cohorte y ordena apellidos antes de paginar', async () => {
+    prisma.findPiiIds.mockImplementation(
+      (_model: string, value: string, fields?: string[]) =>
+        Promise.resolve(
+          fields?.includes('admission') || value === '2026'
+            ? ['student-a', 'student-b']
+            : ['student-a', 'student-c'],
+        ),
+    );
+    prisma.student.findMany.mockResolvedValue([
+      {
+        id: 'student-a',
+        email: 'a@example.test',
+        name: 'Ana Soto',
+        givenNames: 'Ana',
+        paternalSurname: 'Soto',
+        maternalSurname: 'Zed',
+      },
+      {
+        id: 'student-b',
+        email: 'b@example.test',
+        name: 'Eva Paz',
+        givenNames: 'Eva',
+        paternalSurname: 'Paz',
+        maternalSurname: 'Alba',
+      },
+    ]);
+    prisma.student.count.mockResolvedValue(2);
+    const result = await service.list({
+      page: 1,
+      pageSize: 1,
+      search: '2026',
+      careerId: studentId,
+      cohortYear: 2026,
+      sortBy: 'surname',
+      sortOrder: 'desc',
+    });
+    expect(prisma.student.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['student-a', 'student-b'] },
+          careerId: studentId,
+        }),
+      }),
+    );
+    expect(result.items.map(({ id }) => id)).toEqual(['student-a']);
+    expect(result.total).toBe(2);
+  });
   it('valida todos los NRC del CSV antes de crear estudiantes: una fila errónea rechaza todo', async () => {
     await expect(
       service.importCsv({
@@ -304,7 +352,7 @@ describe('Módulo de estudiantes', () => {
             name: 'Ana María Soto Paz',
             givenNames: 'Ana María',
             careerId,
-            admission: 202610,
+            admission: '202610',
             birthDate: '2000-01-02',
           }),
         ],

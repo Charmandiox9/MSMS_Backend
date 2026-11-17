@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -14,6 +15,7 @@ import {
   Max,
   MaxLength,
   Min,
+  Matches,
   IsDateString,
   ValidateIf,
 } from 'class-validator';
@@ -55,10 +57,10 @@ export class StudentInputDto {
   personalEmail?: string | null;
 
   @IsOptional()
-  @IsInt()
-  @Min(190010)
-  @Max(220020)
-  admission?: number | null;
+  @Transform(trim)
+  @IsString()
+  @Matches(/^\d{4}(10|20)$/)
+  admission?: string | null;
 
   @IsOptional()
   @Transform(trim)
@@ -145,6 +147,25 @@ export class ListStudentsDto {
   @IsNotEmpty()
   @MaxLength(50)
   nrc?: string;
+
+  @IsOptional()
+  @IsUUID()
+  careerId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(2200)
+  cohortYear?: number;
+
+  @IsOptional()
+  @IsIn(['name', 'surname'])
+  sortBy?: 'name' | 'surname';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }
 
 export class ImportStudentsDto {

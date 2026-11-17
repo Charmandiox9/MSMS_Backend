@@ -78,7 +78,7 @@ describe('CSV de estudiantes', () => {
       email: 'nicole@example.test',
       careerCode: '8506',
       careerName: 'Ing. Prev. Riesgo y M.Ambiente',
-      admission: 202510,
+      admission: '202510',
       rut: '195556210',
       paternalSurname: 'ESCOBAR',
       maternalSurname: 'ORMEÑO',

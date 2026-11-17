@@ -50,11 +50,28 @@ describe('PrismaService', () => {
     expect(await service.findPiiIds('Teacher', 'alvaro')).toEqual(['a']);
     expect(await service.findPiiIds('Teacher', '50%_')).toEqual(['b']);
   });
+  it('permite limitar una búsqueda personal a un campo cifrado específico', async () => {
+    const findMany = jest.spyOn(service.student, 'findMany').mockResolvedValue([
+      { id: 'a', admission: '202610' },
+      { id: 'b', admission: '202510' },
+    ] as unknown as Awaited<ReturnType<typeof service.student.findMany>>);
+    expect(await service.findPiiIds('Student', '2026', ['admission'])).toEqual([
+      'a',
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      select: { id: true, admission: true },
+    });
+    await expect(
+      service.findPiiIds('Student', '2026', ['createdAt']),
+    ).rejects.toThrow('Los campos no permiten búsqueda PII');
+  });
   it('bloquea el inicio si existen datos personales pendientes de conversión', async () => {
     jest.spyOn(service, '$connect').mockResolvedValue();
     jest.spyOn(service.user, 'count').mockResolvedValue(1);
     const teacherCount = jest.spyOn(service.teacher, 'count');
-    await expect(service.onModuleInit()).rejects.toThrow('conversión PII de User');
+    await expect(service.onModuleInit()).rejects.toThrow(
+      'conversión PII de User',
+    );
     expect(teacherCount).not.toHaveBeenCalled();
   });
 });

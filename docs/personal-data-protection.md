@@ -114,6 +114,12 @@ las anteriores. `scripts/backfill-pii.ts --apply --rotate` recifra todos los reg
 una ventana de mantenimiento. Conservar las claves hasta convertir registros,
 cachés y respaldos. No cambiar la clave HMAC sin reindexar todo el conjunto.
 
+La ampliación del padrón de estudiantes también cifra `admission`. Si esta
+migración se aplica en una instalación que ya importó estudiantes con una
+versión anterior, ejecutar `scripts/backfill-pii.ts --apply --rotate` en una
+ventana de mantenimiento para convertir los valores preexistentes de esa
+columna antes de volver a iniciar la aplicación.
+
 ## Registro de aplicación en Neon — 14 de octubre de 2026
 
 Las migraciones `20261014000000_academic_repository_and_hourly_teaching` y

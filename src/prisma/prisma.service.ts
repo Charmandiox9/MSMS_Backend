@@ -59,20 +59,30 @@ export class PrismaService
   }
 
   /** Exact substring verification after decryption; no plaintext search/sort keys are stored. */
-  async findPiiIds(model: string, search: string): Promise<string[]> {
+  async findPiiIds(
+    model: string,
+    search: string,
+    fields?: readonly string[],
+  ): Promise<string[]> {
     const policy = piiPolicies[model];
     if (!policy?.searchable.length)
       throw new Error('El modelo no permite búsqueda PII');
+    const searchableFields = fields ?? policy.searchable;
+    if (
+      !searchableFields.length ||
+      searchableFields.some((field) => !policy.searchable.includes(field))
+    )
+      throw new Error('Los campos no permiten búsqueda PII');
     const rows = await this.delegate(model).findMany({
       select: {
         id: true,
-        ...Object.fromEntries(policy.searchable.map((field) => [field, true])),
+        ...Object.fromEntries(searchableFields.map((field) => [field, true])),
       },
     });
     const needle = normalizePiiSearch(search);
     return rows
       .filter((row) =>
-        policy.searchable.some(
+        searchableFields.some(
           (field) =>
             typeof row[field] === 'string' &&
             normalizePiiSearch(row[field]).includes(needle),

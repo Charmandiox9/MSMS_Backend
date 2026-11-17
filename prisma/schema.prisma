@@ -238,7 +238,7 @@ model Student {
   rut                       String?
   rutHash                   String?                @unique
   personalEmail             String?
-  admission                 Int?
+  admission                 String?
   paternalSurname           String?
   maternalSurname           String?
   birthDate                 String?
