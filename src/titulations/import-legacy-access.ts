@@ -141,7 +141,14 @@ async function main(): Promise<void> {
       strict: false,
     });
     const writeSummary = await importer.importRecords(parsed.records);
-    console.info(JSON.stringify({ mode: 'applied', ...writeSummary }, null, 2));
+    const linkSummary = await importer.linkExistingStudents();
+    console.info(
+      JSON.stringify(
+        { mode: 'applied', ...writeSummary, ...linkSummary },
+        null,
+        2,
+      ),
+    );
   } catch {
     console.error(
       'Importación cancelada. Revisa la ruta del archivo, el catálogo de carreras, la migración y la configuración del destino.',

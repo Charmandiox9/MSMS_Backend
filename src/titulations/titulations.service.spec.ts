@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { testPiiCrypto } from '../privacy/pii-test-config';
 import { PiiStorageCodec } from '../privacy/pii-storage-codec';
 import { TitulationsService } from './titulations.service';
+import { StudentIdentityService } from '../students/student-identity.service';
 import type {
   CreateTitulationDto,
   ListTitulationsDto,
@@ -10,6 +11,13 @@ import type {
 
 const record = {
   id: 'titulation-1',
+  studentId: 'student-1',
+  student: {
+    id: 'student-1',
+    name: 'Nombre Ficticio',
+    email: null,
+    rut: '11111111-1',
+  },
   studentName: 'María Pérez',
   studentRut: '12345678-5',
   studentEmail: 'maria@example.cl',
@@ -43,8 +51,14 @@ function createService() {
   const prisma = {
     findPiiIds: jest.fn().mockResolvedValue(['titulation-1']),
     $queryRaw: jest.fn().mockResolvedValue([{ year: 2026, semester: 2 }]),
-    $transaction: jest.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    $transaction: jest.fn(
+      async (
+        operations:
+          Promise<unknown>[] | ((client: unknown) => Promise<unknown>),
+      ) =>
+        typeof operations === 'function'
+          ? operations(prisma)
+          : Promise.all(operations),
     ),
     titulationProcess: {
       groupBy: jest.fn().mockResolvedValue([{ careerName: record.careerName }]),
@@ -75,7 +89,12 @@ function createService() {
     },
   };
   return {
-    service: new TitulationsService(prisma as unknown as PrismaService),
+    service: new TitulationsService(
+      prisma as unknown as PrismaService,
+      {
+        resolve: jest.fn().mockResolvedValue('student-1'),
+      } as unknown as StudentIdentityService,
+    ),
     prisma,
   };
 }
@@ -261,7 +280,11 @@ describe('TitulationsService', () => {
     expect(prisma.titulationProcess.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'titulation-1' },
-        data: { stage: 'REVIEW', updatedById: 'user-2' },
+        data: {
+          stage: 'REVIEW',
+          updatedById: 'user-2',
+          studentId: 'student-1',
+        },
       }),
     );
   });

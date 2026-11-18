@@ -112,7 +112,7 @@ type AssistantshipCareerOption {
 type AssistantshipStudentOption {
   id: ID!
   name: String!
-  email: String!
+  email: String
   rut: String
   careerCurriculumVersionId: ID
   careerId: ID

@@ -35,12 +35,13 @@ export class StudentInputDto {
   @MaxLength(200)
   name!: string;
 
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string' ? value.trim().toLowerCase() || null : value,
   )
   @IsEmail()
   @MaxLength(254)
-  email!: string;
+  email?: string | null;
 
   @IsOptional()
   @Transform(trim)

@@ -314,7 +314,7 @@ model Student {
 
   id                        String                 @id @default(uuid())
   name                      String
-  email                     String                 @unique
+  email                     String?                @unique
   givenNames                String?
   rut                       String?
   rutHash                   String?                @unique
@@ -333,6 +333,7 @@ model Student {
   justifications            Justification[]
   outputAuthorships         ResearchOutputAuthor[]
   teachingAssistant         TeachingAssistant?
+  titulationProcesses       TitulationProcess[]
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
 
@@ -394,6 +395,8 @@ model Career {
 
 model TitulationProcess {
   id                   String                   @id @default(uuid())
+  studentId            String?
+  student              Student?                 @relation(fields: [studentId], references: [id], onDelete: Restrict)
   piiVersion           Int                      @default(0)
   studentName          String
   studentRut           String?
@@ -430,6 +433,7 @@ model TitulationProcess {
   @@index([careerId, stage])
   @@index([studentRutHash])
   @@index([studentEmailHash])
+  @@index([studentId])
   @@index([createdAt])
 }
 

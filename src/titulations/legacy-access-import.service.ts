@@ -4,18 +4,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, type TitulationProcess } from '@prisma/client';
-import { PiiCryptoService } from '../privacy/pii-crypto.service';
-import { normalizePiiLookup } from '../privacy/pii-policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
 import type { LegacyAccessTitulationRecord } from './legacy-access-import.util';
+import { StudentIdentityService } from '../students/student-identity.service';
 
 const LEGACY_CAREER_NAME = 'Biología Marina';
 
 type ExistingProcess = Pick<
   TitulationProcess,
   | 'id'
-  | 'studentRutHash'
+  | 'studentId'
+  | 'studentRut'
   | 'studentName'
   | 'studentEmail'
   | 'studentPhone'
@@ -41,7 +41,7 @@ export interface LegacyImportWriteSummary {
 export class LegacyAccessImportService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly crypto: PiiCryptoService,
+    private readonly identities: StudentIdentityService,
   ) {}
 
   async importRecords(
@@ -67,16 +67,6 @@ export class LegacyAccessImportService {
     if (new Set(normalizedRuts).size !== normalizedRuts.length)
       throw new BadRequestException('La importación contiene RUT duplicados');
 
-    const rutHashes = normalizedRuts.map((rut) =>
-      this.crypto.blindIndex(
-        normalizePiiLookup('studentRut', rut),
-        'TitulationProcess.studentRut',
-      ),
-    );
-    const rutHashByRut = new Map(
-      normalizedRuts.map((rut, index) => [rut, rutHashes[index]]),
-    );
-
     return this.prisma.$transaction(
       async (transaction) => {
         const career = await transaction.career.findFirst({
@@ -89,10 +79,11 @@ export class LegacyAccessImportService {
           );
 
         const existing = await transaction.titulationProcess.findMany({
-          where: { studentRutHash: { in: rutHashes } },
+          where: { studentRut: { in: normalizedRuts } },
           select: {
             id: true,
-            studentRutHash: true,
+            studentId: true,
+            studentRut: true,
             studentName: true,
             studentEmail: true,
             studentPhone: true,
@@ -108,14 +99,15 @@ export class LegacyAccessImportService {
             source: true,
           },
         });
-        const existingByHash = new Map<string, ExistingProcess>();
+        const existingByRut = new Map<string, ExistingProcess>();
         for (const process of existing) {
-          if (!process.studentRutHash) continue;
-          if (existingByHash.has(process.studentRutHash))
+          if (!process.studentRut) continue;
+          const rut = normalizeChileanRut(process.studentRut);
+          if (existingByRut.has(rut))
             throw new BadRequestException(
               'Hay expedientes duplicados para un mismo RUT; la importación se detuvo',
             );
-          existingByHash.set(process.studentRutHash, process);
+          existingByRut.set(rut, process);
         }
 
         const summary: LegacyImportWriteSummary = {
@@ -127,16 +119,22 @@ export class LegacyAccessImportService {
         for (let index = 0; index < records.length; index += 1) {
           const record = records[index];
           const rut = normalizedRuts[index];
-          const rutHash = rutHashByRut.get(rut);
-          if (!rutHash)
-            throw new BadRequestException(
-              'No fue posible establecer una clave de coincidencia segura',
-            );
-          const previous = existingByHash.get(rutHash);
+          const previous = existingByRut.get(rut);
+          const studentId = await this.identities.resolve(
+            transaction,
+            {
+              name: record.studentName,
+              rut,
+              email: record.studentEmail,
+              careerId: career.id,
+            },
+            previous?.studentId,
+          );
 
           if (!previous) {
             await transaction.titulationProcess.create({
               data: {
+                studentId,
                 studentName: record.studentName,
                 studentRut: rut,
                 studentEmail: record.studentEmail,
@@ -164,6 +162,7 @@ export class LegacyAccessImportService {
           }
 
           const update = this.missingFields(previous, record, career);
+          if (previous.studentId !== studentId) update.studentId = studentId;
           if (Object.keys(update).length === 0) {
             summary.unchanged += 1;
             continue;
@@ -177,6 +176,42 @@ export class LegacyAccessImportService {
         }
 
         return summary;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 10_000,
+        timeout: 60_000,
+      },
+    );
+  }
+
+  async linkExistingStudents(): Promise<{ linked: number }> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const processes = await transaction.titulationProcess.findMany({
+          where: { studentId: null },
+          select: {
+            id: true,
+            studentName: true,
+            studentRut: true,
+            studentEmail: true,
+            careerId: true,
+          },
+          orderBy: { id: 'asc' },
+        });
+        for (const process of processes) {
+          const studentId = await this.identities.resolve(transaction, {
+            name: process.studentName,
+            rut: process.studentRut,
+            email: process.studentEmail,
+            careerId: process.careerId,
+          });
+          await transaction.titulationProcess.update({
+            where: { id: process.id },
+            data: { studentId },
+          });
+        }
+        return { linked: processes.length };
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,

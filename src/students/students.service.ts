@@ -23,6 +23,17 @@ const currentEnrollments = {
 const studentCareer = {
   include: { career: { select: { id: true, code: true, name: true } } },
 } as const;
+const titulationHistory = {
+  select: {
+    id: true,
+    stage: true,
+    careerName: true,
+    degree: true,
+    defenseDate: true,
+    createdAt: true,
+  },
+  orderBy: { createdAt: 'desc' },
+} as const;
 
 const assistantshipHistory = {
   approvals: {
@@ -40,9 +51,9 @@ type Catalog = Awaited<ReturnType<typeof loadCurrentCourses>>;
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async withAssistantships<T extends { id: string; email: string }>(
-    students: T[],
-  ) {
+  private async withAssistantships<
+    T extends { id: string; email: string | null },
+  >(students: T[]) {
     if (!students.length) return [];
     // Exact protected email lookup also recovers records created before student links existed.
     const assistants = await this.prisma.teachingAssistant.findMany({
@@ -51,7 +62,9 @@ export class StudentsService {
           { studentId: { in: students.map(({ id }) => id) } },
           {
             studentId: null,
-            email: { in: students.map(({ email }) => email) },
+            email: {
+              in: students.flatMap(({ email }) => (email ? [email] : [])),
+            },
           },
         ],
       },
@@ -64,6 +77,7 @@ export class StudentsService {
           (assistant) =>
             assistant.studentId === student.id ||
             (!assistant.studentId &&
+              student.email &&
               assistant.email.trim().toLowerCase() ===
                 student.email.trim().toLowerCase()),
         )
@@ -129,6 +143,7 @@ export class StudentsService {
             enrollments: currentEnrollments,
             careerCurriculumVersion: studentCareer,
             career: { select: { id: true, code: true, name: true } },
+            titulationProcesses: titulationHistory,
           },
         }),
         this.prisma.student.count({ where }),
@@ -173,6 +188,7 @@ export class StudentsService {
         enrollments: currentEnrollments,
         careerCurriculumVersion: studentCareer,
         career: { select: { id: true, code: true, name: true } },
+        titulationProcesses: titulationHistory,
       },
     });
     if (!student) throw new NotFoundException('El estudiante no existe');
@@ -265,7 +281,9 @@ export class StudentsService {
         : null;
       const data = {
         name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
+        ...(input.email === undefined
+          ? {}
+          : { email: input.email?.trim().toLowerCase() || null }),
         ...(input.givenNames === undefined
           ? {}
           : { givenNames: input.givenNames?.trim() || null }),

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { normalizePiiSearch } from '../privacy/pii-policy';
 import { availableTitulationDrafts } from './titulation-drafts';
 import { createTitulationReference } from './titulation-reference.util';
 import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
+import { StudentIdentityService } from '../students/student-identity.service';
 import {
   CreateTitulationDto,
   ListTitulationsDto,
@@ -39,8 +41,13 @@ type TitulationInputFields = Partial<
 >;
 
 type TitulationWithCareer = Prisma.TitulationProcessGetPayload<{
-  include: { career: { select: { id: true; code: true; name: true } } };
+  include: typeof PROCESS_RELATIONS;
 }>;
+
+const PROCESS_RELATIONS = {
+  career: { select: { id: true, code: true, name: true } },
+  student: { select: { id: true, name: true, email: true, rut: true } },
+} satisfies Prisma.TitulationProcessInclude;
 
 interface TitulationPeriodRecord {
   year: number;
@@ -49,7 +56,10 @@ interface TitulationPeriodRecord {
 
 @Injectable()
 export class TitulationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly identities: StudentIdentityService,
+  ) {}
 
   async list({
     page,
@@ -187,7 +197,7 @@ export class TitulationsService {
   async get(id: string) {
     const process = await this.prisma.titulationProcess.findUnique({
       where: { id },
-      include: { career: { select: { id: true, code: true, name: true } } },
+      include: PROCESS_RELATIONS,
     });
     if (!process) throw new NotFoundException('El proceso no existe');
     return this.present(process);
@@ -208,9 +218,17 @@ export class TitulationsService {
       updatedById: actorId,
     };
 
-    const process = await this.prisma.titulationProcess.create({
-      data,
-      include: { career: { select: { id: true, code: true, name: true } } },
+    const process = await this.write(async (transaction) => {
+      data.studentId = await this.identities.resolve(transaction, {
+        name: input.studentName,
+        rut: input.studentRut,
+        email: input.studentEmail,
+        careerId: career.careerId,
+      });
+      return transaction.titulationProcess.create({
+        data,
+        include: PROCESS_RELATIONS,
+      });
     });
     return this.present(process);
   }
@@ -235,10 +253,28 @@ export class TitulationsService {
       updatedById: actorId,
     };
 
-    const process = await this.prisma.titulationProcess.update({
-      where: { id },
-      data,
-      include: { career: { select: { id: true, code: true, name: true } } },
+    const process = await this.write(async (transaction) => {
+      data.studentId = await this.identities.resolve(
+        transaction,
+        {
+          name: input.studentName ?? existing.studentName,
+          rut:
+            input.studentRut === undefined
+              ? existing.studentRut
+              : input.studentRut,
+          email:
+            input.studentEmail === undefined
+              ? existing.studentEmail
+              : input.studentEmail,
+          careerId: input.careerId ?? existing.careerId,
+        },
+        existing.studentId,
+      );
+      return transaction.titulationProcess.update({
+        where: { id },
+        data,
+        include: PROCESS_RELATIONS,
+      });
     });
     return this.present(process);
   }
@@ -246,6 +282,8 @@ export class TitulationsService {
   private present(process: TitulationWithCareer) {
     return {
       id: process.id,
+      studentId: process.studentId,
+      student: process.student,
       reference: createTitulationReference(process.id, process.createdAt),
       studentName: process.studentName,
       studentRut: process.studentRut,
@@ -315,6 +353,27 @@ export class TitulationsService {
   private assertRut(value: string | null | undefined) {
     if (value && !isValidChileanRut(value))
       throw new BadRequestException('El RUT ingresado no es válido');
+  }
+
+  private async write<T>(
+    operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 10_000,
+        timeout: 30_000,
+      });
+    } catch (cause: unknown) {
+      if (
+        cause instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P2002', 'P2034'].includes(cause.code)
+      )
+        throw new ConflictException(
+          'Los antecedentes del alumno cambiaron. Recarga y revisa el RUT y el correo antes de guardar',
+        );
+      throw cause;
+    }
   }
 
   private async resolveCareer(

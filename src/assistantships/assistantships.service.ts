@@ -518,7 +518,12 @@ export class AssistantshipsService {
     });
     if (!student)
       invalid('STUDENT_REQUIRED', 'Selecciona un estudiante registrado');
-    const email = student!.email.trim().toLowerCase();
+    const email = student?.email?.trim().toLowerCase();
+    if (!email)
+      return invalid(
+        'STUDENT_EMAIL_REQUIRED',
+        'Completa el correo del alumno en su ficha antes de registrar una ayudantía',
+      );
     const studentCode = input.studentCode?.trim() || null;
     const existing = await transaction.teachingAssistant.findFirst({
       where: { OR: [{ studentId: student!.id }, { email }] },
@@ -628,7 +633,7 @@ export class AssistantshipsService {
           if (!input.tariffId)
             invalid('TARIFF_REQUIRED', 'Selecciona una tarifa de ayudantía');
           const tariff = await transaction.assistantshipTariff.findFirst({
-            where: { id: input.tariffId, semesterId: semester!.id },
+            where: { id: input.tariffId, semesterId: semester.id },
           });
           if (!tariff)
             invalid(
@@ -645,7 +650,7 @@ export class AssistantshipsService {
               where: {
                 assistantId_courseId: {
                   assistantId: assistant.id,
-                  courseId: courseId!,
+                  courseId: courseId,
                 },
               },
             },
@@ -660,7 +665,7 @@ export class AssistantshipsService {
             await transaction.assistantCourseApproval.create({
               data: {
                 assistantId: assistant.id,
-                courseId: courseId!,
+                courseId: courseId,
                 approvedOn,
               },
             });
@@ -692,12 +697,12 @@ export class AssistantshipsService {
           const data = {
             nrc: input.assistantshipNrc.trim(),
             teachingAssignmentId: assignment?.id ?? null,
-            semesterId: semester!.id,
+            semesterId: semester.id,
             careerId: historical ? input.careerId : null,
             courseNrc: historical
               ? input.courseNrc?.trim() || null
               : assignment!.nrc,
-            courseId: courseId!,
+            courseId: courseId,
             assistantId: assistant.id,
             approvedOn,
             startsOn,

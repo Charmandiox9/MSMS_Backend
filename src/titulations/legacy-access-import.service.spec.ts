@@ -1,8 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { LegacyAccessImportService } from './legacy-access-import.service';
 import type { LegacyAccessTitulationRecord } from './legacy-access-import.util';
+import { StudentIdentityService } from '../students/student-identity.service';
 
 const career = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -43,18 +43,16 @@ function createService(
         operation(transaction),
     ),
   };
-  const crypto = {
-    blindIndex: jest.fn().mockReturnValue('rut-blind-index'),
-  };
 
   return {
     service: new LegacyAccessImportService(
       prisma as unknown as PrismaService,
-      crypto as unknown as PiiCryptoService,
+      {
+        resolve: jest.fn().mockResolvedValue('student-1'),
+      } as unknown as StudentIdentityService,
     ),
     prisma,
     transaction,
-    crypto,
   };
 }
 
@@ -93,7 +91,8 @@ describe('LegacyAccessImportService', () => {
   it('matches by a keyed RUT index and fills only missing fields on repeat imports', async () => {
     const previous = {
       id: 'existing-process',
-      studentRutHash: 'rut-blind-index',
+      studentId: 'student-1',
+      studentRut: '11111111-1',
       studentName: 'Nombre ya registrado',
       studentEmail: null,
       studentPhone: '+56 9 1111 1111',
@@ -116,7 +115,7 @@ describe('LegacyAccessImportService', () => {
       reviewerTwoName: incomingRecord.reviewerTwoName,
       defenseDate: incomingRecord.defenseDate,
     };
-    const { service, transaction, crypto } = createService();
+    const { service, transaction } = createService();
     transaction.titulationProcess.findMany
       .mockResolvedValueOnce([previous])
       .mockResolvedValueOnce([enriched]);
@@ -135,9 +134,10 @@ describe('LegacyAccessImportService', () => {
         defenseDate: incomingRecord.defenseDate,
       },
     });
-    expect(crypto.blindIndex).toHaveBeenCalledWith(
-      '11111111-1',
-      'TitulationProcess.studentRut',
+    expect(transaction.titulationProcess.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { studentRut: { in: ['11111111-1'] } },
+      }),
     );
     expect(await service.importRecords([incomingRecord])).toEqual({
       created: 0,

@@ -282,7 +282,7 @@ export class AssistantshipCareerOption {
 export class AssistantshipStudentOption {
   @Field(() => ID) id!: string;
   @Field() name!: string;
-  @Field() email!: string;
+  @Field(() => String, { nullable: true }) email!: string | null;
   @Field(() => String, { nullable: true }) rut!: string | null;
   @Field(() => ID, { nullable: true }) careerCurriculumVersionId!:
     string | null;
