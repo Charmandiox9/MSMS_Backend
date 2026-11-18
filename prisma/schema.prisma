@@ -184,6 +184,13 @@ enum TitulationDocumentStatus {
   PREPARED
 }
 
+enum TitulationOutcome {
+  UNCONFIRMED
+  IN_PROGRESS
+  GRADUATED
+  NOT_GRADUATED
+}
+
 enum TitulationDataSource {
   MANUAL
   LEGACY_ACCESS
@@ -414,6 +421,7 @@ model TitulationProcess {
   reviewerTwoName      String?
   defenseDate          DateTime?                @db.Date
   stage                TitulationStage          @default(INTAKE)
+  outcome              TitulationOutcome        @default(IN_PROGRESS)
   source               TitulationDataSource    @default(MANUAL)
   defenseAnnexesStatus TitulationDocumentStatus @default(PENDING)
   thesisSummaryStatus  TitulationDocumentStatus @default(PENDING)
@@ -434,6 +442,7 @@ model TitulationProcess {
   @@index([studentRutHash])
   @@index([studentEmailHash])
   @@index([studentId])
+  @@index([outcome, stage])
   @@index([createdAt])
 }
 

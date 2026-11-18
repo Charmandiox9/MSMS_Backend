@@ -24,6 +24,7 @@ import {
   CreateTitulationDto,
   ListTitulationsDto,
   UpdateTitulationDto,
+  FindTitulationStudentsDto,
 } from './titulations.dto';
 import { TitulationsService } from './titulations.service';
 import { TitulationDraftKind } from './titulation-drafts';
@@ -65,6 +66,13 @@ export class TitulationsController {
   @Header('Cache-Control', 'private, no-store')
   filterOptions() {
     return this.service.filterOptions();
+  }
+
+  @Post('students/search')
+  @Roles(...TITULATION_MANAGE_ROLES)
+  @Header('Cache-Control', 'private, no-store')
+  findStudents(@Body() query: FindTitulationStudentsDto) {
+    return this.service.findStudents(query.search);
   }
 
   @Get(':id')

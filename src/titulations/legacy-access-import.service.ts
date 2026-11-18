@@ -149,6 +149,7 @@ export class LegacyAccessImportService {
                 reviewerTwoName: record.reviewerTwoName,
                 defenseDate: record.defenseDate,
                 stage: 'UNCLASSIFIED',
+                outcome: 'GRADUATED',
                 source: 'LEGACY_ACCESS',
                 defenseAnnexesStatus: 'UNVERIFIED',
                 thesisSummaryStatus: 'UNVERIFIED',

@@ -12,6 +12,10 @@ import { createTitulationReference } from './titulation-reference.util';
 import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
 import { StudentIdentityService } from '../students/student-identity.service';
 import {
+  titulationViewWhere,
+  TITULATION_REVIEW_WHERE,
+} from './titulation-workflow';
+import {
   CreateTitulationDto,
   ListTitulationsDto,
   UpdateTitulationDto,
@@ -32,6 +36,7 @@ type TitulationInputFields = Partial<
     | 'reviewerTwoName'
     | 'defenseDate'
     | 'stage'
+    | 'outcome'
     | 'defenseAnnexesStatus'
     | 'thesisSummaryStatus'
     | 'libraryFormStatus'
@@ -68,6 +73,8 @@ export class TitulationsService {
     stage,
     careerId,
     period,
+    view,
+    outcome,
   }: ListTitulationsDto) {
     const query = search?.trim();
     const [piiIds, careerNames] = query
@@ -83,6 +90,8 @@ export class TitulationsService {
       ...this.periodWhere(period),
       ...(stage ? { stage } : {}),
       ...(careerId ? { careerId } : {}),
+      ...(outcome ? { outcome } : {}),
+      AND: [titulationViewWhere(view)],
       ...(query
         ? {
             OR: [
@@ -111,6 +120,7 @@ export class TitulationsService {
             source: true,
             defenseDate: true,
             stage: true,
+            outcome: true,
             defenseAnnexesStatus: true,
             thesisSummaryStatus: true,
             libraryFormStatus: true,
@@ -119,7 +129,7 @@ export class TitulationsService {
             createdAt: true,
             updatedAt: true,
           },
-          orderBy: [{ updatedAt: 'desc' }],
+          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
@@ -138,7 +148,15 @@ export class TitulationsService {
   }
 
   async filterOptions() {
-    const [periods, careers, recordsWithoutDate] = await Promise.all([
+    const [
+      periods,
+      careers,
+      recordsWithoutDate,
+      total,
+      review,
+      active,
+      graduated,
+    ] = await Promise.all([
       this.prisma.$queryRaw<TitulationPeriodRecord[]>`
         SELECT DISTINCT
           DATE_PART('year', "defenseDate")::integer AS "year",
@@ -153,12 +171,24 @@ export class TitulationsService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.titulationProcess.count({ where: { defenseDate: null } }),
+      this.prisma.titulationProcess.count(),
+      this.prisma.titulationProcess.count({ where: TITULATION_REVIEW_WHERE }),
+      this.prisma.titulationProcess.count({
+        where: { outcome: 'IN_PROGRESS' },
+      }),
+      this.prisma.titulationProcess.count({ where: { outcome: 'GRADUATED' } }),
     ]);
 
     return {
       periods: periods.map(({ year, semester }) => `${year}-S${semester}`),
       careers,
       hasUndated: recordsWithoutDate > 0,
+      counts: {
+        ALL: total,
+        REVIEW: review,
+        ACTIVE: active,
+        GRADUATED: graduated,
+      },
     };
   }
 
@@ -219,12 +249,16 @@ export class TitulationsService {
     };
 
     const process = await this.write(async (transaction) => {
-      data.studentId = await this.identities.resolve(transaction, {
-        name: input.studentName,
-        rut: input.studentRut,
-        email: input.studentEmail,
-        careerId: career.careerId,
-      });
+      data.studentId = await this.identities.resolve(
+        transaction,
+        {
+          name: input.studentName,
+          rut: input.studentRut,
+          email: input.studentEmail,
+          careerId: career.careerId,
+        },
+        input.studentId,
+      );
       return transaction.titulationProcess.create({
         data,
         include: PROCESS_RELATIONS,
@@ -279,6 +313,17 @@ export class TitulationsService {
     return this.present(process);
   }
 
+  async findStudents(search: string) {
+    const ids = await this.prisma.findPiiIds('Student', search);
+    if (!ids.length) return [];
+    return this.prisma.student.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, email: true, rut: true, careerId: true },
+      orderBy: { id: 'asc' },
+      take: 20,
+    });
+  }
+
   private present(process: TitulationWithCareer) {
     return {
       id: process.id,
@@ -301,6 +346,7 @@ export class TitulationsService {
       reviewerTwoName: process.reviewerTwoName,
       defenseDate: process.defenseDate,
       stage: process.stage,
+      outcome: process.outcome,
       defenseAnnexesStatus: process.defenseAnnexesStatus,
       thesisSummaryStatus: process.thesisSummaryStatus,
       libraryFormStatus: process.libraryFormStatus,
@@ -323,6 +369,7 @@ export class TitulationsService {
       | 'source'
       | 'defenseDate'
       | 'stage'
+      | 'outcome'
       | 'defenseAnnexesStatus'
       | 'thesisSummaryStatus'
       | 'libraryFormStatus'
@@ -341,6 +388,7 @@ export class TitulationsService {
       source: process.source,
       defenseDate: process.defenseDate,
       stage: process.stage,
+      outcome: process.outcome,
       defenseAnnexesStatus: process.defenseAnnexesStatus,
       thesisSummaryStatus: process.thesisSummaryStatus,
       libraryFormStatus: process.libraryFormStatus,
@@ -419,6 +467,8 @@ export class TitulationsService {
     if (input.defenseDate !== undefined)
       data.defenseDate = input.defenseDate ? new Date(input.defenseDate) : null;
     if ('stage' in input && input.stage !== undefined) data.stage = input.stage;
+    if ('outcome' in input && input.outcome !== undefined)
+      data.outcome = input.outcome;
     if (
       'defenseAnnexesStatus' in input &&
       input.defenseAnnexesStatus !== undefined

@@ -27,6 +27,7 @@ const titulationHistory = {
   select: {
     id: true,
     stage: true,
+    outcome: true,
     careerName: true,
     degree: true,
     defenseDate: true,

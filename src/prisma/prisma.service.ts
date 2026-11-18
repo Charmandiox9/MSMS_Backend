@@ -6,7 +6,11 @@ import { ConfigService } from '@nestjs/config';
 import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { piiExtension } from '../privacy/pii-extension';
 import { PiiStorageCodec } from '../privacy/pii-storage-codec';
-import { normalizePiiSearch, piiPolicies } from '../privacy/pii-policy';
+import {
+  normalizePiiLookup,
+  normalizePiiSearch,
+  piiPolicies,
+} from '../privacy/pii-policy';
 import { normalizePostgresSslMode } from './postgres-connection-string';
 
 @Injectable()
@@ -84,10 +88,11 @@ export class PrismaService
         searchableFields.some((field) => {
           if (typeof row[field] !== 'string') return false;
           const normalize = (value: string) => {
-            const normalized = normalizePiiSearch(value);
-            return field === 'rut'
-              ? normalized.replace(/[.\s-]/g, '')
-              : normalized;
+            if (field.toLowerCase().includes('rut'))
+              return normalizePiiLookup(field, value).replace(/[.\s-]/g, '');
+            return field.toLowerCase().includes('email')
+              ? normalizePiiLookup(field, value)
+              : normalizePiiSearch(value);
           };
           return normalize(row[field]).includes(normalize(search));
         }),

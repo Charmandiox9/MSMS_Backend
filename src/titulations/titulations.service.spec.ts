@@ -33,6 +33,7 @@ const record = {
   reviewerTwoName: null,
   defenseDate: null,
   stage: 'INTAKE',
+  outcome: 'IN_PROGRESS',
   defenseAnnexesStatus: 'PENDING',
   thesisSummaryStatus: 'PENDING',
   libraryFormStatus: 'PENDING',
@@ -210,6 +211,7 @@ describe('TitulationsService', () => {
         { id: '11111111-1111-4111-8111-111111111111', name: 'Biología Marina' },
       ],
       hasUndated: true,
+      counts: { ALL: 1, REVIEW: 1, ACTIVE: 1, GRADUATED: 1 },
     });
     expect(prisma.$queryRaw).toHaveBeenCalled();
     expect(prisma.career.findMany).toHaveBeenCalledWith({
@@ -287,6 +289,22 @@ describe('TitulationsService', () => {
         },
       }),
     );
+  });
+
+  it('filters graduates independently of the historical workflow stage', async () => {
+    const { service, prisma } = createService();
+    await service.list({ page: 1, pageSize: 10, view: 'GRADUATED' });
+    expect(prisma.titulationProcess.findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { AND: [{ outcome: 'GRADUATED' }] },
+    });
+  });
+
+  it('can close a process without asserting that the student graduated', async () => {
+    const { service, prisma } = createService();
+    await service.update(record.id, { stage: 'CLOSED' }, 'user-1');
+    expect(
+      prisma.titulationProcess.update.mock.calls[0]?.[0].data,
+    ).not.toHaveProperty('outcome');
   });
 
   it('allows optional data to be cleared without changing process provenance', async () => {

@@ -3,6 +3,7 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -12,8 +13,13 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
-import { TitulationDocumentStatus, TitulationStage } from '@prisma/client';
+import {
+  TitulationDocumentStatus,
+  TitulationStage,
+  TitulationOutcome,
+} from '@prisma/client';
 import { IsChileanRut } from './chilean-rut.validator';
 import { normalizeChileanRut } from './chilean-rut.util';
 
@@ -59,9 +65,20 @@ export class ListTitulationsDto {
   @Matches(/^(?:UNRECORDED|[1-9][0-9]{3}-S[12])$/)
   @MaxLength(12)
   period?: string;
+
+  @IsOptional()
+  @IsIn(['ALL', 'REVIEW', 'ACTIVE', 'GRADUATED'])
+  view?: 'ALL' | 'REVIEW' | 'ACTIVE' | 'GRADUATED';
+
+  @IsOptional()
+  @IsEnum(TitulationOutcome)
+  outcome?: TitulationOutcome;
 }
 
 export class CreateTitulationDto {
+  @IsOptional()
+  @IsUUID()
+  studentId?: string | null;
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
@@ -131,7 +148,18 @@ export class CreateTitulationDto {
   defenseDate?: string | null;
 }
 
+export class FindTitulationStudentsDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  search!: string;
+}
+
 export class UpdateTitulationDto {
+  @IsOptional()
+  @IsEnum(TitulationOutcome)
+  outcome?: TitulationOutcome;
   @IsOptional()
   @Transform(trim)
   @IsString()

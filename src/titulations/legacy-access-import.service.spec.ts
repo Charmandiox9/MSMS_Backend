@@ -74,6 +74,7 @@ describe('LegacyAccessImportService', () => {
         careerId: career.id,
         careerName: career.name,
         stage: 'UNCLASSIFIED',
+        outcome: 'GRADUATED',
         source: 'LEGACY_ACCESS',
         defenseAnnexesStatus: 'UNVERIFIED',
         thesisSummaryStatus: 'UNVERIFIED',
