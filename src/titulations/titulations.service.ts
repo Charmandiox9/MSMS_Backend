@@ -11,6 +11,7 @@ import { availableTitulationDrafts } from './titulation-drafts';
 import { createTitulationReference } from './titulation-reference.util';
 import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
 import { StudentIdentityService } from '../students/student-identity.service';
+import { TitulationAttachmentsService } from './titulation-attachments.service';
 import {
   titulationViewWhere,
   TITULATION_REVIEW_WHERE,
@@ -64,6 +65,7 @@ export class TitulationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly identities: StudentIdentityService,
+    private readonly attachments: TitulationAttachmentsService,
   ) {}
 
   async list({
@@ -311,6 +313,30 @@ export class TitulationsService {
       });
     });
     return this.present(process);
+  }
+
+  async delete(id: string) {
+    const process = await this.prisma.titulationProcess.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!process) throw new NotFoundException('El proceso no existe');
+
+    await this.attachments.deleteForProcess(id);
+    try {
+      await this.prisma.titulationProcess.delete({
+        where: { id },
+        select: { id: true },
+      });
+    } catch (cause: unknown) {
+      if (
+        cause instanceof Prisma.PrismaClientKnownRequestError &&
+        cause.code === 'P2025'
+      )
+        throw new NotFoundException('El proceso ya no existe');
+      throw cause;
+    }
+    return { success: true };
   }
 
   async findStudents(search: string) {

@@ -32,6 +32,7 @@ function createService() {
     titulationAttachment: {
       findMany: jest.fn().mockResolvedValue([attachment]),
       create: jest.fn().mockResolvedValue(attachment),
+      delete: jest.fn().mockResolvedValue({ id: attachmentId }),
       findFirst: jest.fn().mockResolvedValue({
         storageKey,
         originalName: attachment.originalName,
@@ -118,6 +119,35 @@ describe('TitulationAttachmentsService', () => {
       where: { processId },
       select: expect.not.objectContaining({ storageKey: true }),
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    });
+  });
+
+  it('removes each private file and its metadata for a process', async () => {
+    const { service, prisma, storage } = createService();
+    prisma.titulationAttachment.findMany.mockResolvedValueOnce([
+      { storageKey },
+      { storageKey: 'titulation-attachments/another-opaque-key.docx' },
+    ]);
+
+    await service.deleteForProcess(processId);
+
+    expect(prisma.titulationAttachment.findMany).toHaveBeenCalledWith({
+      where: { processId },
+      select: { storageKey: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    expect(storage.deleteFile).toHaveBeenNthCalledWith(1, storageKey);
+    expect(storage.deleteFile).toHaveBeenNthCalledWith(
+      2,
+      'titulation-attachments/another-opaque-key.docx',
+    );
+    expect(prisma.titulationAttachment.delete).toHaveBeenNthCalledWith(1, {
+      where: { storageKey },
+      select: { id: true },
+    });
+    expect(prisma.titulationAttachment.delete).toHaveBeenNthCalledWith(2, {
+      where: { storageKey: 'titulation-attachments/another-opaque-key.docx' },
+      select: { id: true },
     });
   });
 

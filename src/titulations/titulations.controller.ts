@@ -2,6 +2,7 @@ import {
   Body,
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -194,5 +195,11 @@ export class TitulationsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.update(id, input, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(...TITULATION_MANAGE_ROLES)
+  delete(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.delete(id);
   }
 }

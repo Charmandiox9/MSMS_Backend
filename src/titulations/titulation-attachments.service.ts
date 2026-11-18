@@ -80,6 +80,21 @@ export class TitulationAttachmentsService {
     };
   }
 
+  async deleteForProcess(processId: string): Promise<void> {
+    const attachments = await this.prisma.titulationAttachment.findMany({
+      where: { processId },
+      select: { storageKey: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    for (const attachment of attachments) {
+      await this.storage.deleteFile(attachment.storageKey);
+      await this.prisma.titulationAttachment.delete({
+        where: { storageKey: attachment.storageKey },
+        select: { id: true },
+      });
+    }
+  }
+
   private async assertProcessExists(processId: string): Promise<void> {
     const process = await this.prisma.titulationProcess.findUnique({
       where: { id: processId },

@@ -4,6 +4,7 @@ import { testPiiCrypto } from '../privacy/pii-test-config';
 import { PiiStorageCodec } from '../privacy/pii-storage-codec';
 import { TitulationsService } from './titulations.service';
 import { StudentIdentityService } from '../students/student-identity.service';
+import type { TitulationAttachmentsService } from './titulation-attachments.service';
 import type {
   CreateTitulationDto,
   ListTitulationsDto,
@@ -48,7 +49,11 @@ const record = {
   updatedAt: new Date('2026-11-17T00:00:00.000Z'),
 };
 
-function createService() {
+function createService(
+  attachments: Pick<TitulationAttachmentsService, 'deleteForProcess'> = {
+    deleteForProcess: jest.fn().mockResolvedValue(undefined),
+  },
+) {
   const prisma = {
     findPiiIds: jest.fn().mockResolvedValue(['titulation-1']),
     $queryRaw: jest.fn().mockResolvedValue([{ year: 2026, semester: 2 }]),
@@ -74,6 +79,7 @@ function createService() {
         return Promise.resolve(record);
       }),
       update: jest.fn().mockResolvedValue(record),
+      delete: jest.fn().mockResolvedValue({ id: record.id }),
     },
     career: {
       findMany: jest.fn().mockResolvedValue([
@@ -95,6 +101,7 @@ function createService() {
       {
         resolve: jest.fn().mockResolvedValue('student-1'),
       } as unknown as StudentIdentityService,
+      attachments as TitulationAttachmentsService,
     ),
     prisma,
   };
@@ -333,6 +340,31 @@ describe('TitulationsService', () => {
     await expect(service.get('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('removes attached files before deleting a process', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.delete(record.id)).resolves.toEqual({ success: true });
+
+    expect(prisma.titulationProcess.delete).toHaveBeenCalledWith({
+      where: { id: record.id },
+      select: { id: true },
+    });
+  });
+
+  it('keeps the process when attachment cleanup fails', async () => {
+    const attachments = {
+      deleteForProcess: jest
+        .fn()
+        .mockRejectedValue(new Error('storage unavailable')),
+    };
+    const { service, prisma } = createService(attachments);
+
+    await expect(service.delete(record.id)).rejects.toThrow(
+      'storage unavailable',
+    );
+    expect(prisma.titulationProcess.delete).not.toHaveBeenCalled();
   });
 
   it('does not expose encrypted-field indexes or actor IDs in API detail', async () => {
