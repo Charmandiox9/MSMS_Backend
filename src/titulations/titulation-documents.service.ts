@@ -7,8 +7,14 @@ import {
   availableTitulationDrafts,
   TitulationDraftKind,
 } from './titulation-drafts';
+import { createTitulationDraftFilename } from './titulation-reference.util';
 
 const DOCUMENT_PART = 'word/document.xml';
+
+export interface GeneratedTitulationDraft {
+  content: Buffer;
+  filename: string;
+}
 
 function wordSlot(value: string | null | undefined, limit: number): string {
   const text = value?.replace(/\s+/g, ' ').trim() ?? '';
@@ -34,13 +40,17 @@ function wordSlot(value: string | null | undefined, limit: number): string {
 export class TitulationDocumentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async generateDraft(id: string, kind: TitulationDraftKind): Promise<Buffer> {
+  async generateDraft(
+    id: string,
+    kind: TitulationDraftKind,
+  ): Promise<GeneratedTitulationDraft> {
     const isLibrary = kind === TitulationDraftKind.LIBRARY_AUTHORIZATION;
     const isDefense = kind === TitulationDraftKind.DEFENSE_ANNEXES;
     const record = await this.prisma.titulationProcess.findUnique({
       where: { id },
       select: {
         careerName: true,
+        createdAt: true,
         studentName: true,
         studentRut: !isLibrary,
         studentEmail: isLibrary,
@@ -87,6 +97,12 @@ export class TitulationDocumentsService {
       },
     );
     zip.file(DOCUMENT_PART, filled);
-    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    return {
+      content: await zip.generateAsync({
+        type: 'nodebuffer',
+        compression: 'DEFLATE',
+      }),
+      filename: createTitulationDraftFilename(id, record.createdAt, kind),
+    };
   }
 }

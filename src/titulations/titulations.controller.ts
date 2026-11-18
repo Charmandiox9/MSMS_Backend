@@ -61,10 +61,10 @@ export class TitulationsController {
     @Param('kind', new ParseEnumPipe(TitulationDraftKind))
     kind: TitulationDraftKind,
   ) {
-    const document = await this.documents.generateDraft(id, kind);
-    return new StreamableFile(document, {
+    const { content, filename } = await this.documents.generateDraft(id, kind);
+    return new StreamableFile(content, {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      disposition: `attachment; filename="${kind}-draft.docx"`,
+      disposition: `attachment; filename="${filename}"`,
     });
   }
 

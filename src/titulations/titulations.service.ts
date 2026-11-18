@@ -7,6 +7,7 @@ import { Prisma, type TitulationProcess } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePiiSearch } from '../privacy/pii-policy';
 import { availableTitulationDrafts } from './titulation-drafts';
+import { createTitulationReference } from './titulation-reference.util';
 import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
 import {
   CreateTitulationDto,
@@ -187,9 +188,7 @@ export class TitulationsService {
   private present(process: TitulationWithCareer) {
     return {
       id: process.id,
-      reference: `TIT-${process.createdAt.getFullYear()}-${process.id
-        .slice(0, 8)
-        .toUpperCase()}`,
+      reference: createTitulationReference(process.id, process.createdAt),
       studentName: process.studentName,
       studentRut: process.studentRut,
       studentEmail: process.studentEmail,
@@ -238,9 +237,7 @@ export class TitulationsService {
   >(process: T) {
     return {
       id: process.id,
-      reference: `TIT-${process.createdAt.getFullYear()}-${process.id
-        .slice(0, 8)
-        .toUpperCase()}`,
+      reference: createTitulationReference(process.id, process.createdAt),
       studentName: process.studentName,
       thesisTopic: process.thesisTopic,
       degree: process.degree,

@@ -6,6 +6,7 @@ import { TitulationDocumentsService } from './titulation-documents.service';
 
 const example = {
   careerName: 'Biología Marina',
+  createdAt: new Date('2026-10-01T12:00:00.000Z'),
   studentName: 'Estudiante <de> Ejemplo & Prueba',
   studentRut: '99999999-9',
   studentEmail: 'example@example.com',
@@ -33,8 +34,11 @@ function createService(record: Partial<typeof example> | null = example) {
 describe('TitulationDocumentsService', () => {
   it('fills both Word variants and preserves the reserved summary and signature areas', async () => {
     const { service, findUnique } = createService();
-    const content = await service.generateDraft('process-1', templateKind);
-    const zip = await JSZip.loadAsync(content);
+    const generated = await service.generateDraft(
+      '1234abcd-5678-4abc-8def-0123456789ab',
+      templateKind,
+    );
+    const zip = await JSZip.loadAsync(generated.content);
     const xml = await zip.file('word/document.xml')?.async('string');
 
     expect(
@@ -55,11 +59,13 @@ describe('TitulationDocumentsService', () => {
     expect(xml).toContain('RESUMEN:');
     expect(xml).toContain('Profesor Guía');
     expect(xml).not.toContain('MARSYS_');
+    expect(generated.filename).toBe('TIT-2026-1234ABCD-thesis-summary.docx');
     expect(zip.file('word/media/image1.jpeg')).not.toBeNull();
     expect(findUnique).toHaveBeenCalledWith({
-      where: { id: 'process-1' },
+      where: { id: '1234abcd-5678-4abc-8def-0123456789ab' },
       select: expect.objectContaining({
         careerName: true,
+        createdAt: true,
         studentName: true,
         studentRut: true,
         studentEmail: false,
@@ -73,7 +79,7 @@ describe('TitulationDocumentsService', () => {
 
   it('fills the annexes committee and removes live mail-merge fields', async () => {
     const { service } = createService();
-    const content = await service.generateDraft(
+    const { content } = await service.generateDraft(
       'process-1',
       TitulationDraftKind.DEFENSE_ANNEXES,
     );
@@ -91,7 +97,7 @@ describe('TitulationDocumentsService', () => {
 
   it('prefills the library contact fields while retaining unselected choices', async () => {
     const { service, findUnique } = createService();
-    const content = await service.generateDraft(
+    const { content } = await service.generateDraft(
       'process-1',
       TitulationDraftKind.LIBRARY_AUTHORIZATION,
     );
@@ -117,10 +123,11 @@ describe('TitulationDocumentsService', () => {
     const longTopic = 'a'.repeat(161);
     const { service } = createService({
       careerName: 'Biología Marina',
+      createdAt: new Date('2026-10-01T12:00:00.000Z'),
       studentName: 'Nombre de prueba',
       thesisTopic: longTopic,
     });
-    const content = await service.generateDraft('process-1', templateKind);
+    const { content } = await service.generateDraft('process-1', templateKind);
     const zip = await JSZip.loadAsync(content);
     const xml = await zip.file('word/document.xml')?.async('string');
 
