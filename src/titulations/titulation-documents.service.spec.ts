@@ -15,7 +15,8 @@ const example = {
   reviewerOneName: 'Docente Revisor de Ejemplo',
   reviewerTwoName: 'Docente Revisora de Ejemplo',
   thesisTopic: 'Diversidad de macroalgas en la bahía',
-  degree: 'Bióloga Marina',
+  degree:
+    'Licenciado en Ciencias del Mar con mención en Biología Marina y Acuicultura',
 };
 
 const templateKind = TitulationDraftKind.THESIS_SUMMARY;
@@ -42,7 +43,15 @@ describe('TitulationDocumentsService', () => {
     expect(xml?.match(/99999999-9/g)).toHaveLength(2);
     expect(xml).toContain('Diversidad de macroalgas en la bahía');
     expect(xml).toContain('Guía Académica de Ejemplo');
-    expect(xml).toContain('BIÓLOGA MARINA');
+    expect(xml).toContain(example.degree.toLocaleUpperCase('es-CL'));
+    expect(
+      xml?.match(
+        /<w:br\/><w:t>LICENCIADO EN CIENCIAS DEL MAR CON MENCIÓN EN BIOLOGÍA MARINA Y ACUICULTURA<\/w:t>/g,
+      ),
+    ).toHaveLength(2);
+    expect(xml?.match(/<\/w:rPr><w:jc w:val="left"\/><\/w:pPr>/g)).toHaveLength(
+      2,
+    );
     expect(xml).toContain('RESUMEN:');
     expect(xml).toContain('Profesor Guía');
     expect(xml).not.toContain('MARSYS_');
@@ -75,7 +84,7 @@ describe('TitulationDocumentsService', () => {
     expect(xml).toContain(example.coGuideName);
     expect(xml).toContain(example.reviewerOneName);
     expect(xml).toContain(example.reviewerTwoName);
-    expect(xml).toContain('BIÓLOGA MARINA');
+    expect(xml).toContain(example.degree.toLocaleUpperCase('es-CL'));
     expect(xml).not.toMatch(/MERGEFIELD|MARSYS_|example@example\.com/);
     expect(xml).not.toMatch(/>[0-7]\.\d</);
   });
