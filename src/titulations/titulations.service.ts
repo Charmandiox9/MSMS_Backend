@@ -42,11 +42,23 @@ type TitulationWithCareer = Prisma.TitulationProcessGetPayload<{
   include: { career: { select: { id: true; code: true; name: true } } };
 }>;
 
+interface TitulationPeriodRecord {
+  year: number;
+  semester: number;
+}
+
 @Injectable()
 export class TitulationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list({ page, pageSize, search, stage, careerId }: ListTitulationsDto) {
+  async list({
+    page,
+    pageSize,
+    search,
+    stage,
+    careerId,
+    period,
+  }: ListTitulationsDto) {
     const query = search?.trim();
     const [piiIds, careerNames] = query
       ? await Promise.all([
@@ -58,6 +70,7 @@ export class TitulationsService {
       ?.match(/^TIT-\d{4}-([A-F0-9]{4,8})$/i)?.[1]
       ?.toLowerCase();
     const where: Prisma.TitulationProcessWhereInput = {
+      ...this.periodWhere(period),
       ...(stage ? { stage } : {}),
       ...(careerId ? { careerId } : {}),
       ...(query
@@ -111,6 +124,51 @@ export class TitulationsService {
       page,
       pageSize,
       totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async filterOptions() {
+    const [periods, careers, recordsWithoutDate] = await Promise.all([
+      this.prisma.$queryRaw<TitulationPeriodRecord[]>`
+        SELECT DISTINCT
+          DATE_PART('year', "defenseDate")::integer AS "year",
+          CASE WHEN DATE_PART('month', "defenseDate") <= 6 THEN 1 ELSE 2 END AS "semester"
+        FROM "TitulationProcess"
+        WHERE "defenseDate" IS NOT NULL
+        ORDER BY "year" DESC, "semester" DESC
+      `,
+      this.prisma.career.findMany({
+        where: { titulationProcesses: { some: {} } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.titulationProcess.count({ where: { defenseDate: null } }),
+    ]);
+
+    return {
+      periods: periods.map(({ year, semester }) => `${year}-S${semester}`),
+      careers,
+      hasUndated: recordsWithoutDate > 0,
+    };
+  }
+
+  private periodWhere(
+    period?: string,
+  ): Pick<Prisma.TitulationProcessWhereInput, 'defenseDate'> {
+    if (!period) return {};
+    if (period === 'UNRECORDED') return { defenseDate: null };
+
+    const match = /^(\d{4})-S([12])$/.exec(period);
+    if (!match)
+      throw new BadRequestException('El período de defensa no es válido');
+
+    const year = Number(match[1]);
+    const startMonth = match[2] === '1' ? 0 : 6;
+    return {
+      defenseDate: {
+        gte: new Date(Date.UTC(year, startMonth, 1)),
+        lt: new Date(Date.UTC(year, startMonth + 6, 1)),
+      },
     };
   }
 

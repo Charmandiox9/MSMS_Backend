@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateTitulationDto } from './titulations.dto';
+import { CreateTitulationDto, ListTitulationsDto } from './titulations.dto';
 
 const CAREER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -58,4 +58,30 @@ describe('CreateTitulationDto', () => {
     expect(errors.map((error) => error.property)).toContain('careerId');
     expect(errors.map((error) => error.property)).toContain('careerName');
   });
+});
+
+describe('ListTitulationsDto', () => {
+  it.each(['2025-S2', '2026-S1', 'UNRECORDED'])(
+    'accepts period filter %s',
+    async (period) => {
+      const dto = plainToInstance(ListTitulationsDto, { period });
+
+      await expect(
+        validate(dto, { whitelist: true, forbidNonWhitelisted: true }),
+      ).resolves.toHaveLength(0);
+    },
+  );
+
+  it.each(['2026-S3', '2026', 'sin-fecha', '0000-S1'])(
+    'rejects malformed period filter %s',
+    async (period) => {
+      const dto = plainToInstance(ListTitulationsDto, { period });
+      const errors = await validate(dto, {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      });
+
+      expect(errors.map((error) => error.property)).toContain('period');
+    },
+  );
 });

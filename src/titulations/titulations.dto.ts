@@ -52,6 +52,13 @@ export class ListTitulationsDto {
   @IsOptional()
   @IsUUID()
   careerId?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^(?:UNRECORDED|[1-9][0-9]{3}-S[12])$/)
+  @MaxLength(12)
+  period?: string;
 }
 
 export class CreateTitulationDto {

@@ -42,6 +42,7 @@ const record = {
 function createService() {
   const prisma = {
     findPiiIds: jest.fn().mockResolvedValue(['titulation-1']),
+    $queryRaw: jest.fn().mockResolvedValue([{ year: 2026, semester: 2 }]),
     $transaction: jest.fn((operations: Promise<unknown>[]) =>
       Promise.all(operations),
     ),
@@ -60,6 +61,12 @@ function createService() {
       update: jest.fn().mockResolvedValue(record),
     },
     career: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Biología Marina',
+        },
+      ]),
       findUnique: jest.fn().mockResolvedValue({
         id: '11111111-1111-4111-8111-111111111111',
         name: 'Biología Marina',
@@ -141,6 +148,58 @@ describe('TitulationsService', () => {
           { careerName: { in: ['Biología Marina'] } },
         ],
       },
+    });
+  });
+
+  it('filters by a calendar semester using UTC date boundaries', async () => {
+    const { service, prisma } = createService();
+
+    await service.list({
+      page: 1,
+      pageSize: 10,
+      period: '2026-S1',
+      careerId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(prisma.titulationProcess.findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: {
+        careerId: '11111111-1111-4111-8111-111111111111',
+        defenseDate: {
+          gte: new Date('2026-01-01T00:00:00.000Z'),
+          lt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      },
+    });
+  });
+
+  it('filters separately for records without a defense date', async () => {
+    const { service, prisma } = createService();
+
+    await service.list({ page: 1, pageSize: 10, period: 'UNRECORDED' });
+
+    expect(prisma.titulationProcess.findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { defenseDate: null },
+    });
+  });
+
+  it('returns distinct recorded periods, represented careers, and missing-date availability', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.filterOptions()).resolves.toEqual({
+      periods: ['2026-S2'],
+      careers: [
+        { id: '11111111-1111-4111-8111-111111111111', name: 'Biología Marina' },
+      ],
+      hasUndated: true,
+    });
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.career.findMany).toHaveBeenCalledWith({
+      where: { titulationProcesses: { some: {} } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    expect(prisma.titulationProcess.count).toHaveBeenCalledWith({
+      where: { defenseDate: null },
     });
   });
 

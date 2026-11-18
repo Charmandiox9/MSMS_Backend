@@ -60,6 +60,13 @@ export class TitulationsController {
     return this.service.list(query);
   }
 
+  @Get('filters')
+  @Roles(...TITULATION_READ_ROLES)
+  @Header('Cache-Control', 'private, no-store')
+  filterOptions() {
+    return this.service.filterOptions();
+  }
+
   @Get(':id')
   @Roles(...TITULATION_READ_ROLES)
   get(@Param('id', ParseUUIDPipe) id: string) {

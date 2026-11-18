@@ -122,6 +122,7 @@ describe('Matriz de permisos por endpoint', () => {
       'StudentsController.importCsv': SECRETARY,
       'CareersController.courseOptions': REPOSITORY,
       'TitulationsController.search': ACADEMIC_READERS,
+      'TitulationsController.filterOptions': ACADEMIC_READERS,
       'TitulationsController.get': ACADEMIC_READERS,
       'TitulationsController.create': [...SECRETARY, ...COORDINATOR],
       'TitulationsController.update': [...SECRETARY, ...COORDINATOR],
