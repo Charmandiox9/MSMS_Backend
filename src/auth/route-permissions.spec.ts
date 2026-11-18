@@ -127,6 +127,7 @@ describe('Matriz de permisos por endpoint', () => {
       'TitulationsController.get': ACADEMIC_READERS,
       'TitulationsController.create': [...SECRETARY, ...COORDINATOR],
       'TitulationsController.update': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.delete': [...SECRETARY, ...COORDINATOR],
       'TitulationsController.downloadDraft': [...SECRETARY, ...COORDINATOR],
       'TitulationsController.listAttachments': [...SECRETARY, ...COORDINATOR],
       'TitulationsController.uploadAttachment': [...SECRETARY, ...COORDINATOR],
