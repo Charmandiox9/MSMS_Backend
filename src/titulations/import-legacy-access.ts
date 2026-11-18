@@ -14,50 +14,8 @@ import {
   isLocalDatabase,
   isSameDatabaseEndpoint,
   parseEnvironmentValue,
-  type LegacyAccessImportTarget,
 } from './legacy-access-import-target.util';
-
-const DEFAULT_SOURCE_PATH = resolve(
-  process.cwd(),
-  '..',
-  'Propuesta_Inicial___Proyecto_Ágil_Escalado',
-  'Archivos proporcionados',
-  'titulacion',
-  'DEFENSA DE TESIS BM 2023-cecyGonza-1.mdb',
-);
-
-interface ImportArguments {
-  filePath: string;
-  apply: boolean;
-  target: LegacyAccessImportTarget;
-}
-
-function readArguments(args: readonly string[]): ImportArguments {
-  const fileIndex = args.indexOf('--file');
-  const filePath = fileIndex >= 0 ? args[fileIndex + 1] : DEFAULT_SOURCE_PATH;
-  if (!filePath || filePath.startsWith('--'))
-    throw new Error('Indica un archivo Access válido después de --file.');
-
-  const targetIndex = args.indexOf('--target');
-  const inlineTarget = args.find((argument) =>
-    argument.startsWith('--target='),
-  );
-  if (targetIndex >= 0 && inlineTarget)
-    throw new Error('Indica --target una sola vez.');
-  const targetValue = inlineTarget
-    ? inlineTarget.slice('--target='.length)
-    : targetIndex >= 0
-      ? args[targetIndex + 1]
-      : 'local';
-  if (targetValue !== 'local' && targetValue !== 'development')
-    throw new Error('El destino debe ser local o development.');
-
-  return {
-    filePath: resolve(filePath),
-    apply: args.includes('--apply'),
-    target: targetValue,
-  };
-}
+import { readLegacyAccessImportArguments } from './legacy-access-import-arguments.util';
 
 function loadBackendEnvironment(): void {
   for (const file of ['.env.local', '.env.pii', '.env.development', '.env']) {
@@ -85,7 +43,7 @@ async function main(): Promise<void> {
     | Awaited<ReturnType<typeof NestFactory.createApplicationContext>>
     | undefined;
   try {
-    const args = readArguments(process.argv.slice(2));
+    const args = readLegacyAccessImportArguments(process.argv.slice(2));
     const rows = readSourceRows(args.filePath);
     const parsed = parseLegacyAccessRows(rows);
     const report = {
