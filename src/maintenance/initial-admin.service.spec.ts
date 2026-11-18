@@ -70,7 +70,9 @@ describe('initial administrator', () => {
   });
   it('does not reactivate an inactive initial account', async () => {
     findUnique.mockResolvedValue({ id: 'user-id', isActive: false });
-    await expect(service.prepare('admin@example.test')).rejects.toThrow('inactiva');
+    await expect(service.prepare('admin@example.test')).rejects.toThrow(
+      'inactiva',
+    );
     expect(assign).not.toHaveBeenCalled();
   });
   it('refuses replacing another initial preload', async () => {

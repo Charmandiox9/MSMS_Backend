@@ -6,15 +6,14 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import {
-  AcademicImportStatus,
-  AcademicImportType,
-  Prisma,
-} from '@prisma/client';
+import { AcademicImportStatus, AcademicImportType } from '@prisma/client';
 import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CareersService } from '../careers/careers.service';
-import { CreateCareerFromCsvDto, ImportCurriculumDto } from '../careers/careers.dto';
+import {
+  CreateCareerFromCsvDto,
+  ImportCurriculumDto,
+} from '../careers/careers.dto';
 import { WorkbookImportDto } from './academic-imports.dto';
 import { AcademicImportsService } from './academic-imports.service';
 
@@ -208,7 +207,7 @@ export class AcademicImportQueueService
         where: { id: job.id },
         data: {
           status: AcademicImportStatus.COMPLETED,
-          result: result as Prisma.InputJsonValue,
+          result: result,
           payload: null,
           finishedAt: new Date(),
           error: null,
@@ -234,16 +233,20 @@ export class AcademicImportQueueService
   private async run(type: AcademicImportType, input: AcademicImportPayload) {
     switch (type) {
       case AcademicImportType.PROJECTS:
-        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
+        if (!('fileBase64' in input))
+          throw new Error('El trabajo no contiene el archivo');
         return this.imports.importProjects(input.fileBase64);
       case AcademicImportType.RESEARCH:
-        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
+        if (!('fileBase64' in input))
+          throw new Error('El trabajo no contiene el archivo');
         return this.imports.importResearch(input.fileBase64);
       case AcademicImportType.HOURLY:
-        if (!('fileBase64' in input)) throw new Error('El trabajo no contiene el archivo');
+        if (!('fileBase64' in input))
+          throw new Error('El trabajo no contiene el archivo');
         return this.imports.importHourly(input.fileBase64, input.teacherEmails);
       case AcademicImportType.CURRICULUM:
-        if (!('operation' in input)) throw new Error('El trabajo no contiene la malla curricular');
+        if (!('operation' in input))
+          throw new Error('El trabajo no contiene la malla curricular');
         if (input.operation === 'CREATE_CAREER') {
           const career = await this.careers.create({
             code: input.input.code,

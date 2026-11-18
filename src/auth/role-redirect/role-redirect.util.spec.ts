@@ -3,7 +3,9 @@ import { resolveRedirectRoute } from './role-redirect.util';
 describe('resolveRedirectRoute', () => {
   it('resuelve la ruta para los roles configurables del MVP', () => {
     expect(resolveRedirectRoute(['ACADEMIC_SECRETARY'])).toBe('/dashboard');
-    expect(resolveRedirectRoute(['ACADEMIC_PROCESS_ANALYST'])).toBe('/dashboard');
+    expect(resolveRedirectRoute(['ACADEMIC_PROCESS_ANALYST'])).toBe(
+      '/dashboard',
+    );
     expect(resolveRedirectRoute(['SYSTEM_ADMIN'])).toBe('/dashboard');
   });
 

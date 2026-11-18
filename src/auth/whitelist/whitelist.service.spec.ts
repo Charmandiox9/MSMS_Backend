@@ -10,7 +10,10 @@ function makeConfig(env: Record<string, string | undefined>): ConfigService {
 describe('WhitelistService', () => {
   it('permite un correo cuyo dominio está en ALLOWED_DOMAINS', () => {
     const service = new WhitelistService(
-      makeConfig({ ALLOWED_DOMAINS: 'ucn.cl,alumnos.ucn.cl', ALLOWED_EMAILS: '' }),
+      makeConfig({
+        ALLOWED_DOMAINS: 'ucn.cl,alumnos.ucn.cl',
+        ALLOWED_EMAILS: '',
+      }),
     );
 
     expect(service.isEmailAllowed('estudiante@alumnos.ucn.cl')).toBe(true);
@@ -40,7 +43,10 @@ describe('WhitelistService', () => {
 
   it('compara de forma case-insensitive y hace trim', () => {
     const service = new WhitelistService(
-      makeConfig({ ALLOWED_DOMAINS: ' UCN.cl ', ALLOWED_EMAILS: ' Correo1@Gmail.com ' }),
+      makeConfig({
+        ALLOWED_DOMAINS: ' UCN.cl ',
+        ALLOWED_EMAILS: ' Correo1@Gmail.com ',
+      }),
     );
 
     expect(service.isEmailAllowed('Estudiante@UCN.CL')).toBe(true);
@@ -49,7 +55,10 @@ describe('WhitelistService', () => {
 
   it('falla al construirse si ALLOWED_DOMAINS y ALLOWED_EMAILS están ambas vacías', () => {
     expect(
-      () => new WhitelistService(makeConfig({ ALLOWED_DOMAINS: '', ALLOWED_EMAILS: '' })),
+      () =>
+        new WhitelistService(
+          makeConfig({ ALLOWED_DOMAINS: '', ALLOWED_EMAILS: '' }),
+        ),
     ).toThrow();
   });
 
