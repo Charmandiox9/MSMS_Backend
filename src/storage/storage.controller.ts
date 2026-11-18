@@ -1,4 +1,10 @@
-import { Body, Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -47,6 +53,9 @@ export class StorageController {
       throw new UnauthorizedException('Webhook no autorizado');
     }
 
-    return this.storageService.createPresignedUpload(dto.fileName, dto.contentType);
+    return this.storageService.createPresignedUpload(
+      dto.fileName,
+      dto.contentType,
+    );
   }
 }

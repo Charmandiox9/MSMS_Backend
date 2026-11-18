@@ -65,15 +65,23 @@ describe('AssistantshipsResolver contract', () => {
   });
   it('validates the update ID separately without rejecting the sibling input argument', async () => {
     const types: unknown[] = Reflect.getMetadata(
-      'design:paramtypes', AssistantshipsResolver.prototype, 'updateAssistantship',
+      'design:paramtypes',
+      AssistantshipsResolver.prototype,
+      'updateAssistantship',
     );
     expect(types[0]).toBe(String);
     const pipe = new ValidationPipe({
-      whitelist: true, forbidNonWhitelisted: true, transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     });
-    await expect(pipe.transform('11111111-1111-4111-8111-111111111111', {
-      type: 'body', metatype: String, data: 'id',
-    })).resolves.toBe('11111111-1111-4111-8111-111111111111');
+    await expect(
+      pipe.transform('11111111-1111-4111-8111-111111111111', {
+        type: 'body',
+        metatype: String,
+        data: 'id',
+      }),
+    ).resolves.toBe('11111111-1111-4111-8111-111111111111');
   });
   it('delegates protected student search and career course lookups', () => {
     void resolver.assistantshipStudents({ search: 'ana' });

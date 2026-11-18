@@ -92,10 +92,16 @@ export class ResearchOutputsController {
   @Post() create(@Body() input: ResearchOutputInputDto) {
     return this.service.createResearchOutput(input);
   }
-  @Put(':id') update(@Param('id', ParseUUIDPipe) id: string, @Body() input: UpdateResearchOutputDto) {
+  @Put(':id') update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: UpdateResearchOutputDto,
+  ) {
     return this.service.updateResearchOutput(id, input);
   }
-  @Delete(':id') remove(@Param('id', ParseUUIDPipe) id: string, @Query() input: RepositoryVersionDto) {
+  @Delete(':id') remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() input: RepositoryVersionDto,
+  ) {
     return this.service.deleteResearchOutput(id, input.expectedUpdatedAt);
   }
 }
