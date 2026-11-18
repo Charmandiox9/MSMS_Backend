@@ -32,7 +32,7 @@ export class CareersController {
   }
 
   @Get('options')
-  @Roles(...ACADEMIC_REPOSITORY_ROLES)
+  @Roles(...ACADEMIC_REPOSITORY_ROLES, 'TEACHING_SUPPORT_COORDINATOR')
   options() {
     return this.service.options();
   }

@@ -7,6 +7,7 @@ import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CareersService } from './careers.service';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 
 const careerId = '11111111-1111-4111-8111-111111111111';
 const versionId = '22222222-2222-4222-8222-222222222222';
@@ -40,6 +41,17 @@ describe('CareersService', () => {
     $transaction: jest.fn(),
   };
   const service = new CareersService(prisma as unknown as PrismaService);
+
+  it('allows the titulation coordinator to load career select options', () => {
+    const roles: unknown = Reflect.getMetadata(
+      ROLES_KEY,
+      CareersController.prototype.options,
+    );
+
+    expect(roles).toEqual(
+      expect.arrayContaining(['TEACHING_SUPPORT_COORDINATOR']),
+    );
+  });
 
   beforeEach(() => {
     jest.resetAllMocks();

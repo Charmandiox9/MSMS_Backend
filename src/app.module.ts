@@ -31,6 +31,7 @@ import { LegalTermsModule } from './legal-terms/legal-terms.module';
 import { TermsAcceptanceGuard } from './legal-terms/terms-acceptance.guard';
 import { CareersModule } from './careers/careers.module';
 import { SemesterBudgetsModule } from './semester-budgets/semester-budgets.module';
+import { TitulationsModule } from './titulations/titulations.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -42,7 +43,7 @@ const devProviders =
     ConfigModule.forRoot({
       isGlobal: true,
       ignoreEnvFile: process.env.NODE_ENV === 'production',
-      envFilePath: ['.env.pii', '.env.development', '.env'],
+      envFilePath: ['.env.local', '.env.pii', '.env.development', '.env'],
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
@@ -77,6 +78,7 @@ const devProviders =
     LegalTermsModule,
     CareersModule,
     SemesterBudgetsModule,
+    TitulationsModule,
     HealthModule,
   ],
   controllers: [AppController],

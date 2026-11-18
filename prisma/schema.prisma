@@ -31,6 +31,8 @@ model User {
   dataRightsRequests    DataRightsRequest[]          @relation("DataRightsSubject")
   dataRightsActions     DataRightsRequestEvent[]     @relation("DataRightsActor")
   legalTermsAcceptances LegalTermsAcceptance[]
+  createdTitulations    TitulationProcess[]          @relation("TitulationCreatedBy")
+  updatedTitulations    TitulationProcess[]          @relation("TitulationUpdatedBy")
 
   isActive Boolean @default(true)
 
@@ -164,6 +166,26 @@ enum CourseAttemptOutcome {
 enum SemesterBudgetCategoryCode {
   HOURLY_TEACHERS
   ASSISTANTSHIPS
+}
+
+enum TitulationStage {
+  UNCLASSIFIED
+  INTAKE
+  REVIEW
+  DEFENSE
+  CLOSED
+}
+
+enum TitulationDocumentStatus {
+  UNVERIFIED
+  PENDING
+  RECEIVED
+  PREPARED
+}
+
+enum TitulationDataSource {
+  MANUAL
+  LEGACY_ACCESS
 }
 
 model AcademicSemester {
@@ -353,17 +375,58 @@ model StudentCourseAttempt {
 
 /// A career groups one or more curricula assigned to student cohorts.
 model Career {
-  id                 String              @id @default(uuid())
-  code               String?             @unique
-  name               String              @unique
-  isActive           Boolean             @default(true)
-  departmentProjects Project[]
-  departmentOutputs  ResearchOutput[]
-  curriculumVersions CurriculumVersion[]
-  students           Student[]
-  assistantships     Assistantship[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id                  String              @id @default(uuid())
+  code                String?             @unique
+  name                String              @unique
+  isActive            Boolean             @default(true)
+  departmentProjects  Project[]
+  departmentOutputs   ResearchOutput[]
+  curriculumVersions  CurriculumVersion[]
+  students            Student[]
+  assistantships      Assistantship[]
+  titulationProcesses TitulationProcess[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+}
+
+model TitulationProcess {
+  id                   String                   @id @default(uuid())
+  piiVersion           Int                      @default(0)
+  studentName          String
+  studentRut           String?
+  studentRutHash       String?
+  studentEmail         String?
+  studentEmailHash     String?
+  studentPhone         String?
+  thesisTopic          String?                  @db.Text
+  degree               String?
+  careerName           String
+  careerId             String?
+  guideName            String?
+  coGuideName          String?
+  reviewerOneName      String?
+  reviewerTwoName      String?
+  defenseDate          DateTime?                @db.Date
+  stage                TitulationStage          @default(INTAKE)
+  source               TitulationDataSource    @default(MANUAL)
+  defenseAnnexesStatus TitulationDocumentStatus @default(PENDING)
+  thesisSummaryStatus  TitulationDocumentStatus @default(PENDING)
+  libraryFormStatus    TitulationDocumentStatus @default(PENDING)
+  actaStatus           TitulationDocumentStatus @default(PENDING)
+  evaluationsStatus    TitulationDocumentStatus @default(PENDING)
+  createdById          String?
+  updatedById          String?
+  career               Career?                  @relation(fields: [careerId], references: [id], onDelete: SetNull)
+  createdBy            User?                    @relation("TitulationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                    @relation("TitulationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([stage, defenseDate])
+  @@index([careerId, stage])
+  @@index([studentRutHash])
+  @@index([studentEmailHash])
+  @@index([createdAt])
 }
 
 /// Curriculum version applied to an admission cohort; versions remain stable
