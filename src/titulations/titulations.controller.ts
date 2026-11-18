@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Header,
@@ -8,8 +9,14 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Res,
   StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { MAX_STORAGE_UPLOAD_BYTES } from '../storage/storage-transfer-token';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -21,6 +28,12 @@ import {
 import { TitulationsService } from './titulations.service';
 import { TitulationDraftKind } from './titulation-drafts';
 import { TitulationDocumentsService } from './titulation-documents.service';
+import {
+  attachmentContentDisposition,
+  isAllowedTitulationAttachmentType,
+} from './titulation-attachments.util';
+import type { TitulationUploadFile } from './titulation-attachments.util';
+import { TitulationAttachmentsService } from './titulation-attachments.service';
 
 const TITULATION_READ_ROLES = [
   'ACADEMIC_SECRETARY',
@@ -38,6 +51,7 @@ export class TitulationsController {
   constructor(
     private readonly service: TitulationsService,
     private readonly documents: TitulationDocumentsService,
+    private readonly attachments: TitulationAttachmentsService,
   ) {}
 
   @Post('search')
@@ -66,6 +80,86 @@ export class TitulationsController {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       disposition: `attachment; filename="${filename}"`,
     });
+  }
+
+  @Get(':id/attachments')
+  @Roles(...TITULATION_MANAGE_ROLES)
+  @Header('Cache-Control', 'private, no-store')
+  listAttachments(@Param('id', ParseUUIDPipe) id: string) {
+    return this.attachments.list(id);
+  }
+
+  @Post(':id/attachments')
+  @Roles(...TITULATION_MANAGE_ROLES)
+  @Header('Cache-Control', 'private, no-store')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_STORAGE_UPLOAD_BYTES },
+      fileFilter: (_request, file, callback) => {
+        const allowed = isAllowedTitulationAttachmentType(
+          file.originalname,
+          file.mimetype,
+        );
+        callback(
+          allowed
+            ? null
+            : new BadRequestException('Adjunta un archivo PDF o Word (.docx)'),
+          allowed,
+        );
+      },
+    }),
+  )
+  uploadAttachment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: TitulationUploadFile | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.attachments.upload(id, file, user.id);
+  }
+
+  @Get(':id/attachments/:attachmentId/file')
+  @Roles(...TITULATION_MANAGE_ROLES)
+  @Header('Cache-Control', 'private, no-store')
+  @Header('Referrer-Policy', 'no-referrer')
+  @Header('X-Content-Type-Options', 'nosniff')
+  @Header('Content-Security-Policy', "sandbox; default-src 'none'")
+  async downloadAttachment(
+    @Param('id', ParseUUIDPipe) processId: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const abort = new AbortController();
+    const onClose = () => {
+      if (!response.writableFinished) abort.abort();
+    };
+    response.once('close', onClose);
+
+    try {
+      const file = await this.attachments.open(
+        processId,
+        attachmentId,
+        abort.signal,
+      );
+      file.body.once('close', () => response.off('close', onClose));
+      return new StreamableFile(file.body, {
+        type: 'application/octet-stream',
+        disposition: attachmentContentDisposition(file.originalName),
+        length: file.length,
+      })
+        .setErrorHandler(() => {
+          if (response.destroyed) return;
+          if (response.headersSent) {
+            response.destroy();
+            return;
+          }
+          response.removeHeader('Content-Length');
+          response.status(503).end('No se pudo obtener el archivo');
+        })
+        .setErrorLogger(() => undefined);
+    } catch (error: unknown) {
+      response.off('close', onClose);
+      throw error;
+    }
   }
 
   @Post()

@@ -24,15 +24,16 @@ model User {
   googleId String? @unique
 
   // Los roles y permisos son configurables y se asignan mediante relaciones RBAC.
-  userRoles             UserRole[]
-  createdJustifications Justification[]              @relation("JustificationCreatedBy")
-  decidedJustifications Justification[]              @relation("JustificationDecidedBy")
-  justificationHistory  JustificationStatusHistory[]
-  dataRightsRequests    DataRightsRequest[]          @relation("DataRightsSubject")
-  dataRightsActions     DataRightsRequestEvent[]     @relation("DataRightsActor")
-  legalTermsAcceptances LegalTermsAcceptance[]
-  createdTitulations    TitulationProcess[]          @relation("TitulationCreatedBy")
-  updatedTitulations    TitulationProcess[]          @relation("TitulationUpdatedBy")
+  userRoles                    UserRole[]
+  createdJustifications        Justification[]              @relation("JustificationCreatedBy")
+  decidedJustifications        Justification[]              @relation("JustificationDecidedBy")
+  justificationHistory         JustificationStatusHistory[]
+  dataRightsRequests           DataRightsRequest[]          @relation("DataRightsSubject")
+  dataRightsActions            DataRightsRequestEvent[]     @relation("DataRightsActor")
+  legalTermsAcceptances        LegalTermsAcceptance[]
+  createdTitulations           TitulationProcess[]          @relation("TitulationCreatedBy")
+  updatedTitulations           TitulationProcess[]          @relation("TitulationUpdatedBy")
+  createdTitulationAttachments TitulationAttachment[]       @relation("TitulationAttachmentCreatedBy")
 
   isActive Boolean @default(true)
 
@@ -334,6 +335,8 @@ model Student {
   teachingAssistant         TeachingAssistant?
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
+
+  @@index([careerId])
 }
 
 /// A student attends an NRC in a semester, independently of teachers or time slots.
@@ -419,6 +422,7 @@ model TitulationProcess {
   career               Career?                  @relation(fields: [careerId], references: [id], onDelete: SetNull)
   createdBy            User?                    @relation("TitulationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy            User?                    @relation("TitulationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  attachments          TitulationAttachment[]
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
@@ -427,6 +431,22 @@ model TitulationProcess {
   @@index([studentRutHash])
   @@index([studentEmailHash])
   @@index([createdAt])
+}
+
+model TitulationAttachment {
+  id           String            @id @default(uuid())
+  processId    String
+  storageKey   String            @unique
+  originalName String            @db.VarChar(255)
+  contentType  String            @db.VarChar(128)
+  size         Int
+  createdById  String?
+  process      TitulationProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("TitulationAttachmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+
+  @@index([processId, createdAt])
+  @@index([createdById])
 }
 
 /// Curriculum version applied to an admission cohort; versions remain stable
@@ -478,6 +498,7 @@ model TeachingAssignment {
   @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
+  @@index([nrc])
 }
 
 /// Assistant profile linked to the global academic student; legacy links may be absent.
