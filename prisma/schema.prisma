@@ -384,20 +384,34 @@ model StudentCourseAttempt {
   @@index([courseId])
 }
 
+model Department {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  code        String?          @unique
+  description String?
+  careers     Career[]
+  projects    Project[]
+  outputs     ResearchOutput[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
 /// A career groups one or more curricula assigned to student cohorts.
 model Career {
   id                  String              @id @default(uuid())
   code                String?             @unique
   name                String              @unique
   isActive            Boolean             @default(true)
-  departmentProjects  Project[]
-  departmentOutputs   ResearchOutput[]
+  departmentId        String?
+  department          Department?         @relation(fields: [departmentId], references: [id], onDelete: NoAction)
   curriculumVersions  CurriculumVersion[]
   students            Student[]
   assistantships      Assistantship[]
   titulationProcesses TitulationProcess[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
+
+  @@index([departmentId])
 }
 
 model TitulationProcess {
@@ -873,7 +887,7 @@ enum ProjectStatus {
 /// General register: research, training, services, agreements and academic programs.
 model Project {
   departmentId String?
-  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: NoAction)
 
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
@@ -991,7 +1005,7 @@ enum ResearchOutputKind {
 
 model ResearchOutput {
   departmentId String?
-  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: NoAction)
 
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)

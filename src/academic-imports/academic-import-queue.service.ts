@@ -251,6 +251,7 @@ export class AcademicImportQueueService
           const career = await this.careers.create({
             code: input.input.code,
             name: input.input.name,
+            departmentId: input.input.departmentId,
             cohortYear: input.input.cohortYear,
             curriculumCourses: input.input.courses,
           });

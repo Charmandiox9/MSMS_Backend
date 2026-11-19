@@ -47,6 +47,10 @@ export class CurriculumVersionInputDto {
 
 export class CreateCareerDto {
   @IsOptional()
+  @IsUUID()
+  departmentId?: string | null;
+
+  @IsOptional()
   @Transform(trim)
   @IsString()
   @MaxLength(30)
@@ -82,6 +86,10 @@ export class CreateCareerDto {
 }
 
 export class UpdateCareerDto {
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string | null;
+
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -133,6 +141,10 @@ export class ImportCurriculumDto {
 }
 
 export class CreateCareerFromCsvDto {
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string | null;
+
   @IsOptional()
   @Transform(trim)
   @IsString()

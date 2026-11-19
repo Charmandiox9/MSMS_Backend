@@ -19,7 +19,7 @@ import {
 
 describe('indicadores y reportes GraphQL', () => {
   const prisma = {
-    career: { findMany: jest.fn() },
+    department: { findMany: jest.fn() },
     project: { groupBy: jest.fn() },
     research: { groupBy: jest.fn() },
     researchOutput: { groupBy: jest.fn() },
@@ -54,7 +54,7 @@ describe('indicadores y reportes GraphQL', () => {
       rows: [{ title: 'Proyecto' }],
     });
     reports.semesterOptions.mockResolvedValue([]);
-    prisma.career.findMany.mockResolvedValue([]);
+    prisma.department.findMany.mockResolvedValue([]);
     prisma.project.groupBy.mockResolvedValue([]);
     prisma.research.groupBy.mockResolvedValue([]);
     prisma.researchOutput.groupBy.mockResolvedValue([]);
@@ -121,7 +121,7 @@ describe('indicadores y reportes GraphQL', () => {
   });
 
   it('counts all projects and only publications per department, including unassigned and zero totals', async () => {
-    prisma.career.findMany.mockResolvedValue([
+    prisma.department.findMany.mockResolvedValue([
       { id: 'd1', name: 'Biología Marina' },
       { id: 'd2', name: 'IPRYMA' },
     ]);

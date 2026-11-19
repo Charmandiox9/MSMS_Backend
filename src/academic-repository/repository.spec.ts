@@ -52,7 +52,7 @@ describe('CRUD del repositorio académico', () => {
     delete: jest.fn(),
   });
   const prisma = {
-    career: delegate(),
+    department: delegate(),
     project: delegate(),
     research: delegate(),
     researchOutput: delegate(),
@@ -123,7 +123,7 @@ describe('CRUD del repositorio académico', () => {
       reportingYear: 2026,
       departmentId: id,
     };
-    prisma.career.findUnique.mockResolvedValue({ id });
+    prisma.department.findUnique.mockResolvedValue({ id });
     await service.createResearchOutput(input);
     expect(prisma.researchOutput.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -173,14 +173,14 @@ describe('CRUD del repositorio académico', () => {
   });
 
   it('validates and stores a project department without guessing existing assignments', async () => {
-    prisma.career.findUnique.mockResolvedValue({ id });
+    prisma.department.findUnique.mockResolvedValue({ id });
     await service.createProject({ ...project, departmentId: id });
     expect(prisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ departmentId: id }),
       }),
     );
-    prisma.career.findUnique.mockResolvedValue(null);
+    prisma.department.findUnique.mockResolvedValue(null);
     await expect(
       service.createProject({ ...project, departmentId: id }),
     ).rejects.toThrow('departamento');

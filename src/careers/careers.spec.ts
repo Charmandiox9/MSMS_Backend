@@ -1,9 +1,13 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { DeleteCareerDto } from './careers.dto';
+import {
+  CreateCareerFromCsvDto,
+  DeleteCareerDto,
+  UpdateCareerDto,
+} from './careers.dto';
 import { CareersController } from './careers.controller';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CareersService } from './careers.service';
@@ -12,6 +16,7 @@ import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 const careerId = '11111111-1111-4111-8111-111111111111';
 const versionId = '22222222-2222-4222-8222-222222222222';
 const courseId = '33333333-3333-4333-8333-333333333333';
+const departmentId = '44444444-4444-4444-8444-444444444444';
 
 describe('CareersService', () => {
   const tx = {
@@ -153,12 +158,16 @@ describe('CareersService', () => {
     const input = {
       code: 'BIO-MAR',
       name: 'Biología Marina',
+      departmentId,
       cohortYear: 2026,
       courses: [{ courseId, termNumber: 1 }],
     };
 
     await service.create(input);
 
+    expect(tx.career.create).toHaveBeenCalledWith({
+      data: { code: input.code, name: input.name, departmentId },
+    });
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       maxWait: 10_000,
       timeout: 60_000,
@@ -172,6 +181,41 @@ describe('CareersService', () => {
         },
       }),
     );
+  });
+
+  it('assigns and clears career departments while preserving omitted assignments', async () => {
+    await service.update(careerId, { departmentId });
+    await service.update(careerId, { departmentId: null });
+    await service.update(careerId, { isActive: false });
+
+    expect(
+      prisma.career.update.mock.calls.map(([query]) => query.data),
+    ).toEqual([{ departmentId }, { departmentId: null }, { isActive: false }]);
+  });
+
+  it('rejects an unknown department in a career update', async () => {
+    prisma.career.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('FK', {
+        code: 'P2003',
+        clientVersion: '7',
+      }),
+    );
+    await expect(service.update(careerId, { departmentId })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('validates department identifiers on updates and CSV jobs', async () => {
+    for (const input of [
+      plainToInstance(UpdateCareerDto, { departmentId: 'invalid' }),
+      plainToInstance(CreateCareerFromCsvDto, { departmentId: 'invalid' }),
+    ]) {
+      expect(await validate(input)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ property: 'departmentId' }),
+        ]),
+      );
+    }
   });
 
   it('creates a career and imports its first curriculum in one transaction', async () => {
