@@ -96,6 +96,23 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
     lookups: { email: 'emailHash', studentCode: 'studentCodeHash' },
     searchable: ['name', 'email', 'studentCode'],
   },
+  AssistantshipApplication: {
+    fields: [
+      'externalResponseId',
+      'studentEmail',
+      'name',
+      'rut',
+      'phone',
+      'submittedCareer',
+      'address',
+      'subject',
+      'motivation',
+      'ppa',
+      'reviewNote',
+    ],
+    lookups: { externalResponseId: 'externalResponseIdHash' },
+    searchable: [],
+  },
   JustificationInbox: {
     fields: [
       'studentEmail',

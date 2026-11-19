@@ -75,6 +75,7 @@ const validInput = (): RegisterAssistantshipInput =>
 describe('AssistantshipsService', () => {
   let service: AssistantshipsService;
   const transaction = {
+    assistantshipApplication: { findUnique: jest.fn(), updateMany: jest.fn() },
     teachingAssignment: { findUnique: jest.fn() },
     teachingAssistant: {
       findFirst: jest.fn(),
@@ -452,6 +453,57 @@ describe('AssistantshipsService', () => {
     await service.register(validInput());
     expect(transaction.student.create).not.toHaveBeenCalled();
     expect(transaction.student.update).not.toHaveBeenCalled();
+  });
+
+  it('links an approved application in the assistantship registration transaction', async () => {
+    const input = { ...validInput(), applicationId: 'application-1' };
+    transaction.assistantshipApplication.findUnique.mockResolvedValue({
+      id: input.applicationId,
+      status: 'APPROVED',
+      studentId: input.studentId,
+      assistantshipId: null,
+    });
+    transaction.assistantshipApplication.updateMany.mockResolvedValue({
+      count: 1,
+    });
+    await service.register(input);
+    expect(
+      transaction.assistantshipApplication.updateMany,
+    ).toHaveBeenCalledWith({
+      where: {
+        id: input.applicationId,
+        status: 'APPROVED',
+        assistantshipId: null,
+      },
+      data: { assistantshipId: record.id, studentId: input.studentId },
+    });
+  });
+
+  it('rejects a completed application before creating another assistantship', async () => {
+    transaction.assistantshipApplication.findUnique.mockResolvedValue({
+      status: 'APPROVED',
+      assistantshipId: 'existing',
+    });
+    await expect(
+      service.register({ ...validInput(), applicationId: 'app' }),
+    ).rejects.toMatchObject({
+      response: { code: 'APPLICATION_UNAVAILABLE' },
+    });
+    expect(transaction.assistantship.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a different student when the application already matches a record', async () => {
+    transaction.assistantshipApplication.findUnique.mockResolvedValue({
+      status: 'APPROVED',
+      assistantshipId: null,
+      studentId: 'other',
+    });
+    await expect(
+      service.register({ ...validInput(), applicationId: 'app' }),
+    ).rejects.toMatchObject({
+      response: { code: 'APPLICATION_STUDENT' },
+    });
+    expect(transaction.assistantship.create).not.toHaveBeenCalled();
   });
   it('registers a past course without a teaching assignment but with an assistantship NRC', async () => {
     const semester = {

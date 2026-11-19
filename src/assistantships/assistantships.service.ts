@@ -612,6 +612,44 @@ export class AssistantshipsService {
     try {
       const record = await this.prisma.$transaction(
         async (transaction) => {
+          const application =
+            !id && input.applicationId
+              ? await transaction.assistantshipApplication.findUnique({
+                  where: { id: input.applicationId },
+                  select: {
+                    id: true,
+                    status: true,
+                    assistantshipId: true,
+                    studentId: true,
+                    studentEmail: true,
+                  },
+                })
+              : null;
+          if (
+            input.applicationId &&
+            (!application ||
+              application.status !== 'APPROVED' ||
+              application.assistantshipId)
+          )
+            throw new ConflictException({
+              code: 'APPLICATION_UNAVAILABLE',
+              message: 'La postulación no está disponible para completar',
+            });
+          if (application) {
+            const studentId =
+              application.studentId ??
+              (
+                await transaction.student.findUnique({
+                  where: { email: application.studentEmail },
+                  select: { id: true },
+                })
+              )?.id;
+            if (studentId && studentId !== input.studentId)
+              invalid(
+                'APPLICATION_STUDENT',
+                'Selecciona el estudiante vinculado a la postulación',
+              );
+          }
           const existing = id
             ? await transaction.assistantship.findUnique({
                 where: { id },
@@ -718,9 +756,36 @@ export class AssistantshipsService {
               })),
             },
           };
-          return id
-            ? transaction.assistantship.update({ where: { id }, data, include })
-            : transaction.assistantship.create({ data, include });
+          if (id)
+            return transaction.assistantship.update({
+              where: { id },
+              data,
+              include,
+            });
+          const created = await transaction.assistantship.create({
+            data,
+            include,
+          });
+          if (application) {
+            const linked =
+              await transaction.assistantshipApplication.updateMany({
+                where: {
+                  id: application.id,
+                  status: 'APPROVED',
+                  assistantshipId: null,
+                },
+                data: {
+                  assistantshipId: created.id,
+                  studentId: input.studentId,
+                },
+              });
+            if (!linked.count)
+              throw new ConflictException({
+                code: 'APPLICATION_UNAVAILABLE',
+                message: 'La postulación ya se completó',
+              });
+          }
+          return created;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );

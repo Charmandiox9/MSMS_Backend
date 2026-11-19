@@ -471,6 +471,7 @@ input SaveAssistantshipTariffInput {
 }
 
 input RegisterAssistantshipInput {
+  applicationId: ID
   assistantshipNrc: String!
   teachingAssignmentId: ID
   semesterId: ID!

@@ -34,6 +34,7 @@ model User {
   createdTitulations           TitulationProcess[]          @relation("TitulationCreatedBy")
   updatedTitulations           TitulationProcess[]          @relation("TitulationUpdatedBy")
   createdTitulationAttachments TitulationAttachment[]       @relation("TitulationAttachmentCreatedBy")
+  reviewedAssistantshipApplications AssistantshipApplication[]
 
   isActive Boolean @default(true)
 
@@ -340,6 +341,7 @@ model Student {
   justifications            Justification[]
   outputAuthorships         ResearchOutputAuthor[]
   teachingAssistant         TeachingAssistant?
+  assistantshipApplications AssistantshipApplication[]
   titulationProcesses       TitulationProcess[]
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
@@ -589,6 +591,7 @@ model Assistantship {
   career               Career?                 @relation(fields: [careerId], references: [id], onDelete: Restrict)
   approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
   schedules            AssistantshipSchedule[]
+  application          AssistantshipApplication?
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
@@ -596,6 +599,51 @@ model Assistantship {
   @@index([assistantId, courseId, approvedOn])
   @@index([teachingAssignmentId, courseId])
   @@index([semesterId, courseId])
+}
+
+enum AssistantshipApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AssistantshipApplicationNotification {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  FAILED
+}
+
+/// An approved application is the draft until a complete assistantship is registered.
+model AssistantshipApplication {
+  id                     String                             @id @default(uuid())
+  piiVersion             Int                                @default(0)
+  externalResponseId     String
+  externalResponseIdHash String?                            @unique
+  studentEmail           String
+  name                   String
+  rut                    String
+  phone                  String
+  submittedCareer        String
+  address                String
+  subject                String
+  motivation             String
+  ppa                    String
+  submittedAt            DateTime
+  status                 AssistantshipApplicationStatus    @default(PENDING)
+  reviewNote             String?
+  reviewedAt             DateTime?
+  reviewedById           String?
+  reviewedBy             User?                              @relation(fields: [reviewedById], references: [id], onDelete: Restrict)
+  notification           AssistantshipApplicationNotification @default(NOT_REQUESTED)
+  studentId              String?
+  student                Student?                           @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  assistantshipId        String?                            @unique
+  assistantship          Assistantship?                     @relation(fields: [assistantshipId], references: [id], onDelete: Restrict)
+  createdAt              DateTime                           @default(now())
+
+  @@index([status, submittedAt, id])
+  @@index([studentId])
 }
 
 /// Monthly CLP rate per weekly assistantship hour.

@@ -75,6 +75,11 @@ export class AssistantshipScheduleInput {
 
 @InputType()
 export class RegisterAssistantshipInput {
+  @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
+  applicationId?: string;
+
   @Field()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,

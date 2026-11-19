@@ -62,6 +62,8 @@ La guía de [simulación local de producción con Docker](docs/docker-local.md) 
 
 Para configurar el formulario de justificaciones, Google Apps Script y su conexión al backend, sigue la [guía de Google Forms](docs/justifications/google-forms.md). El endpoint de recepción es `POST /api/justifications/inbox` y requiere `GOOGLE_FORMS_WEBHOOK_SECRET`.
 
+La [guía de Google Forms para postulaciones de ayudantía](docs/assistantships/google-forms.md) incluye el formato y el Apps Script para conectar el formulario institucional.
+
 ## Verificación
 
 ```bash
