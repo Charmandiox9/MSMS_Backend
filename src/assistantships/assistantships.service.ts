@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   HttpException,
   InternalServerErrorException,
@@ -18,6 +19,7 @@ import {
   SaveAssistantshipTariffInput,
 } from './assistantships.dto';
 import { SemesterBudgetsService } from '../semester-budgets/semester-budgets.service';
+import { NotificationsService } from '../notifications/notifications.service';
 const include = {
   approval: {
     include: {
@@ -48,10 +50,13 @@ const invalid = (code: string, message: string): never => {
 };
 @Injectable()
 export class AssistantshipsService {
+  private readonly logger = new Logger(AssistantshipsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly semesterBudgets: SemesterBudgetsService,
+    private readonly notifications: NotificationsService,
   ) {}
   private today(): Date {
     const parts = new Intl.DateTimeFormat('en', {
@@ -427,7 +432,52 @@ export class AssistantshipsService {
   async register(
     input: RegisterAssistantshipInput,
   ): Promise<AssistantshipView> {
-    return this.save(input);
+    const record = await this.save(input);
+    if (!input.notifySchedule) return record;
+    if (
+      !this.config.get<string>('RESEND_API_KEY') ||
+      !this.config.get<string>('NOTIFICATIONS_FROM')
+    )
+      return { ...record, scheduleNotificationSent: false };
+
+    const dayNames = [
+      'lunes',
+      'martes',
+      'miércoles',
+      'jueves',
+      'viernes',
+      'sábado',
+      'domingo',
+    ];
+    const hour = (minute: number) =>
+      `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+    const schedule = record.schedules.map(
+      ({ weekday, startsAtMinute, endsAtMinute, location }) =>
+        `- ${dayNames[weekday - 1]} ${hour(startsAtMinute)}–${hour(endsAtMinute)}${location ? ` · ${location}` : ''}`,
+    );
+    const date = (value: string) =>
+      new Intl.DateTimeFormat('es-CL', {
+        dateStyle: 'long',
+        timeZone: 'UTC',
+      }).format(new Date(value));
+    try {
+      await this.notifications.send({
+        to: record.assistantEmail,
+        subject: 'Horario de ayudantía confirmado',
+        text: [
+          `Se confirmó el horario de tu ayudantía de ${record.courseName} para el semestre ${record.semesterName}.`,
+          `Vigencia: ${date(record.startsOn)} al ${date(record.endsOn ?? input.endsOn)}.`,
+          '',
+          ...schedule,
+        ].join('\n'),
+      });
+      return { ...record, scheduleNotificationSent: true };
+    } catch {
+      this.logger.warn(
+        'No se pudo enviar el horario de la ayudantía registrada',
+      );
+      return { ...record, scheduleNotificationSent: false };
+    }
   }
   async update(
     id: string,

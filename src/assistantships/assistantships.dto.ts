@@ -75,6 +75,11 @@ export class AssistantshipScheduleInput {
 
 @InputType()
 export class RegisterAssistantshipInput {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  notifySchedule?: boolean;
+
   @Field(() => ID, { nullable: true })
   @IsOptional()
   @IsUUID()
@@ -174,6 +179,7 @@ export class AssistantshipScheduleView {
 
 @ObjectType()
 export class AssistantshipView {
+  @Field(() => Boolean, { nullable: true }) scheduleNotificationSent?: boolean;
   @Field(() => ID) id!: string;
   @Field(() => ID, { nullable: true }) teachingAssignmentId!: string | null;
   @Field(() => ID, { nullable: true }) studentId!: string | null;

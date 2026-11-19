@@ -10,6 +10,7 @@ type AssistantshipScheduleView {
 }
 
 type AssistantshipView {
+  scheduleNotificationSent: Boolean
   id: ID!
   teachingAssignmentId: ID
   studentId: ID
@@ -471,6 +472,7 @@ input SaveAssistantshipTariffInput {
 }
 
 input RegisterAssistantshipInput {
+  notifySchedule: Boolean
   applicationId: ID
   assistantshipNrc: String!
   teachingAssignmentId: ID

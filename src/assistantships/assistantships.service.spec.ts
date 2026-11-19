@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssistantshipsService } from './assistantships.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SemesterBudgetsService } from '../semester-budgets/semester-budgets.service';
 import {
   AssistantshipFilters,
@@ -74,6 +75,7 @@ const validInput = (): RegisterAssistantshipInput =>
 
 describe('AssistantshipsService', () => {
   let service: AssistantshipsService;
+  const send = jest.fn();
   const transaction = {
     assistantshipApplication: { findUnique: jest.fn(), updateMany: jest.fn() },
     teachingAssignment: { findUnique: jest.fn() },
@@ -162,6 +164,7 @@ describe('AssistantshipsService', () => {
         AssistantshipsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: () => 'America/Santiago' } },
+        { provide: NotificationsService, useValue: { send } },
         {
           provide: SemesterBudgetsService,
           useValue: { assistantshipSummary: jest.fn() },
@@ -171,6 +174,55 @@ describe('AssistantshipsService', () => {
     service = module.get(AssistantshipsService);
   });
   afterEach(() => jest.useRealTimers());
+
+  it('sends the confirmed schedule only after registering the assistantship', async () => {
+    transaction.assistantship.create.mockResolvedValue({
+      ...record,
+      schedules: [
+        {
+          weekday: 1,
+          startsAtMinute: 490,
+          endsAtMinute: 580,
+          location: 'Sala 2',
+        },
+      ],
+    });
+    const result = await service.register({
+      ...validInput(),
+      notifySchedule: true,
+    });
+    expect(result.scheduleNotificationSent).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith({
+      to: assistant.email,
+      subject: 'Horario de ayudantía confirmado',
+      text: expect.stringContaining('lunes 08:10–09:40 · Sala 2'),
+    });
+    expect(
+      transaction.assistantship.create.mock.invocationCallOrder[0],
+    ).toBeLessThan(send.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps registration successful when sending the schedule fails', async () => {
+    send.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(
+      service.register({ ...validInput(), notifySchedule: true }),
+    ).resolves.toMatchObject({
+      id: record.id,
+      scheduleNotificationSent: false,
+    });
+  });
+
+  it('does not send a schedule when it was not requested or registration fails', async () => {
+    await service.register(validInput());
+    transaction.assistantship.create.mockRejectedValueOnce(
+      new Error('Database unavailable'),
+    );
+    await expect(
+      service.register({ ...validInput(), notifySchedule: true }),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+  });
 
   it('assigns a semester tariff and calculates the estimated amount using 30-day months', async () => {
     const result = await service.register(validInput());
