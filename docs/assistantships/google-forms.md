@@ -22,8 +22,8 @@ Usa un formulario vacío y ejecuta `prepararFormularioVacio` para crear las preg
 ## Conexión
 
 1. Aplica la migración `20261119190000_add_assistantship_applications` en el entorno de destino y configura un secreto propio de esta integración en `ASSISTANTSHIP_FORMS_WEBHOOK_SECRET`. El backend debe estar disponible por HTTPS.
-2. Abre el editor de Apps Script del formulario y copia el contenido de [google-forms.gs](google-forms.gs). Usa un proyecto vinculado al formulario, no a una hoja de cálculo.
-3. En **Configuración del proyecto → Propiedades del script**, agrega `MARSYS_API_BASE_URL` con la URL HTTPS del backend incluyendo `/api`, y `ASSISTANTSHIP_FORMS_WEBHOOK_SECRET` con el mismo valor del backend.
+2. Copia [google-forms.gs](google-forms.gs) en el proyecto abierto desde el formulario o en tu proyecto independiente de Apps Script.
+3. En **Configuración del proyecto → Propiedades del script**, agrega `MARSYS_API_BASE_URL` con la URL HTTPS del backend incluyendo `/api`, y `ASSISTANTSHIP_FORMS_WEBHOOK_SECRET` con el mismo valor del backend. Si el proyecto es independiente, agrega también `MARSYS_ASSISTANTSHIP_FORM_ID` con el ID que figura entre `/d/` y `/edit` en el enlace de edición. Usa una cuenta con acceso de edición. [Documentación de FormApp](https://developers.google.com/apps-script/reference/forms/form-app#getactiveform)
 4. Ejecuta `instalarTriggerPostulaciones` y autoriza el activador desde la cuenta propietaria o encargada. Envía una respuesta de prueba desde la vista de usuario y comprueba que aparece en la bandeja. El identificador de formulario y respuesta evita duplicados al reenviar.
 5. Para recuperar una respuesta individual, agrega su ID de Google Forms a la propiedad `MARSYS_RETRY_RESPONSE_ID` y ejecuta `reenviarPostulacionPorId`. Consulta los errores de activación desde **Ejecuciones** en Apps Script.
 

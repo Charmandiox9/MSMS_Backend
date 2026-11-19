@@ -9,8 +9,17 @@ const ASSISTANTSHIP_QUESTIONS = [
   ['ppa', 'PPA', false],
 ];
 
+function obtenerFormularioPostulaciones_() {
+  const activeForm = FormApp.getActiveForm();
+  if (activeForm) return activeForm;
+
+  const id = (PropertiesService.getScriptProperties().getProperty('MARSYS_ASSISTANTSHIP_FORM_ID') || '').trim();
+  if (!id) throw new Error('Abre Apps Script desde el formulario o configura MARSYS_ASSISTANTSHIP_FORM_ID con el ID de su URL de edición.');
+  return FormApp.openById(id);
+}
+
 function prepararFormularioVacio() {
-  const form = FormApp.getActiveForm();
+  const form = obtenerFormularioPostulaciones_();
   if (form.getItems().length) throw new Error('Esta función requiere un formulario vacío.');
   form.setTitle('Postulación de ayudantía');
   form.setCollectEmail(true);
@@ -23,7 +32,7 @@ function prepararFormularioVacio() {
 }
 
 function instalarTriggerPostulaciones() {
-  const form = FormApp.getActiveForm();
+  const form = obtenerFormularioPostulaciones_();
   if (!form.collectsEmail()) throw new Error('Activa la recopilación de correo verificado en Forms.');
   const exists = ScriptApp.getProjectTriggers().some((trigger) =>
     trigger.getHandlerFunction() === 'enviarPostulacion' &&
@@ -41,7 +50,7 @@ function enviarPostulacion(event) {
 function reenviarPostulacionPorId() {
   const id = PropertiesService.getScriptProperties().getProperty('MARSYS_RETRY_RESPONSE_ID');
   if (!id) throw new Error('Configura MARSYS_RETRY_RESPONSE_ID con el ID de la respuesta a reenviar.');
-  const form = FormApp.getActiveForm();
+  const form = obtenerFormularioPostulaciones_();
   entregarPostulacion_(form, form.getResponse(id));
 }
 
