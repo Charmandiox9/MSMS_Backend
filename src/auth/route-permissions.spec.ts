@@ -198,6 +198,7 @@ describe('Matriz de permisos por endpoint', () => {
         'ACADEMIC_PROCESS_ANALYST',
       ],
       'DashboardController.teachingSupportCoordinator': COORDINATOR,
+      'DashboardController.privacyOfficer': ['PRIVACY_OFFICER'],
 
       'JustificationsController.receiveFormSubmission': 'PUBLIC',
       'JustificationsController.listInbox': COORDINATOR,

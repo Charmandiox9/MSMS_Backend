@@ -12,6 +12,7 @@ describe('DashboardController', () => {
       teachingSupportCoordinator: jest
         .fn()
         .mockResolvedValue({ unreadInbox: 4 }),
+      privacyOfficer: jest.fn().mockResolvedValue({ overdueRequests: 2 }),
     };
     const controller = new DashboardController(
       service as unknown as DashboardService,
@@ -26,6 +27,9 @@ describe('DashboardController', () => {
     });
     await expect(controller.teachingSupportCoordinator()).resolves.toEqual({
       unreadInbox: 4,
+    });
+    await expect(controller.privacyOfficer()).resolves.toEqual({
+      overdueRequests: 2,
     });
   });
 });

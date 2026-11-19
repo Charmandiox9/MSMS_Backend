@@ -29,4 +29,10 @@ export class DashboardController {
   teachingSupportCoordinator() {
     return this.dashboard.teachingSupportCoordinator();
   }
+
+  @Get('privacy-officer')
+  @Roles('PRIVACY_OFFICER')
+  privacyOfficer() {
+    return this.dashboard.privacyOfficer();
+  }
 }

@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateSemesterBudgetDto } from './semester-budgets.dto';
 import { SemesterBudgetCategoryCode } from '@prisma/client';
+import { calculateHourlyPayment } from '../academic/hourly-payment-calculator';
 
 const inferredCategoryCode = (
   name: string,
@@ -30,6 +31,28 @@ const BUDGET_INCLUDE = {
     include: { recipientRoles: { include: { role: true } } },
   },
 };
+
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+function assistantshipAmount(
+  hourlyRate: Prisma.Decimal,
+  weeklyHours: Prisma.Decimal,
+  start: Date,
+  end: Date,
+) {
+  const days = Math.max(
+    0,
+    Math.floor((end.getTime() - start.getTime()) / MILLISECONDS_PER_DAY) + 1,
+  );
+  return hourlyRate.mul(weeklyHours).mul(days).div(30);
+}
+
+const assistantshipBudgetFields = {
+  weeklyHours: true,
+  tariffRateClp: true,
+  startsOn: true,
+  endsOn: true,
+} as const;
 
 @Injectable()
 export class SemesterBudgetsService {
@@ -203,29 +226,21 @@ export class SemesterBudgetsService {
     );
     const records = await this.prisma.assistantship.findMany({
       where: { semesterId },
-      select: {
-        weeklyHours: true,
-        tariffRateClp: true,
-        startsOn: true,
-        endsOn: true,
-      },
+      select: assistantshipBudgetFields,
     });
     const unpricedCount = records.filter(
       (record) => !record.weeklyHours || !record.tariffRateClp,
     ).length;
     const occupied = records.reduce((sum, record) => {
       if (!record.weeklyHours || !record.tariffRateClp) return sum;
-      const end = record.endsOn ?? semester.endsOn;
-      const days = Math.max(
-        0,
-        Math.floor((end.getTime() - record.startsOn.getTime()) / 86_400_000) +
-          1,
+      return sum.add(
+        assistantshipAmount(
+          record.tariffRateClp,
+          record.weeklyHours,
+          record.startsOn,
+          record.endsOn ?? semester.endsOn,
+        ),
       );
-      const amount = record.tariffRateClp
-        .mul(record.weeklyHours)
-        .mul(days)
-        .div(30);
-      return sum.add(amount);
     }, new Prisma.Decimal(0));
     const allocatedAmountClp = allocation?.amountClp ?? new Prisma.Decimal(0);
     const occupiedAmountClp = occupied.toDecimalPlaces(
@@ -246,6 +261,138 @@ export class SemesterBudgetsService {
             .toNumber(),
       assistantships: records.length,
       unpricedCount,
+    };
+  }
+
+  async overview() {
+    const semester = await this.prisma.academicSemester.findFirst({
+      where: { isActive: true },
+      orderBy: { startsOn: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        endsOn: true,
+        budget: {
+          select: {
+            totalAmountClp: true,
+            allocations: { orderBy: { name: 'asc' } },
+          },
+        },
+      },
+    });
+    if (!semester) return { state: 'no-semester' as const };
+    if (!semester.budget)
+      return { state: 'no-budget' as const, semesterName: semester.name };
+
+    const [contracts, assistantships] = await Promise.all([
+      this.prisma.hourlyTeachingContract.findMany({
+        where: { semesterId: semester.id },
+        select: {
+          hourlyRateClp: true,
+          directHours: true,
+          startsOn: true,
+          endsOn: true,
+        },
+      }),
+      this.prisma.assistantship.findMany({
+        where: { semesterId: semester.id },
+        select: assistantshipBudgetFields,
+      }),
+    ]);
+    const months = new Map<
+      string,
+      { hourly: number; assistants: Prisma.Decimal }
+    >();
+    const monthAmounts = (month: string) => {
+      const amounts = months.get(month) ?? {
+        hourly: 0,
+        assistants: new Prisma.Decimal(0),
+      };
+      months.set(month, amounts);
+      return amounts;
+    };
+    for (const contract of contracts) {
+      for (const month of calculateHourlyPayment(contract).months)
+        monthAmounts(month.month).hourly += Number(month.amountClp);
+    }
+
+    let unpricedAssistantships = 0;
+    for (const {
+      weeklyHours,
+      tariffRateClp,
+      startsOn,
+      endsOn,
+    } of assistantships) {
+      if (!weeklyHours || !tariffRateClp) {
+        unpricedAssistantships++;
+        continue;
+      }
+      const end = endsOn ?? semester.endsOn;
+      for (const cursor = new Date(startsOn); cursor <= end;) {
+        const nextMonth = new Date(
+          Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1),
+        );
+        const lastDay = new Date(
+          Math.min(end.getTime(), nextMonth.getTime() - MILLISECONDS_PER_DAY),
+        );
+        const amounts = monthAmounts(cursor.toISOString().slice(0, 7));
+        amounts.assistants = amounts.assistants.add(
+          assistantshipAmount(tariffRateClp, weeklyHours, cursor, lastDay),
+        );
+        cursor.setTime(nextMonth.getTime());
+      }
+    }
+
+    let assistantshipTotal = new Prisma.Decimal(0);
+    let roundedAssistantshipTotal = 0;
+    let hourlyTotal = 0;
+    const monthly = [...months.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, amounts]) => {
+        const previous = roundedAssistantshipTotal;
+        assistantshipTotal = assistantshipTotal.add(amounts.assistants);
+        // Round the cumulative estimate so the visible monthly sums reconcile with the total.
+        roundedAssistantshipTotal = assistantshipTotal
+          .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP)
+          .toNumber();
+        hourlyTotal += amounts.hourly;
+        return {
+          month,
+          hourlyClp: amounts.hourly,
+          assistantshipsClp: roundedAssistantshipTotal - previous,
+          accumulatedClp: hourlyTotal + roundedAssistantshipTotal,
+        };
+      });
+    const estimatedByCategory = {
+      [SemesterBudgetCategoryCode.ASSISTANTSHIPS]: roundedAssistantshipTotal,
+      [SemesterBudgetCategoryCode.HOURLY_TEACHERS]: hourlyTotal,
+    };
+    const allocations = semester.budget.allocations.map(
+      ({ id, name, code, amountClp }) => {
+        const category = code ?? inferredCategoryCode(name);
+        return {
+          id,
+          name,
+          allocatedClp: amountClp.toNumber(),
+          estimatedClp: category ? estimatedByCategory[category] : null,
+        };
+      },
+    );
+    const totalClp = semester.budget.totalAmountClp.toNumber();
+    const allocatedClp = allocations.reduce(
+      (total, item) => total + item.allocatedClp,
+      0,
+    );
+    return {
+      state: 'ready' as const,
+      semesterName: semester.name,
+      totalClp,
+      allocatedClp,
+      unallocatedClp: totalClp - allocatedClp,
+      estimatedClp: hourlyTotal + roundedAssistantshipTotal,
+      unpricedAssistantships,
+      allocations,
+      monthly,
     };
   }
 }

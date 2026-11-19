@@ -107,4 +107,122 @@ describe('SemesterBudgetsService', () => {
       unpricedCount: 1,
     });
   });
+
+  it('separates budget allocation from monthly commitments and reconciles rounding', async () => {
+    const decimal = (amount: number) => new Prisma.Decimal(amount);
+    const prisma = {
+      academicSemester: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'active',
+          name: '2026-2',
+          endsOn: new Date('2026-09-01'),
+          budget: {
+            totalAmountClp: decimal(26000),
+            allocations: [
+              {
+                id: '1',
+                name: 'Ayudantías',
+                code: null,
+                amountClp: decimal(100),
+              },
+              {
+                id: '2',
+                name: 'Docencia por hora',
+                code: 'HOURLY_TEACHERS',
+                amountClp: decimal(18000),
+              },
+              {
+                id: '3',
+                name: 'Materiales',
+                code: null,
+                amountClp: decimal(1400),
+              },
+            ],
+          },
+        }),
+      },
+      hourlyTeachingContract: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            startsOn: new Date('2026-08-01'),
+            endsOn: new Date('2026-08-31'),
+            directHours: decimal(2),
+            hourlyRateClp: decimal(10000),
+          },
+        ]),
+      },
+      assistantship: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            startsOn: new Date('2026-08-31'),
+            endsOn: null,
+            weeklyHours: decimal(1),
+            tariffRateClp: decimal(45),
+          },
+          { weeklyHours: null, tariffRateClp: null },
+        ]),
+      },
+    };
+    const service = new SemesterBudgetsService(
+      prisma as unknown as PrismaService,
+    );
+    await expect(service.overview()).resolves.toEqual({
+      state: 'ready',
+      semesterName: '2026-2',
+      totalClp: 26000,
+      allocatedClp: 19500,
+      unallocatedClp: 6500,
+      estimatedClp: 20003,
+      unpricedAssistantships: 1,
+      allocations: [
+        { id: '1', name: 'Ayudantías', allocatedClp: 100, estimatedClp: 3 },
+        {
+          id: '2',
+          name: 'Docencia por hora',
+          allocatedClp: 18000,
+          estimatedClp: 20000,
+        },
+        { id: '3', name: 'Materiales', allocatedClp: 1400, estimatedClp: null },
+      ],
+      monthly: [
+        {
+          month: '2026-08',
+          hourlyClp: 20000,
+          assistantshipsClp: 2,
+          accumulatedClp: 20002,
+        },
+        {
+          month: '2026-09',
+          hourlyClp: 0,
+          assistantshipsClp: 1,
+          accumulatedClp: 20003,
+        },
+      ],
+    });
+    expect(prisma.hourlyTeachingContract.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { semesterId: 'active' } }),
+    );
+    expect(prisma.assistantship.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { semesterId: 'active' } }),
+    );
+  });
+
+  it('distinguishes no active semester from an active semester with no budget', async () => {
+    const prisma = {
+      academicSemester: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ name: '2026-2', budget: null }),
+      },
+    };
+    const service = new SemesterBudgetsService(
+      prisma as unknown as PrismaService,
+    );
+    await expect(service.overview()).resolves.toEqual({ state: 'no-semester' });
+    await expect(service.overview()).resolves.toEqual({
+      state: 'no-budget',
+      semesterName: '2026-2',
+    });
+  });
 });

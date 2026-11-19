@@ -41,4 +41,10 @@ export class SemesterBudgetAlertsController {
   alerts(@CurrentUser() user: CurrentUserPayload) {
     return this.budgets.alerts(user.roles);
   }
+
+  @Get('semester-budget-overview')
+  @Roles('ACADEMIC_PROCESS_ANALYST')
+  overview() {
+    return this.budgets.overview();
+  }
 }

@@ -29,4 +29,18 @@ describe('Semester budget controllers', () => {
       Reflect.getMetadata(ROLES_KEY, SemesterBudgetAlertsController),
     ).toBeUndefined();
   });
+
+  it('protects the read-only budget overview for analysts', async () => {
+    const overview = jest.fn().mockResolvedValue({ state: 'no-semester' });
+    const controller = new SemesterBudgetAlertsController({
+      overview,
+    } as unknown as SemesterBudgetsService);
+    expect(Reflect.getMetadata(ROLES_KEY, controller.overview)).toEqual([
+      'ACADEMIC_PROCESS_ANALYST',
+    ]);
+    await expect(controller.overview()).resolves.toEqual({
+      state: 'no-semester',
+    });
+    expect(overview).toHaveBeenCalledTimes(1);
+  });
 });
