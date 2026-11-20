@@ -141,9 +141,9 @@ crear esquemas. Aplican las migraciones académicas en un esquema aislado dentro
 una transacción y revierten todo al terminar. Sin esa variable se omiten.
 
 ```sh
-npm test -- --runInBand src/prisma/assistantships-migration.spec.ts
-npm test -- --runInBand
-npm run build
+pnpm test --runInBand src/prisma/assistantships-migration.spec.ts
+pnpm test --runInBand
+pnpm run build
 ```
 
 Documentación de referencia: [migrate deploy](https://docs.prisma.io/docs/cli/v7/migrate/deploy).

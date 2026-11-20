@@ -1,0 +1,48 @@
+name: Backend CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: marsys_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d marsys_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Verify pnpm lockfile and install
+        run: |
+          corepack enable pnpm
+          pnpm install --lockfile-only --no-frozen-lockfile
+          git diff --exit-code -- pnpm-lock.yaml
+          pnpm install --frozen-lockfile
+      - name: Generate Prisma Client
+        run: pnpm exec prisma generate
+      - name: Build
+        run: pnpm run build
+      - name: Unit and migration tests
+        run: pnpm test --runInBand
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:ci-test-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/marsys_test
+      - name: API end-to-end tests
+        run: pnpm run test:e2e --runInBand

@@ -4,7 +4,7 @@ API de MARSYS, plataforma de gestión académica. Está implementada con NestJS,
 
 ## Requisitos
 
-- Node.js y pnpm (usa la versión indicada por el proyecto si se configura `packageManager`).
+- Node.js 22 o superior y la versión de pnpm fijada en `package.json`. Jenkins usa Corepack para ejecutar esa versión.
 - PostgreSQL accesible desde el entorno local.
 - Credenciales de Google OAuth y de almacenamiento para las funciones que las requieran.
 
@@ -13,8 +13,10 @@ API de MARSYS, plataforma de gestión académica. Está implementada con NestJS,
 Desde esta carpeta:
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 ```
+
+Al agregar o actualizar una dependencia con `pnpm add` o `pnpm update`, registra juntos `package.json` y `pnpm-lock.yaml`. Si editas el manifiesto a mano, sincroniza con `pnpm install --lockfile-only` y verifica con `pnpm install --frozen-lockfile`. Jenkins y Dokploy usan el mismo lockfile.
 
 Copia `.env.example` como `.env.development` y completa las variables necesarias. Como mínimo, configura `DATABASE_URL`, `JWT_SECRET`, al menos uno entre `ALLOWED_DOMAINS` y `ALLOWED_EMAILS`, y `FRONTEND_URL`. Para migraciones Prisma, configura también `DIRECT_URL` (si no existe, Prisma usa `DATABASE_URL`). Las demás variables de OAuth, almacenamiento, correo, caché y Google Forms dependen de las funciones que vayas a utilizar. No guardes secretos en el repositorio.
 
