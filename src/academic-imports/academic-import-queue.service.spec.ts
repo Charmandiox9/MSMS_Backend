@@ -20,7 +20,12 @@ describe('AcademicImportQueueService', () => {
     create: jest.fn(),
     importVersion: jest.fn(),
   } as unknown as CareersService;
-  const service = new AcademicImportQueueService(prisma, crypto, imports, careers);
+  const service = new AcademicImportQueueService(
+    prisma,
+    crypto,
+    imports,
+    careers,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -73,9 +78,13 @@ describe('AcademicImportQueueService', () => {
     expect(response).toEqual({ id: expect.any(String), status: 'QUEUED' });
     const payload = create.mock.calls[0][0].data.payload as string;
     expect(
-      JSON.parse(crypto.decrypt(payload, `AcademicImportJob.${response.id}.payload`)),
+      JSON.parse(
+        crypto.decrypt(payload, `AcademicImportJob.${response.id}.payload`),
+      ),
     ).toEqual(input);
-    expect(create.mock.calls[0][0].data.type).toBe(AcademicImportType.CURRICULUM);
+    expect(create.mock.calls[0][0].data.type).toBe(
+      AcademicImportType.CURRICULUM,
+    );
   });
 
   it('returns only the public job status fields', async () => {

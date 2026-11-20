@@ -126,9 +126,7 @@ describe('StudentsService curricular progress', () => {
         ],
       },
       courseAttempts: [],
-      enrollments: [
-        { courseId, semester: { id: semesterId, name: '2026-2' } },
-      ],
+      enrollments: [{ courseId, semester: { id: semesterId, name: '2026-2' } }],
     });
 
     const result = await service.progress(studentId);

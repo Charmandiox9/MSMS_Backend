@@ -1,6 +1,6 @@
-import { UseGuards } from '@nestjs/common';
+import { ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { IsUUID, IsEmail, MaxLength } from 'class-validator';
+import { IsUUID } from 'class-validator';
 import { ArgsType, Field } from '@nestjs/graphql';
 import {
   AssistantshipAssignmentOption,
@@ -10,7 +10,11 @@ import {
   AssistantshipView,
   RegisterAssistantshipInput,
   AssistantshipStudentOption,
+  AssistantshipStudentsArgs,
   AssistantshipCourseOption,
+  AssistantshipTariffOption,
+  AssistantshipBudgetSummary,
+  SaveAssistantshipTariffInput,
 } from './assistantships.dto';
 import { AssistantshipsGuard } from './assistantships.guard';
 import { AssistantshipsService } from './assistantships.service';
@@ -23,11 +27,6 @@ export class AssistantshipSemesterArgs {
 @ArgsType()
 export class AssistantshipIdArgs {
   @Field(() => ID) @IsUUID() id!: string;
-}
-
-@ArgsType()
-export class AssistantshipEmailArgs {
-  @Field() @IsEmail() @MaxLength(254) email!: string;
 }
 
 @ArgsType()
@@ -58,9 +57,9 @@ export class AssistantshipsResolver {
     return this.service.options();
   }
 
-  @Query(() => AssistantshipStudentOption, { nullable: true })
-  assistantshipStudent(@Args() args: AssistantshipEmailArgs) {
-    return this.service.student(args.email);
+  @Query(() => [AssistantshipStudentOption])
+  assistantshipStudents(@Args() args: AssistantshipStudentsArgs) {
+    return this.service.students(args.search);
   }
 
   @Query(() => [AssistantshipCourseOption])
@@ -73,6 +72,26 @@ export class AssistantshipsResolver {
     return this.service.assignments(args.semesterId);
   }
 
+  @Query(() => [AssistantshipTariffOption])
+  assistantshipTariffs(@Args() args: AssistantshipSemesterArgs) {
+    return this.service.tariffs(args.semesterId);
+  }
+
+  @Query(() => AssistantshipBudgetSummary)
+  assistantshipBudgetSummary(@Args() args: AssistantshipSemesterArgs) {
+    return this.service.budgetSummary(args.semesterId);
+  }
+
+  @Mutation(() => AssistantshipTariffOption)
+  saveAssistantshipTariff(@Args('input') input: SaveAssistantshipTariffInput) {
+    return this.service.saveTariff(input);
+  }
+
+  @Mutation(() => Boolean)
+  deleteAssistantshipTariff(@Args() args: AssistantshipIdArgs) {
+    return this.service.deleteTariff(args.id);
+  }
+
   @Mutation(() => AssistantshipView)
   registerAssistantship(@Args('input') input: RegisterAssistantshipInput) {
     return this.service.register(input);
@@ -80,9 +99,9 @@ export class AssistantshipsResolver {
 
   @Mutation(() => AssistantshipView)
   updateAssistantship(
-    @Args() args: AssistantshipIdArgs,
+    @Args('id', { type: () => ID }, new ParseUUIDPipe()) id: string,
     @Args('input') input: RegisterAssistantshipInput,
   ) {
-    return this.service.update(args.id, input);
+    return this.service.update(id, input);
   }
 }

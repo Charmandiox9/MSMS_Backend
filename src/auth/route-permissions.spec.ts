@@ -22,6 +22,7 @@ import { StorageController } from '../storage/storage.controller';
 import { StorageTransferController } from '../storage/storage-transfer.controller';
 import { UsersController } from '../users/users.controller';
 import { DataRightsController } from '../privacy-rights/data-rights.controller';
+import { TitulationsController } from '../titulations/titulations.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
 import { ROLES_KEY } from './decorators/roles.decorator';
@@ -46,6 +47,7 @@ const controllers: Type[] = [
   JustificationsController,
   StorageController,
   StorageTransferController,
+  TitulationsController,
 ];
 
 const reflector = new Reflector();
@@ -119,7 +121,24 @@ describe('Matriz de permisos por endpoint', () => {
       'StudentsController.update': SECRETARY,
       'StudentsController.importCsv': SECRETARY,
       'CareersController.courseOptions': REPOSITORY,
-      'CareersController.options': REPOSITORY,
+      'TitulationsController.search': ACADEMIC_READERS,
+      'TitulationsController.filterOptions': ACADEMIC_READERS,
+      'TitulationsController.findStudents': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.get': ACADEMIC_READERS,
+      'TitulationsController.create': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.update': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.delete': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.downloadDraft': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.listAttachments': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.uploadAttachment': [...SECRETARY, ...COORDINATOR],
+      'TitulationsController.downloadAttachment': [
+        ...SECRETARY,
+        ...COORDINATOR,
+      ],
+      'CareersController.options': [
+        ...REPOSITORY,
+        'TEACHING_SUPPORT_COORDINATOR',
+      ],
       'CareersController.list': [
         'ACADEMIC_PROCESS_ANALYST',
         'ACADEMIC_SECRETARY',
@@ -179,6 +198,7 @@ describe('Matriz de permisos por endpoint', () => {
         'ACADEMIC_PROCESS_ANALYST',
       ],
       'DashboardController.teachingSupportCoordinator': COORDINATOR,
+      'DashboardController.privacyOfficer': ['PRIVACY_OFFICER'],
 
       'JustificationsController.receiveFormSubmission': 'PUBLIC',
       'JustificationsController.listInbox': COORDINATOR,
@@ -292,5 +312,19 @@ describe('Coherencia entre la matriz RBAC sembrada y los endpoints', () => {
     expect(rolesWith('JUSTIFICATIONS_VIEW')).toContain(
       'ACADEMIC_PROCESS_ANALYST',
     );
+  });
+
+  it('los adjuntos de titulación solo los gestiona secretaría y coordinación', () => {
+    const expected = [
+      'ACADEMIC_SECRETARY',
+      'SYSTEM_ADMIN',
+      'TEACHING_SUPPORT_COORDINATOR',
+    ];
+    for (const route of [
+      'TitulationsController.listAttachments',
+      'TitulationsController.uploadAttachment',
+      'TitulationsController.downloadAttachment',
+    ])
+      expect(rolesAllowed(route).sort()).toEqual(expected);
   });
 });

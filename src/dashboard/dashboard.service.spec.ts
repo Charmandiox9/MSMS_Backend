@@ -16,6 +16,10 @@ describe('DashboardService', () => {
     teachingAssignment: { count: jest.fn() },
     justification: { count: jest.fn() },
     justificationInbox: { count: jest.fn() },
+    project: { count: jest.fn() },
+    research: { count: jest.fn() },
+    researchOutput: { count: jest.fn() },
+    dataRightsRequest: { count: jest.fn() },
   };
 
   beforeEach(() => {
@@ -66,11 +70,14 @@ describe('DashboardService', () => {
     });
   });
 
-  it('cuenta todas las justificaciones para el analista de procesos', async () => {
+  it('incluye proyectos, investigaciones y resultados para el analista de procesos', async () => {
     prisma.teacher.count.mockResolvedValue(8);
     prisma.course.count.mockResolvedValue(21);
     prisma.teachingAssignment.count.mockResolvedValue(30);
     prisma.justification.count.mockResolvedValue(45);
+    prisma.project.count.mockResolvedValue(11);
+    prisma.research.count.mockResolvedValue(9);
+    prisma.researchOutput.count.mockResolvedValue(21);
 
     await expect(service.academicProcessAnalyst()).resolves.toEqual({
       teachers: 8,
@@ -79,8 +86,33 @@ describe('DashboardService', () => {
       assistants: 2,
       activeAssignments: 30,
       justifications: 45,
+      projects: 11,
+      research: 9,
+      researchOutputs: 21,
     });
     expect(prisma.justification.count).toHaveBeenCalledWith();
+  });
+
+  it('cuenta solo solicitudes abiertas y calcula cuáles excedieron su plazo', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-19T12:00:00Z') });
+    try {
+      prisma.dataRightsRequest.count
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(2);
+      await expect(service.privacyOfficer()).resolves.toEqual({
+        pendingRequests: 4,
+        overdueRequests: 2,
+      });
+      const status = { in: ['RECEIVED', 'VERIFYING', 'IN_PROGRESS'] };
+      expect(prisma.dataRightsRequest.count).toHaveBeenNthCalledWith(1, {
+        where: { status },
+      });
+      expect(prisma.dataRightsRequest.count).toHaveBeenNthCalledWith(2, {
+        where: { status, dueAt: { lt: new Date('2026-11-19T12:00:00Z') } },
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('incluye la bandeja no leída para el coordinador de apoyo docente', async () => {

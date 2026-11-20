@@ -50,11 +50,84 @@ describe('PrismaService', () => {
     expect(await service.findPiiIds('Teacher', 'alvaro')).toEqual(['a']);
     expect(await service.findPiiIds('Teacher', '50%_')).toEqual(['b']);
   });
+  it('permite limitar una búsqueda personal a un campo cifrado específico', async () => {
+    const findMany = jest.spyOn(service.student, 'findMany').mockResolvedValue([
+      { id: 'a', admission: '202610' },
+      { id: 'b', admission: '202510' },
+    ] as unknown as Awaited<ReturnType<typeof service.student.findMany>>);
+    expect(await service.findPiiIds('Student', '2026', ['admission'])).toEqual([
+      'a',
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      select: { id: true, admission: true },
+    });
+    await expect(
+      service.findPiiIds('Student', '2026', ['createdAt']),
+    ).rejects.toThrow('Los campos no permiten búsqueda PII');
+  });
+  it('busca RUT con o sin puntuación', async () => {
+    jest
+      .spyOn(service.student, 'findMany')
+      .mockResolvedValue([
+        { id: 'a', rut: '12.345.678-9' },
+      ] as unknown as Awaited<ReturnType<typeof service.student.findMany>>);
+    expect(await service.findPiiIds('Student', '12345678-9', ['rut'])).toEqual([
+      'a',
+    ]);
+    expect(await service.findPiiIds('Student', '12345678', ['rut'])).toEqual([
+      'a',
+    ]);
+    expect(
+      await service.findPiiIds('Student', '12.345.678-9', ['rut']),
+    ).toEqual(['a']);
+  });
+  it('busca por todas las personas del comité de titulación', async () => {
+    const fields = [
+      'guideName',
+      'coGuideName',
+      'reviewerOneName',
+      'reviewerTwoName',
+    ] as const;
+    const findMany = jest
+      .spyOn(service.titulationProcess, 'findMany')
+      .mockResolvedValue([
+        {
+          id: 'process-1',
+          guideName: 'committee-member-1',
+          coGuideName: 'committee-member-2',
+          reviewerOneName: 'committee-member-3',
+          reviewerTwoName: 'committee-member-4',
+        },
+      ] as unknown as Awaited<
+        ReturnType<typeof service.titulationProcess.findMany>
+      >);
+
+    for (const field of fields) {
+      await expect(
+        service.findPiiIds('TitulationProcess', 'committee-member', [field]),
+      ).resolves.toEqual(['process-1']);
+    }
+
+    expect(findMany).toHaveBeenNthCalledWith(1, {
+      select: { id: true, guideName: true },
+    });
+    expect(findMany).toHaveBeenNthCalledWith(2, {
+      select: { id: true, coGuideName: true },
+    });
+    expect(findMany).toHaveBeenNthCalledWith(3, {
+      select: { id: true, reviewerOneName: true },
+    });
+    expect(findMany).toHaveBeenNthCalledWith(4, {
+      select: { id: true, reviewerTwoName: true },
+    });
+  });
   it('bloquea el inicio si existen datos personales pendientes de conversión', async () => {
     jest.spyOn(service, '$connect').mockResolvedValue();
     jest.spyOn(service.user, 'count').mockResolvedValue(1);
     const teacherCount = jest.spyOn(service.teacher, 'count');
-    await expect(service.onModuleInit()).rejects.toThrow('conversión PII de User');
+    await expect(service.onModuleInit()).rejects.toThrow(
+      'conversión PII de User',
+    );
     expect(teacherCount).not.toHaveBeenCalled();
   });
 });

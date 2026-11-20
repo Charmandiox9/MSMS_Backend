@@ -52,7 +52,7 @@ describe('CRUD del repositorio académico', () => {
     delete: jest.fn(),
   });
   const prisma = {
-    career: delegate(),
+    department: delegate(),
     project: delegate(),
     research: delegate(),
     researchOutput: delegate(),
@@ -116,33 +116,71 @@ describe('CRUD del repositorio académico', () => {
   });
 
   it('stores, clears and preserves publication departments explicitly', async () => {
-    const input: ResearchOutputInputDto = {researchId: id, title: 'Artículo', kind: 'ARTICLE', reportingYear: 2026, departmentId: id};
-    prisma.career.findUnique.mockResolvedValue({id});
+    const input: ResearchOutputInputDto = {
+      researchId: id,
+      title: 'Artículo',
+      kind: 'ARTICLE',
+      reportingYear: 2026,
+      departmentId: id,
+    };
+    prisma.department.findUnique.mockResolvedValue({ id });
     await service.createResearchOutput(input);
-    expect(prisma.researchOutput.create).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({departmentId: id})}));
-    await service.updateResearchOutput(id, {...input, departmentId: null, expectedUpdatedAt: version});
-    expect(prisma.researchOutput.update).toHaveBeenLastCalledWith(expect.objectContaining({data: expect.objectContaining({departmentId: null})}));
-    const {departmentId: _department, ...withoutDepartment} = input;
-    await service.updateResearchOutput(id, {...withoutDepartment, expectedUpdatedAt: version});
-    expect(prisma.researchOutput.update.mock.calls.at(-1)?.[0].data).not.toHaveProperty('departmentId');
+    expect(prisma.researchOutput.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ departmentId: id }),
+      }),
+    );
+    await service.updateResearchOutput(id, {
+      ...input,
+      departmentId: null,
+      expectedUpdatedAt: version,
+    });
+    expect(prisma.researchOutput.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ departmentId: null }),
+      }),
+    );
+    const withoutDepartment = { ...input };
+    delete withoutDepartment.departmentId;
+    await service.updateResearchOutput(id, {
+      ...withoutDepartment,
+      expectedUpdatedAt: version,
+    });
+    expect(
+      prisma.researchOutput.update.mock.calls.at(-1)?.[0].data,
+    ).not.toHaveProperty('departmentId');
   });
 
   it('rejects invalid department ids in both input contracts', async () => {
-    const projectErrors = await validate(plainToInstance(ProjectInputDto, {...project, departmentId: 'bad'}));
-    const publicationErrors = await validate(plainToInstance(ResearchOutputInputDto, {researchId: id, kind: 'ARTICLE', reportingYear: 2026, title: 'Artículo', departmentId: 'bad'}));
-    expect(projectErrors.some(error => error.property === 'departmentId')).toBe(true);
-    expect(publicationErrors.some(error => error.property === 'departmentId')).toBe(true);
+    const projectErrors = await validate(
+      plainToInstance(ProjectInputDto, { ...project, departmentId: 'bad' }),
+    );
+    const publicationErrors = await validate(
+      plainToInstance(ResearchOutputInputDto, {
+        researchId: id,
+        kind: 'ARTICLE',
+        reportingYear: 2026,
+        title: 'Artículo',
+        departmentId: 'bad',
+      }),
+    );
+    expect(
+      projectErrors.some((error) => error.property === 'departmentId'),
+    ).toBe(true);
+    expect(
+      publicationErrors.some((error) => error.property === 'departmentId'),
+    ).toBe(true);
   });
 
   it('validates and stores a project department without guessing existing assignments', async () => {
-    prisma.career.findUnique.mockResolvedValue({ id });
+    prisma.department.findUnique.mockResolvedValue({ id });
     await service.createProject({ ...project, departmentId: id });
     expect(prisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ departmentId: id }),
       }),
     );
-    prisma.career.findUnique.mockResolvedValue(null);
+    prisma.department.findUnique.mockResolvedValue(null);
     await expect(
       service.createProject({ ...project, departmentId: id }),
     ).rejects.toThrow('departamento');

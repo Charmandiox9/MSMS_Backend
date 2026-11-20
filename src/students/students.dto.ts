@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -14,24 +15,73 @@ import {
   Max,
   MaxLength,
   Min,
+  Matches,
+  IsDateString,
   ValidateIf,
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 export class StudentInputDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  givenNames?: string | null;
+
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   name!: string;
 
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() || null : value,
+  )
+  @IsEmail()
+  @MaxLength(254)
+  email?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(20)
+  rut?: string | null;
+
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsEmail()
   @MaxLength(254)
-  email!: string;
+  personalEmail?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^\d{4}(10|20)$/)
+  admission?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  paternalSurname?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  maternalSurname?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  careerId?: string | null;
 
   @IsOptional()
   @IsUUID()
@@ -98,9 +148,28 @@ export class ListStudentsDto {
   @IsNotEmpty()
   @MaxLength(50)
   nrc?: string;
+
+  @IsOptional()
+  @IsUUID()
+  careerId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(2200)
+  cohortYear?: number;
+
+  @IsOptional()
+  @IsIn(['name', 'surname'])
+  sortBy?: 'name' | 'surname';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }
 
 export class ImportStudentsDto {
-  @IsUUID() semesterId!: string;
+  @IsOptional() @IsUUID() semesterId?: string;
   @IsString() @IsNotEmpty() @MaxLength(2_000_000) csv!: string;
 }

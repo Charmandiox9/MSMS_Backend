@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   HttpException,
   InternalServerErrorException,
@@ -15,7 +16,10 @@ import {
   AssistantshipState,
   AssistantshipView,
   RegisterAssistantshipInput,
+  SaveAssistantshipTariffInput,
 } from './assistantships.dto';
+import { SemesterBudgetsService } from '../semester-budgets/semester-budgets.service';
+import { NotificationsService } from '../notifications/notifications.service';
 const include = {
   approval: {
     include: {
@@ -35,6 +39,7 @@ const include = {
     include: { teacher: true, course: true, semester: true },
   },
   schedules: { orderBy: [{ weekday: 'asc' }, { startsAtMinute: 'asc' }] },
+  tariff: true,
 } satisfies Prisma.AssistantshipInclude;
 type AssistantshipRecord = Prisma.AssistantshipGetPayload<{
   include: typeof include;
@@ -45,9 +50,13 @@ const invalid = (code: string, message: string): never => {
 };
 @Injectable()
 export class AssistantshipsService {
+  private readonly logger = new Logger(AssistantshipsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly semesterBudgets: SemesterBudgetsService,
+    private readonly notifications: NotificationsService,
   ) {}
   private today(): Date {
     const parts = new Intl.DateTimeFormat('en', {
@@ -91,6 +100,27 @@ export class AssistantshipsService {
       startsOn: isoDate(record.startsOn),
       endsOn: record.endsOn ? isoDate(record.endsOn) : null,
       weeklyHours: record.weeklyHours?.toNumber() ?? null,
+      tariffId: record.tariffId,
+      tariffName: record.tariff?.name ?? null,
+      tariffRateClp: record.tariffRateClp?.toNumber() ?? null,
+      estimatedAmountClp:
+        record.weeklyHours && record.tariffRateClp
+          ? record.tariffRateClp
+              .mul(record.weeklyHours)
+              .mul(
+                Math.max(
+                  0,
+                  Math.floor(
+                    ((record.endsOn ?? record.semester.endsOn).getTime() -
+                      record.startsOn.getTime()) /
+                      86_400_000,
+                  ) + 1,
+                ),
+              )
+              .div(30)
+              .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP)
+              .toNumber()
+          : null,
       schedules: record.schedules,
       state:
         record.startsOn > today
@@ -230,6 +260,106 @@ export class AssistantshipsService {
       blocks: academicScheduleBlocks,
     };
   }
+  async tariffs(semesterId: string) {
+    const semester = await this.prisma.academicSemester.findUnique({
+      where: { id: semesterId },
+      select: { id: true },
+    });
+    if (!semester) throw new NotFoundException('Semestre no encontrado');
+    const tariffs = await this.prisma.assistantshipTariff.findMany({
+      where: { semesterId },
+      orderBy: { name: 'asc' },
+    });
+    return tariffs.map((tariff) => ({
+      ...tariff,
+      monthlyRateClp: tariff.monthlyRateClp.toNumber(),
+    }));
+  }
+  async budgetSummary(semesterId: string) {
+    return this.semesterBudgets.assistantshipSummary(semesterId);
+  }
+  async saveTariff(input: SaveAssistantshipTariffInput) {
+    const semester = await this.prisma.academicSemester.findUnique({
+      where: { id: input.semesterId },
+      select: { id: true },
+    });
+    if (!semester) throw new NotFoundException('Semestre no encontrado');
+    const duplicate = await this.prisma.assistantshipTariff.findFirst({
+      where: {
+        semesterId: input.semesterId,
+        name: { equals: input.name.trim(), mode: 'insensitive' },
+        ...(input.id ? { id: { not: input.id } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicate)
+      throw new ConflictException(
+        'Ya existe una tarifa con ese nombre en el semestre',
+      );
+    try {
+      if (input.id) {
+        const current = await this.prisma.assistantshipTariff.findFirst({
+          where: { id: input.id, semesterId: input.semesterId },
+          select: { id: true },
+        });
+        if (!current)
+          throw new NotFoundException('Tarifa no encontrada para el semestre');
+        const tariff = await this.prisma.assistantshipTariff.update({
+          where: { id: input.id },
+          data: {
+            name: input.name.trim(),
+            monthlyRateClp: new Prisma.Decimal(input.monthlyRateClp),
+          },
+        });
+        return { ...tariff, monthlyRateClp: tariff.monthlyRateClp.toNumber() };
+      }
+      const tariff = await this.prisma.assistantshipTariff.create({
+        data: {
+          semesterId: input.semesterId,
+          name: input.name.trim(),
+          monthlyRateClp: new Prisma.Decimal(input.monthlyRateClp),
+        },
+      });
+      return { ...tariff, monthlyRateClp: tariff.monthlyRateClp.toNumber() };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException(
+          'Ya existe una tarifa con ese nombre en el semestre',
+        );
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException('No se pudo guardar la tarifa');
+    }
+  }
+  async deleteTariff(id: string) {
+    const [tariff, usageCount] = await Promise.all([
+      this.prisma.assistantshipTariff.findUnique({
+        where: { id },
+        select: { id: true },
+      }),
+      this.prisma.assistantship.count({ where: { tariffId: id } }),
+    ]);
+    if (!tariff) throw new NotFoundException('Tarifa no encontrada');
+    if (usageCount > 0)
+      throw new ConflictException(
+        'No se puede quitar una tarifa que ya está asignada a ayudantías',
+      );
+    try {
+      await this.prisma.assistantshipTariff.delete({ where: { id } });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      )
+        throw new ConflictException(
+          'No se puede quitar una tarifa que ya está asignada a ayudantías',
+        );
+      throw new InternalServerErrorException('No se pudo eliminar la tarifa');
+    }
+    return true;
+  }
   async assignments(semesterId: string) {
     const assignments = await this.prisma.teachingAssignment.findMany({
       where: { semesterId, teacher: { isActive: true }, nrc: { not: '' } },
@@ -244,21 +374,52 @@ export class AssistantshipsService {
       teacherName: assignment.teacher.name,
     }));
   }
-  async student(email: string) {
-    const student = await this.prisma.student.findUnique({
-      where: { email: email.trim().toLowerCase() },
-      include: { careerCurriculumVersion: { include: { career: true } } },
+  async students(search: string) {
+    const term = search.trim();
+    if (term.length < 2) return [];
+    const ids = await this.prisma.findPiiIds('Student', term, [
+      'name',
+      'givenNames',
+      'paternalSurname',
+      'maternalSurname',
+      'email',
+      'personalEmail',
+      'rut',
+    ]);
+    if (!ids.length) return [];
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: ids } },
+      include: {
+        career: { select: { id: true, name: true } },
+        careerCurriculumVersion: {
+          include: { career: { select: { id: true, name: true } } },
+        },
+      },
     });
-    return student
-      ? {
-          id: student.id,
-          name: student.name,
-          email: student.email,
-          careerCurriculumVersionId: student.careerCurriculumVersionId,
-          careerId: student.careerCurriculumVersion?.careerId ?? null,
-          careerName: student.careerCurriculumVersion?.career.name ?? null,
-        }
-      : null;
+    const fullName = (student: (typeof students)[number]) =>
+      [student.givenNames, student.paternalSurname, student.maternalSurname]
+        .filter(Boolean)
+        .join(' ') || student.name;
+    return students
+      .sort((left, right) =>
+        fullName(left).localeCompare(fullName(right), 'es', {
+          sensitivity: 'base',
+        }),
+      )
+      .slice(0, 20)
+      .map((student) => ({
+        id: student.id,
+        name: fullName(student),
+        email: student.email,
+        rut: student.rut,
+        careerCurriculumVersionId: student.careerCurriculumVersionId,
+        careerId:
+          student.careerId ?? student.careerCurriculumVersion?.careerId ?? null,
+        careerName:
+          student.career?.name ??
+          student.careerCurriculumVersion?.career.name ??
+          null,
+      }));
   }
   async careerCourses(careerId: string) {
     return this.prisma.course.findMany({
@@ -271,7 +432,52 @@ export class AssistantshipsService {
   async register(
     input: RegisterAssistantshipInput,
   ): Promise<AssistantshipView> {
-    return this.save(input);
+    const record = await this.save(input);
+    if (!input.notifySchedule) return record;
+    if (
+      !this.config.get<string>('RESEND_API_KEY') ||
+      !this.config.get<string>('NOTIFICATIONS_FROM')
+    )
+      return { ...record, scheduleNotificationSent: false };
+
+    const dayNames = [
+      'lunes',
+      'martes',
+      'miércoles',
+      'jueves',
+      'viernes',
+      'sábado',
+      'domingo',
+    ];
+    const hour = (minute: number) =>
+      `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+    const schedule = record.schedules.map(
+      ({ weekday, startsAtMinute, endsAtMinute, location }) =>
+        `- ${dayNames[weekday - 1]} ${hour(startsAtMinute)}–${hour(endsAtMinute)}${location ? ` · ${location}` : ''}`,
+    );
+    const date = (value: string) =>
+      new Intl.DateTimeFormat('es-CL', {
+        dateStyle: 'long',
+        timeZone: 'UTC',
+      }).format(new Date(value));
+    try {
+      await this.notifications.send({
+        to: record.assistantEmail,
+        subject: 'Horario de ayudantía confirmado',
+        text: [
+          `Se confirmó el horario de tu ayudantía de ${record.courseName} para el semestre ${record.semesterName}.`,
+          `Vigencia: ${date(record.startsOn)} al ${date(record.endsOn ?? input.endsOn)}.`,
+          '',
+          ...schedule,
+        ].join('\n'),
+      });
+      return { ...record, scheduleNotificationSent: true };
+    } catch {
+      this.logger.warn(
+        'No se pudo enviar el horario de la ayudantía registrada',
+      );
+      return { ...record, scheduleNotificationSent: false };
+    }
   }
   async update(
     id: string,
@@ -325,7 +531,7 @@ export class AssistantshipsService {
         'INACTIVE_PROFILE',
         'El profesor debe estar activo y tener un NRC',
       );
-    if (!historical && !input.assistantshipNrc?.trim())
+    if (!input.assistantshipNrc.trim())
       invalid('INVALID_INPUT', 'Indica el NRC de la ayudantía');
     if (
       startsOn < new Date(isoDate(semester!.startsOn)) ||
@@ -357,43 +563,17 @@ export class AssistantshipsService {
     transaction: Prisma.TransactionClient,
     input: RegisterAssistantshipInput,
   ) {
-    const email = input.assistantEmail.trim().toLowerCase();
-    let student = await transaction.student.findUnique({ where: { email } });
-    if (input.studentId && student?.id !== input.studentId)
-      invalid(
-        'ASSISTANT_IDENTITY',
-        'El estudiante o su correo cambió. Busca nuevamente',
+    const student = await transaction.student.findUnique({
+      where: { id: input.studentId },
+    });
+    if (!student)
+      invalid('STUDENT_REQUIRED', 'Selecciona un estudiante registrado');
+    const email = student?.email?.trim().toLowerCase();
+    if (!email)
+      return invalid(
+        'STUDENT_EMAIL_REQUIRED',
+        'Completa el correo del alumno en su ficha antes de registrar una ayudantía',
       );
-    if (!student?.careerCurriculumVersionId) {
-      if (!input.careerCurriculumVersionId)
-        invalid('CAREER_REQUIRED', 'Indica la carrera y malla del estudiante');
-      const curriculum = await transaction.curriculumVersion.findUnique({
-        where: { id: input.careerCurriculumVersionId },
-        include: { career: true },
-      });
-      if (!curriculum?.career.isActive)
-        invalid('CAREER_REQUIRED', 'Selecciona una carrera activa');
-      student = student
-        ? await transaction.student.update({
-            where: { id: student.id },
-            data: { careerCurriculumVersionId: curriculum!.id },
-          })
-        : await transaction.student.create({
-            data: {
-              name: input.assistantName.trim(),
-              email,
-              careerCurriculumVersionId: curriculum!.id,
-            },
-          });
-    } else if (
-      input.careerCurriculumVersionId &&
-      input.careerCurriculumVersionId !== student.careerCurriculumVersionId
-    ) {
-      invalid(
-        'ASSISTANT_IDENTITY',
-        'La carrera del estudiante cambió. Busca nuevamente',
-      );
-    }
     const studentCode = input.studentCode?.trim() || null;
     const existing = await transaction.teachingAssistant.findFirst({
       where: { OR: [{ studentId: student!.id }, { email }] },
@@ -408,7 +588,7 @@ export class AssistantshipsService {
     const assistant = existing
       ? await transaction.teachingAssistant.update({
           where: { id: existing.id },
-          data: { studentId: student!.id },
+          data: { studentId: student!.id, name: student!.name, email },
         })
       : await transaction.teachingAssistant.create({
           data: {
@@ -436,6 +616,14 @@ export class AssistantshipsService {
     const approvedOn = date(input.approvedOn),
       startsOn = date(input.startsOn),
       endsOn = date(input.endsOn);
+    if (!input.studentId)
+      invalid('STUDENT_REQUIRED', 'Selecciona un estudiante registrado');
+    if (
+      !Number.isFinite(input.weeklyHours) ||
+      input.weeklyHours <= 0 ||
+      input.weeklyHours > 168
+    )
+      invalid('INVALID_INPUT', 'Indica las horas semanales (0,01 a 168)');
     if (!input.approvalConfirmed)
       invalid(
         'APPROVAL_REQUIRED',
@@ -451,6 +639,8 @@ export class AssistantshipsService {
     if ((input.schedules?.length ?? 0) > 14)
       invalid('INVALID_SCHEDULE', 'Máximo 14 horarios');
     const schedules = input.schedules ?? [];
+    if (!schedules.length)
+      invalid('INVALID_SCHEDULE', 'Agrega al menos un horario');
     for (const [index, schedule] of schedules.entries()) {
       if (schedule.endsAtMinute <= schedule.startsAtMinute)
         invalid(
@@ -472,10 +662,51 @@ export class AssistantshipsService {
     try {
       const record = await this.prisma.$transaction(
         async (transaction) => {
+          const application =
+            !id && input.applicationId
+              ? await transaction.assistantshipApplication.findUnique({
+                  where: { id: input.applicationId },
+                  select: {
+                    id: true,
+                    status: true,
+                    assistantshipId: true,
+                    studentId: true,
+                    studentEmail: true,
+                  },
+                })
+              : null;
           if (
-            id &&
-            !(await transaction.assistantship.findUnique({ where: { id } }))
+            input.applicationId &&
+            (!application ||
+              application.status !== 'APPROVED' ||
+              application.assistantshipId)
           )
+            throw new ConflictException({
+              code: 'APPLICATION_UNAVAILABLE',
+              message: 'La postulación no está disponible para completar',
+            });
+          if (application) {
+            const studentId =
+              application.studentId ??
+              (
+                await transaction.student.findUnique({
+                  where: { email: application.studentEmail },
+                  select: { id: true },
+                })
+              )?.id;
+            if (studentId && studentId !== input.studentId)
+              invalid(
+                'APPLICATION_STUDENT',
+                'Selecciona el estudiante vinculado a la postulación',
+              );
+          }
+          const existing = id
+            ? await transaction.assistantship.findUnique({
+                where: { id },
+                select: { id: true, tariffId: true, tariffRateClp: true },
+              })
+            : null;
+          if (id && !existing)
             throw new NotFoundException({
               code: 'NOT_FOUND',
               message: 'La ayudantía no existe',
@@ -487,13 +718,27 @@ export class AssistantshipsService {
               startsOn,
               endsOn,
             );
+          if (!input.tariffId)
+            invalid('TARIFF_REQUIRED', 'Selecciona una tarifa de ayudantía');
+          const tariff = await transaction.assistantshipTariff.findFirst({
+            where: { id: input.tariffId, semesterId: semester.id },
+          });
+          if (!tariff)
+            invalid(
+              'INVALID_TARIFF',
+              'La tarifa no pertenece al semestre seleccionado',
+            );
+          const tariffRateClp =
+            existing?.tariffId === tariff!.id && existing.tariffRateClp
+              ? existing.tariffRateClp
+              : tariff!.monthlyRateClp;
           const assistant = await this.resolveAssistant(transaction, input);
           const approval = await transaction.assistantCourseApproval.findUnique(
             {
               where: {
                 assistantId_courseId: {
                   assistantId: assistant.id,
-                  courseId: courseId!,
+                  courseId: courseId,
                 },
               },
             },
@@ -508,7 +753,7 @@ export class AssistantshipsService {
             await transaction.assistantCourseApproval.create({
               data: {
                 assistantId: assistant.id,
-                courseId: courseId!,
+                courseId: courseId,
                 approvedOn,
               },
             });
@@ -538,19 +783,21 @@ export class AssistantshipsService {
               'El ayudante tiene otra ayudantía con horario incompatible',
             );
           const data = {
-            nrc: input.assistantshipNrc?.trim() || null,
+            nrc: input.assistantshipNrc.trim(),
             teachingAssignmentId: assignment?.id ?? null,
-            semesterId: semester!.id,
+            semesterId: semester.id,
             careerId: historical ? input.careerId : null,
             courseNrc: historical
               ? input.courseNrc?.trim() || null
               : assignment!.nrc,
-            courseId: courseId!,
+            courseId: courseId,
             assistantId: assistant.id,
             approvedOn,
             startsOn,
             endsOn,
             weeklyHours: input.weeklyHours ?? null,
+            tariffId: tariff!.id,
+            tariffRateClp,
             schedules: {
               ...(id ? { deleteMany: {} } : {}),
               create: schedules.map((schedule) => ({
@@ -559,9 +806,36 @@ export class AssistantshipsService {
               })),
             },
           };
-          return id
-            ? transaction.assistantship.update({ where: { id }, data, include })
-            : transaction.assistantship.create({ data, include });
+          if (id)
+            return transaction.assistantship.update({
+              where: { id },
+              data,
+              include,
+            });
+          const created = await transaction.assistantship.create({
+            data,
+            include,
+          });
+          if (application) {
+            const linked =
+              await transaction.assistantshipApplication.updateMany({
+                where: {
+                  id: application.id,
+                  status: 'APPROVED',
+                  assistantshipId: null,
+                },
+                data: {
+                  assistantshipId: created.id,
+                  studentId: input.studentId,
+                },
+              });
+            if (!linked.count)
+              throw new ConflictException({
+                code: 'APPLICATION_UNAVAILABLE',
+                message: 'La postulación ya se completó',
+              });
+          }
+          return created;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );

@@ -23,6 +23,18 @@ const currentEnrollments = {
 const studentCareer = {
   include: { career: { select: { id: true, code: true, name: true } } },
 } as const;
+const titulationHistory = {
+  select: {
+    id: true,
+    stage: true,
+    outcome: true,
+    careerName: true,
+    degree: true,
+    defenseDate: true,
+    createdAt: true,
+  },
+  orderBy: { createdAt: 'desc' },
+} as const;
 
 const assistantshipHistory = {
   approvals: {
@@ -40,9 +52,9 @@ type Catalog = Awaited<ReturnType<typeof loadCurrentCourses>>;
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async withAssistantships<T extends { id: string; email: string }>(
-    students: T[],
-  ) {
+  private async withAssistantships<
+    T extends { id: string; email: string | null },
+  >(students: T[]) {
     if (!students.length) return [];
     // Exact protected email lookup also recovers records created before student links existed.
     const assistants = await this.prisma.teachingAssistant.findMany({
@@ -51,7 +63,9 @@ export class StudentsService {
           { studentId: { in: students.map(({ id }) => id) } },
           {
             studentId: null,
-            email: { in: students.map(({ email }) => email) },
+            email: {
+              in: students.flatMap(({ email }) => (email ? [email] : [])),
+            },
           },
         ],
       },
@@ -64,6 +78,7 @@ export class StudentsService {
           (assistant) =>
             assistant.studentId === student.id ||
             (!assistant.studentId &&
+              student.email &&
               assistant.email.trim().toLowerCase() ===
                 student.email.trim().toLowerCase()),
         )
@@ -83,13 +98,36 @@ export class StudentsService {
     }));
   }
 
-  async list({ page, pageSize, search, nrc }: ListStudentsDto) {
+  async list({
+    page,
+    pageSize,
+    search,
+    nrc,
+    careerId,
+    cohortYear,
+    sortBy,
+    sortOrder = 'asc',
+  }: ListStudentsDto) {
+    const piiFilters: string[][] = [];
+    if (search)
+      piiFilters.push(await this.prisma.findPiiIds('Student', search));
+    if (cohortYear)
+      piiFilters.push(
+        await this.prisma.findPiiIds('Student', String(cohortYear), [
+          'admission',
+        ]),
+      );
+    const matchingIds = piiFilters.length
+      ? piiFilters
+          .slice(1)
+          .reduce(
+            (current, ids) => current.filter((id) => ids.includes(id)),
+            piiFilters[0],
+          )
+      : null;
     const where: Prisma.StudentWhereInput = {
-      ...(search
-        ? {
-            id: { in: await this.prisma.findPiiIds('Student', search) },
-          }
-        : {}),
+      ...(matchingIds ? { id: { in: matchingIds } } : {}),
+      ...(careerId ? { careerId } : {}),
       ...(nrc
         ? { enrollments: { some: { nrc, semester: { isActive: true } } } }
         : {}),
@@ -98,20 +136,45 @@ export class StudentsService {
       [
         this.prisma.student.findMany({
           where,
-          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-          skip: (page - 1) * pageSize,
-          take: pageSize,
+          orderBy: sortBy
+            ? { id: 'asc' }
+            : [{ createdAt: 'desc' }, { id: 'asc' }],
+          ...(!sortBy ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
           include: {
             enrollments: currentEnrollments,
             careerCurriculumVersion: studentCareer,
+            career: { select: { id: true, code: true, name: true } },
+            titulationProcesses: titulationHistory,
           },
         }),
         this.prisma.student.count({ where }),
       ],
       { maxWait: 10_000, timeout: 30_000 },
     );
+    const orderedItems = sortBy
+      ? items.sort((left, right) => {
+          const leftValue =
+            sortBy === 'name'
+              ? (left.givenNames ?? left.name)
+              : `${left.paternalSurname ?? ''} ${left.maternalSurname ?? ''} ${left.givenNames ?? left.name}`;
+          const rightValue =
+            sortBy === 'name'
+              ? (right.givenNames ?? right.name)
+              : `${right.paternalSurname ?? ''} ${right.maternalSurname ?? ''} ${right.givenNames ?? right.name}`;
+          const comparison = leftValue.localeCompare(rightValue, 'es', {
+            sensitivity: 'base',
+          });
+          return (
+            (sortOrder === 'desc' ? -comparison : comparison) ||
+            left.id.localeCompare(right.id)
+          );
+        })
+      : items;
+    const pageItems = sortBy
+      ? orderedItems.slice((page - 1) * pageSize, page * pageSize)
+      : orderedItems;
     return {
-      items: await this.withAssistantships(items),
+      items: await this.withAssistantships(pageItems),
       total,
       page,
       pageSize,
@@ -125,6 +188,8 @@ export class StudentsService {
       include: {
         enrollments: currentEnrollments,
         careerCurriculumVersion: studentCareer,
+        career: { select: { id: true, code: true, name: true } },
+        titulationProcesses: titulationHistory,
       },
     });
     if (!student) throw new NotFoundException('El estudiante no existe');
@@ -188,7 +253,11 @@ export class StudentsService {
       const existingStudent = id
         ? await tx.student.findUnique({
             where: { id },
-            select: { id: true, careerCurriculumVersionId: true },
+            select: {
+              id: true,
+              careerId: true,
+              careerCurriculumVersionId: true,
+            },
           })
         : null;
       if (id && !existingStudent)
@@ -196,6 +265,14 @@ export class StudentsService {
       if ((input.nrcs === undefined) !== (input.semesterId === undefined))
         throw new BadRequestException(
           'Indica el semestre y las asignaturas juntos',
+        );
+      if (
+        input.admission !== undefined &&
+        input.admission !== null &&
+        !/^\d{4}(10|20)$/.test(String(input.admission))
+      )
+        throw new BadRequestException(
+          'Admisión debe tener seis dígitos y terminar en 10 o 20',
         );
       const catalog = input.semesterId
         ? await this.catalog(tx, input.semesterId)
@@ -205,15 +282,42 @@ export class StudentsService {
         : null;
       const data = {
         name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
+        ...(input.email === undefined
+          ? {}
+          : { email: input.email?.trim().toLowerCase() || null }),
+        ...(input.givenNames === undefined
+          ? {}
+          : { givenNames: input.givenNames?.trim() || null }),
+        ...(input.rut === undefined ? {} : { rut: input.rut?.trim() || null }),
+        ...(input.personalEmail === undefined
+          ? {}
+          : {
+              personalEmail: input.personalEmail?.trim().toLowerCase() || null,
+            }),
+        ...(input.admission === undefined
+          ? {}
+          : { admission: input.admission ?? null }),
+        ...(input.paternalSurname === undefined
+          ? {}
+          : { paternalSurname: input.paternalSurname?.trim() || null }),
+        ...(input.maternalSurname === undefined
+          ? {}
+          : { maternalSurname: input.maternalSurname?.trim() || null }),
+        ...(input.birthDate === undefined
+          ? {}
+          : { birthDate: input.birthDate?.slice(0, 10) || null }),
         ...(input.careerCurriculumVersionId === undefined
           ? {}
           : { careerCurriculumVersionId: input.careerCurriculumVersionId }),
+        ...(input.careerId === undefined ? {} : { careerId: input.careerId }),
       };
       if (input.careerCurriculumVersionId) {
         const curriculum = await tx.curriculumVersion.findUnique({
           where: { id: input.careerCurriculumVersionId },
-          select: { id: true, career: { select: { isActive: true } } },
+          select: {
+            id: true,
+            career: { select: { id: true, isActive: true } },
+          },
         });
         if (!curriculum)
           throw new BadRequestException('La malla seleccionada no existe');
@@ -224,6 +328,36 @@ export class StudentsService {
           throw new BadRequestException(
             'La carrera seleccionada está inactiva',
           );
+        if (input.careerId && input.careerId !== curriculum.career.id)
+          throw new BadRequestException(
+            'La carrera no coincide con la malla seleccionada',
+          );
+        data.careerId = curriculum.career.id;
+      }
+      if (input.careerId) {
+        const career = await tx.career.findUnique({
+          where: { id: input.careerId },
+          select: { id: true, isActive: true },
+        });
+        if (!career)
+          throw new BadRequestException('La carrera seleccionada no existe');
+        if (!career.isActive && career.id !== existingStudent?.careerId)
+          throw new BadRequestException(
+            'La carrera seleccionada está inactiva',
+          );
+      }
+      const effectiveCareerId =
+        input.careerId ?? data.careerId ?? existingStudent?.careerId;
+      if (effectiveCareerId && input.admission) {
+        data.careerId = effectiveCareerId;
+        const cohortYear = Number(input.admission.slice(0, 4));
+        const curriculum = await tx.curriculumVersion.findUnique({
+          where: {
+            careerId_cohortYear: { careerId: effectiveCareerId, cohortYear },
+          },
+          select: { id: true },
+        });
+        data.careerCurriculumVersionId = curriculum?.id ?? null;
       }
       const student = id
         ? await tx.student.update({ where: { id }, data })
@@ -251,6 +385,7 @@ export class StudentsService {
         include: {
           enrollments: currentEnrollments,
           careerCurriculumVersion: studentCareer,
+          career: { select: { id: true, code: true, name: true } },
         },
       });
     });
@@ -260,6 +395,7 @@ export class StudentsService {
     const student = await this.prisma.student.findUnique({
       where: { id },
       include: {
+        career: { select: { id: true, code: true, name: true } },
         careerCurriculumVersion: {
           include: {
             career: { select: { id: true, code: true, name: true } },
@@ -317,6 +453,7 @@ export class StudentsService {
         id: student.id,
         name: student.name,
         email: student.email,
+        career: student.career,
         curriculumVersion: student.careerCurriculumVersion,
       },
       courses,
@@ -375,18 +512,77 @@ export class StudentsService {
   async importCsv(input: ImportStudentsDto) {
     const rows = parseStudentCsv(input.csv);
     return this.write(async (tx) => {
-      const catalog = await this.catalog(tx, input.semesterId);
+      const isRoster = rows.some((row) => row.nrcs.length > 0);
+      if (isRoster && !input.semesterId)
+        throw new BadRequestException(
+          'Indica el semestre para importar matrículas',
+        );
+      const catalog = isRoster
+        ? await this.catalog(tx, input.semesterId!)
+        : null;
       // Validate the whole file before the first write: failures never leave partial rosters.
       const validated = rows.map((row) => ({
         ...row,
-        courses: this.offerings(catalog, row.nrcs, row.line),
+        courses: catalog ? this.offerings(catalog, row.nrcs, row.line) : [],
       }));
+      const careers = rows.some(({ registry }) => registry)
+        ? await tx.career.findMany({
+            select: { id: true, code: true, name: true },
+          })
+        : [];
+      const normalizeCareer = (value: string) =>
+        value
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .trim()
+          .toLocaleLowerCase('es');
+      const careerFor = (row: (typeof validated)[number]) => {
+        const byCode = row.careerCode
+          ? careers.find(
+              (career) =>
+                career.code?.trim().toLowerCase() ===
+                row.careerCode!.toLowerCase(),
+            )
+          : undefined;
+        return (
+          byCode ??
+          (row.careerName
+            ? careers.find(
+                (career) =>
+                  normalizeCareer(career.name) ===
+                  normalizeCareer(row.careerName!),
+              )
+            : undefined)
+        );
+      };
       const existing = await tx.student.findMany({
         where: { email: { in: rows.map(({ email }) => email) } },
         select: { id: true, email: true, name: true },
       });
       await tx.student.createMany({
-        data: rows.map(({ name, email }) => ({ name, email })),
+        data: validated.map((row) => {
+          const career = careerFor(row);
+          return {
+            name: row.registry
+              ? [row.name, row.paternalSurname, row.maternalSurname]
+                  .filter(Boolean)
+                  .join(' ')
+              : row.name,
+            email: row.email,
+            ...(row.registry ? { givenNames: row.name } : {}),
+            ...(row.personalEmail ? { personalEmail: row.personalEmail } : {}),
+            ...(row.rut ? { rut: row.rut } : {}),
+            ...(row.admission ? { admission: row.admission } : {}),
+            ...(row.paternalSurname
+              ? { paternalSurname: row.paternalSurname }
+              : {}),
+            ...(row.maternalSurname
+              ? { maternalSurname: row.maternalSurname }
+              : {}),
+            ...(row.birthDate ? { birthDate: row.birthDate } : {}),
+            ...(career ? { careerId: career.id } : {}),
+          };
+        }),
         skipDuplicates: true,
       });
       const students = await tx.student.findMany({
@@ -412,22 +608,58 @@ export class StudentsService {
             data: { name: row.name },
           });
       }
-      const links = await tx.studentEnrollment.createMany({
-        data: validated.flatMap((row) =>
-          row.courses.map((course) => ({
-            studentId: byEmail.get(row.email)!,
-            semesterId: input.semesterId,
-            courseId: course.courseId,
-            nrc: course.nrc,
-          })),
-        ),
-        skipDuplicates: true,
-      });
+      const links = catalog
+        ? await tx.studentEnrollment.createMany({
+            data: validated.flatMap((row) =>
+              row.courses.map((course) => ({
+                studentId: byEmail.get(row.email)!,
+                semesterId: input.semesterId!,
+                courseId: course.courseId,
+                nrc: course.nrc,
+              })),
+            ),
+            skipDuplicates: true,
+          })
+        : { count: 0 };
+      for (const row of validated.filter(({ registry }) => registry)) {
+        const studentId = byEmail.get(row.email);
+        if (!studentId) continue;
+        const career = careerFor(row);
+        const curriculum =
+          career && row.admission
+            ? await tx.curriculumVersion.findUnique({
+                where: {
+                  careerId_cohortYear: {
+                    careerId: career.id,
+                    cohortYear: Number(row.admission.slice(0, 4)),
+                  },
+                },
+                select: { id: true },
+              })
+            : null;
+        await tx.student.update({
+          where: { id: studentId },
+          data: {
+            name: [row.name, row.paternalSurname, row.maternalSurname]
+              .filter(Boolean)
+              .join(' '),
+            givenNames: row.name,
+            rut: row.rut ?? null,
+            personalEmail: row.personalEmail ?? null,
+            admission: row.admission ?? null,
+            paternalSurname: row.paternalSurname ?? null,
+            maternalSurname: row.maternalSurname ?? null,
+            birthDate: row.birthDate ?? null,
+            careerId: career?.id ?? null,
+            careerCurriculumVersionId: curriculum?.id ?? null,
+          },
+        });
+      }
       return {
         importedStudents: rows.length,
         createdStudents: students.length - existing.length,
         addedEnrollments: links.count,
-        semesterId: input.semesterId,
+        semesterId: input.semesterId ?? null,
       };
     });
   }

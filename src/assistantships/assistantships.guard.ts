@@ -19,6 +19,8 @@ export class AssistantshipsGuard implements CanActivate {
       'assistantships',
       'assistantshipOptions',
       'assistantshipAssignments',
+      'assistantshipTariffs',
+      'assistantshipBudgetSummary',
     ].includes(context.getHandler().name);
     const authorized = await this.prisma.user.findFirst({
       where: {

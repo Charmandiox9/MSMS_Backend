@@ -114,6 +114,22 @@ las anteriores. `scripts/backfill-pii.ts --apply --rotate` recifra todos los reg
 una ventana de mantenimiento. Conservar las claves hasta convertir registros,
 cachés y respaldos. No cambiar la clave HMAC sin reindexar todo el conjunto.
 
+La ampliación del padrón de estudiantes también cifra `admission`. En una
+instalación que ya tiene estudiantes, mantener la aplicación detenida y aplicar
+primero todas las migraciones pendientes con `prisma migrate deploy`. La
+migración `20261116010000_encrypt_student_admission` convierte la columna de
+entero a texto, pero no cifra los valores. Luego ejecutar
+`ts-node --transpile-only scripts/backfill-pii.ts --apply --rotate --model=Student`
+con las mismas claves PII y la conexión directa a esa base. `--rotate` es necesario
+porque estudiantes existentes pueden tener `piiVersion = 1` aunque la columna
+`admission` se haya agregado después de su cifrado original. `--model=Student`
+limita la rotación a estudiantes para no recifrar innecesariamente el resto de
+los modelos. El script convierte la admisión a texto y cifra todos los campos
+PII del estudiante en una transacción por lote. Verificar la lectura y búsqueda antes de volver a iniciar
+la aplicación. Si Prisma informa que esperaba texto y recibió un número, la
+migración de tipo todavía no está aplicada; no ejecutar la versión nueva del
+backend hasta completar migración y backfill.
+
 ## Registro de aplicación en Neon — 14 de octubre de 2026
 
 Las migraciones `20261014000000_academic_repository_and_hourly_teaching` y

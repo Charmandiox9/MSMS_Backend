@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JustificationStatus } from '@prisma/client';
+import { OPEN_DATA_RIGHTS_STATUSES } from '../privacy-rights/data-rights-status';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -65,29 +66,53 @@ export class DashboardService {
 
   async academicProcessAnalyst() {
     const semester = { isActive: true };
-    const [teachers, activeCourses, activeAssignments, justifications] =
-      await Promise.all([
-        this.prisma.teacher.count({
-          where: { assignments: { some: { semester } } },
-        }),
-        this.prisma.course.count({
-          where: {
-            OR: [
-              { schedules: { some: { semester } } },
-              { assignments: { some: { semester } } },
-            ],
-          },
-        }),
-        this.prisma.teachingAssignment.count({ where: { semester } }),
-        this.prisma.justification.count(),
-      ]);
+    const [
+      teachers,
+      activeCourses,
+      activeAssignments,
+      justifications,
+      projects,
+      research,
+      researchOutputs,
+    ] = await Promise.all([
+      this.prisma.teacher.count({
+        where: { assignments: { some: { semester } } },
+      }),
+      this.prisma.course.count({
+        where: {
+          OR: [
+            { schedules: { some: { semester } } },
+            { assignments: { some: { semester } } },
+          ],
+        },
+      }),
+      this.prisma.teachingAssignment.count({ where: { semester } }),
+      this.prisma.justification.count(),
+      this.prisma.project.count(),
+      this.prisma.research.count(),
+      this.prisma.researchOutput.count(),
+    ]);
     return {
       teachers,
       activeCourses,
       activeAssignments,
       justifications,
+      projects,
+      research,
+      researchOutputs,
       ...(await this.assistantshipMetrics()),
     };
+  }
+
+  async privacyOfficer() {
+    const where = { status: { in: [...OPEN_DATA_RIGHTS_STATUSES] } };
+    const [pendingRequests, overdueRequests] = await Promise.all([
+      this.prisma.dataRightsRequest.count({ where }),
+      this.prisma.dataRightsRequest.count({
+        where: { ...where, dueAt: { lt: new Date() } },
+      }),
+    ]);
+    return { pendingRequests, overdueRequests };
   }
 
   async teachingSupportCoordinator() {

@@ -88,7 +88,9 @@ describe('JustificationsController', () => {
       const expected = { id: 'just-1', status: JustificationStatus.PENDING };
       mockService.openInboxEntry.mockResolvedValue(expected);
 
-      const req = { user: { id: 'user-123' } } as any;
+      const req = { user: { id: 'user-123' } } as unknown as Parameters<
+        typeof controller.open
+      >[1];
       const result = await controller.open('inbox-1', req);
 
       expect(result).toBe(expected);
@@ -104,7 +106,9 @@ describe('JustificationsController', () => {
       const expected = { id: 'just-1', status: JustificationStatus.ACCEPTED };
       mockService.decide.mockResolvedValue(expected);
 
-      const req = { user: { id: 'user-123' } } as any;
+      const req = { user: { id: 'user-123' } } as unknown as Parameters<
+        typeof controller.decide
+      >[2];
       const body = {
         status: JustificationStatus.ACCEPTED,
         reasonCategory: 'MEDICAL',

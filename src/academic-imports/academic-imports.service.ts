@@ -10,10 +10,7 @@ import {
   TeachingComponent,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  calculateHourlyPayment,
-  contractDate,
-} from '../academic/hourly-payment-calculator';
+import { calculateHourlyPayment } from '../academic/hourly-payment-calculator';
 import { TeacherImportEmailDto } from './academic-imports.dto';
 
 type ImportRow = {
@@ -68,10 +65,20 @@ const IMPORT_TRANSACTION_TIMEOUT_MS = 60_000;
 
 const text = (value: ExcelJS.CellValue | undefined): string => {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'object' && 'text' in value)
-    return String(value.text).trim();
-  if (typeof value === 'object' && 'result' in value) return text(value.result);
-  return String(value).trim();
+  if (value instanceof Date)
+    return Number.isFinite(value.getTime()) ? value.toISOString() : '';
+  if (typeof value !== 'object') return String(value).trim();
+  if ('text' in value && typeof value.text === 'string')
+    return value.text.trim();
+  if ('richText' in value && Array.isArray(value.richText))
+    return value.richText
+      .map(({ text: fragment }) => fragment)
+      .join('')
+      .trim();
+  if ('result' in value) return text(value.result);
+  if ('error' in value && typeof value.error === 'string')
+    return value.error.trim();
+  return '';
 };
 
 const date = (value: ExcelJS.CellValue | undefined): Date | null => {
@@ -213,7 +220,6 @@ export class AcademicImportsService {
             name,
             role: 'Integrante',
           });
-      const values = amounts.map((amount) => amount?.toString() ?? null);
       const warnings: string[] = [];
       if (!code) warnings.push('sin código de proyecto');
       if (amounts.some(Boolean))

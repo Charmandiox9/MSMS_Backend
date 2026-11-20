@@ -9,7 +9,11 @@ import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { SessionService } from '../auth/session.service';
 import { WhitelistService } from '../auth/whitelist/whitelist.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignRoleDto, PreloadUserDto, UsersController } from './users.controller';
+import {
+  AssignRoleDto,
+  PreloadUserDto,
+  UsersController,
+} from './users.controller';
 import { UsersService } from './users.service';
 
 describe('AssignRoleDto', () => {
@@ -50,7 +54,11 @@ describe('PreloadUserDto', () => {
 });
 
 describe('UsersController con el usuario autenticado de cada entorno', () => {
-  const targetAdmin = { id: 'admin-1', isActive: true, userRoles: [{ role: { code: 'SYSTEM_ADMIN' } }] };
+  const targetAdmin = {
+    id: 'admin-1',
+    isActive: true,
+    userRoles: [{ role: { code: 'SYSTEM_ADMIN' } }],
+  };
   const prisma = {
     user: { findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
     userRole: { count: jest.fn() },
@@ -61,20 +69,36 @@ describe('UsersController con el usuario autenticado de cada entorno', () => {
 
   // Desarrollo: JwtStrategy entrega { id, ... }. Producción: el usuario lo arma
   // SessionAuthGuard a partir de la sesión almacenada ({ sub, ... }).
-  const jwtUser = { id: 'admin-1', email: 'admin@ucn.cl', roles: ['SYSTEM_ADMIN'] };
-  const storedSession = { sub: 'admin-1', email: 'admin@ucn.cl', roles: ['SYSTEM_ADMIN'] };
+  const jwtUser = {
+    id: 'admin-1',
+    email: 'admin@ucn.cl',
+    roles: ['SYSTEM_ADMIN'],
+  };
+  const storedSession = {
+    sub: 'admin-1',
+    email: 'admin@ucn.cl',
+    roles: ['SYSTEM_ADMIN'],
+  };
   let sessionUser: unknown;
 
   beforeAll(async () => {
-    const request: { cookies: Record<string, string>; headers: object; user?: unknown } = {
+    const request: {
+      cookies: Record<string, string>;
+      headers: object;
+      user?: unknown;
+    } = {
       cookies: { session: 'session-id' },
       headers: {},
     };
     const guard = new SessionAuthGuard(
       new ConfigService({ NODE_ENV: 'production' }),
       {} as JwtService,
-      { get: jest.fn().mockResolvedValue(storedSession) } as unknown as SessionService,
-      { findActive: jest.fn().mockResolvedValue(jwtUser) } as unknown as ActiveUserService,
+      {
+        get: jest.fn().mockResolvedValue(storedSession),
+      } as unknown as SessionService,
+      {
+        findActive: jest.fn().mockResolvedValue(jwtUser),
+      } as unknown as ActiveUserService,
     );
     await guard.canActivate({
       getType: () => 'http',
@@ -102,7 +126,11 @@ describe('UsersController con el usuario autenticado de cada entorno', () => {
     ['producción (sesión)', () => sessionUser],
   ])('impide desactivar la propia cuenta en %s', async (_env, actor) => {
     await expect(
-      controller.setActive('admin-1', { isActive: false }, actor() as { id: string }),
+      controller.setActive(
+        'admin-1',
+        { isActive: false },
+        actor() as { id: string },
+      ),
     ).rejects.toThrow('No puedes desactivar tu propia cuenta');
     expect(prisma.user.update).not.toHaveBeenCalled();
   });

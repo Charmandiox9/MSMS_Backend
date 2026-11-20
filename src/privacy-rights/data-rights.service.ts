@@ -10,12 +10,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-
-const OPEN_STATUSES = [
-  DataRightsRequestStatus.RECEIVED,
-  DataRightsRequestStatus.VERIFYING,
-  DataRightsRequestStatus.IN_PROGRESS,
-] as const;
+import { OPEN_DATA_RIGHTS_STATUSES } from './data-rights-status';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
@@ -61,7 +56,7 @@ export class DataRightsService {
       where: {
         subjectUserId,
         rightType,
-        status: { in: [...OPEN_STATUSES] },
+        status: { in: [...OPEN_DATA_RIGHTS_STATUSES] },
       },
       select: { id: true },
     });
@@ -263,8 +258,8 @@ export class DataRightsService {
         );
       }
       if (
-        !OPEN_STATUSES.includes(
-          current.status as (typeof OPEN_STATUSES)[number],
+        !OPEN_DATA_RIGHTS_STATUSES.includes(
+          current.status as (typeof OPEN_DATA_RIGHTS_STATUSES)[number],
         )
       ) {
         throw new BadRequestException('La solicitud ya recibió una respuesta');

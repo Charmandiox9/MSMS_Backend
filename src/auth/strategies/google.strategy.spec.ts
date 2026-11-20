@@ -10,11 +10,18 @@ describe('GoogleStrategy', () => {
   let whitelistService: { isEmailAllowed: jest.Mock };
   let done: jest.Mock;
 
-  function makeProfile(overrides: Partial<{ verified: boolean; email: string }> = {}) {
+  function makeProfile(
+    overrides: Partial<{ verified: boolean; email: string }> = {},
+  ) {
     return {
       id: 'google-1',
       name: { givenName: 'Test', familyName: 'User' },
-      emails: [{ value: overrides.email ?? 'test@ucn.cl', verified: overrides.verified ?? true }],
+      emails: [
+        {
+          value: overrides.email ?? 'test@ucn.cl',
+          verified: overrides.verified ?? true,
+        },
+      ],
       photos: [{ value: 'https://example.com/avatar.png' }],
     };
   }

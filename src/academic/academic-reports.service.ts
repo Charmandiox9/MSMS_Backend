@@ -149,7 +149,10 @@ export class AcademicReportsService {
                   },
                 }
               : {},
-            include: { student: true, approvals: { include: { course: true } } },
+            include: {
+              student: true,
+              approvals: { include: { course: true } },
+            },
             orderBy: { id: 'asc' },
           })
         ).map((item) => ({
@@ -182,7 +185,9 @@ export class AcademicReportsService {
               teachingAssignment: {
                 include: { semester: true, course: true, teacher: true },
               },
-              approval: { include: { assistant: { include: { student: true } } } },
+              approval: {
+                include: { assistant: { include: { student: true } } },
+              },
               schedules: true,
             },
             orderBy: { startsOn: 'desc' },
@@ -193,8 +198,12 @@ export class AcademicReportsService {
           course: item.course.name,
           courseNrc: item.courseNrc ?? item.teachingAssignment?.nrc ?? null,
           teacher: item.teachingAssignment?.teacher.name ?? null,
-          name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
-          email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
+          name:
+            item.approval.assistant.student?.name ??
+            item.approval.assistant.name,
+          email:
+            item.approval.assistant.student?.email ??
+            item.approval.assistant.email,
           startsOn: item.startsOn.toISOString().slice(0, 10),
           endsOn: item.endsOn?.toISOString().slice(0, 10) ?? null,
           weeklyHours: item.weeklyHours?.toNumber() ?? null,
@@ -220,7 +229,7 @@ export class AcademicReportsService {
           status: item.isActive ? 'ACTIVE' : 'INACTIVE',
         }));
         break;
-      case 'projects':
+      case 'projects': {
         columns = [
           'reportingYear',
           'title',
@@ -272,7 +281,11 @@ export class AcademicReportsService {
               endsOn: true,
               closedOn: true,
             },
-            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }, { id: 'asc' }],
+            orderBy: [
+              { reportingYear: 'desc' },
+              { title: 'asc' },
+              { id: 'asc' },
+            ],
             ...(usesDatabasePagination
               ? { skip: ((page ?? 1) - 1) * pageSize }
               : {}),
@@ -300,7 +313,8 @@ export class AcademicReportsService {
           closedOn: project.closedOn?.toISOString().slice(0, 10) ?? null,
         }));
         break;
-      case 'research':
+      }
+      case 'research': {
         columns = [
           'title',
           'code',
@@ -347,7 +361,8 @@ export class AcademicReportsService {
           outputCount: research._count.outputs,
         }));
         break;
-      case 'researchOutputs':
+      }
+      case 'researchOutputs': {
         columns = [
           'reportingYear',
           'kind',
@@ -382,7 +397,11 @@ export class AcademicReportsService {
               research: { select: { title: true } },
               _count: { select: { authors: true, projects: true } },
             },
-            orderBy: [{ reportingYear: 'desc' }, { title: 'asc' }, { id: 'asc' }],
+            orderBy: [
+              { reportingYear: 'desc' },
+              { title: 'asc' },
+              { id: 'asc' },
+            ],
             ...(usesDatabasePagination
               ? { skip: ((page ?? 1) - 1) * pageSize }
               : {}),
@@ -403,6 +422,7 @@ export class AcademicReportsService {
           projectCount: output._count.projects,
         }));
         break;
+      }
       case 'hourlyContracts':
         columns = [
           'semester',

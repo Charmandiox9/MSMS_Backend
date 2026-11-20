@@ -508,8 +508,12 @@ export class AcademicService {
         location: schedule.location,
         assistant: {
           id: item.approval.assistant.id,
-          name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
-          email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
+          name:
+            item.approval.assistant.student?.name ??
+            item.approval.assistant.name,
+          email:
+            item.approval.assistant.student?.email ??
+            item.approval.assistant.email,
         },
         state: stateOf(item),
         conflict: false,
@@ -754,8 +758,12 @@ export class AcademicService {
           endsAtMinute: schedule.endsAtMinute,
           location: schedule.location,
           assistant: {
-            name: item.approval.assistant.student?.name ?? item.approval.assistant.name,
-            email: item.approval.assistant.student?.email ?? item.approval.assistant.email,
+            name:
+              item.approval.assistant.student?.name ??
+              item.approval.assistant.name,
+            email:
+              item.approval.assistant.student?.email ??
+              item.approval.assistant.email,
           },
           course: item.course,
           semester: item.semester,

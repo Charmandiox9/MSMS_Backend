@@ -8,6 +8,15 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { getTerms, CURRENT_TERMS_VERSION } from './terms-content';
 
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === code
+  );
+}
+
 @Injectable()
 export class TermsService {
   private readonly logger = new Logger(TermsService.name);
@@ -17,13 +26,8 @@ export class TermsService {
   private async withStorageCheck<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
-    } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'P2021'
-      ) {
+    } catch (error: unknown) {
+      if (hasErrorCode(error, 'P2021')) {
         this.logger.error('Terms acceptance storage is unavailable.');
         throw new ServiceUnavailableException(
           'No fue posible verificar la aceptación de los términos en este momento.',
@@ -78,20 +82,27 @@ export class TermsService {
               sections: document.sections,
             },
           },
-          select: { version: true, locale: true, contentHash: true, contentSnapshot: true, acceptedAt: true },
+          select: {
+            version: true,
+            locale: true,
+            contentHash: true,
+            contentSnapshot: true,
+            acceptedAt: true,
+          },
         }),
       );
-    } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'P2002'
-      ) {
+    } catch (error: unknown) {
+      if (hasErrorCode(error, 'P2002')) {
         const existing = await this.withStorageCheck(() =>
           this.prisma.legalTermsAcceptance.findUnique({
             where: { userId_version: { userId, version } },
-            select: { version: true, locale: true, contentHash: true, contentSnapshot: true, acceptedAt: true },
+            select: {
+              version: true,
+              locale: true,
+              contentHash: true,
+              contentSnapshot: true,
+              acceptedAt: true,
+            },
           }),
         );
         if (existing) return existing;
@@ -105,7 +116,13 @@ export class TermsService {
       this.prisma.legalTermsAcceptance.findMany({
         where: { userId },
         orderBy: { acceptedAt: 'desc' },
-        select: { version: true, locale: true, contentHash: true, contentSnapshot: true, acceptedAt: true },
+        select: {
+          version: true,
+          locale: true,
+          contentHash: true,
+          contentSnapshot: true,
+          acceptedAt: true,
+        },
       }),
     );
   }

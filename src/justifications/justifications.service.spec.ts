@@ -589,14 +589,32 @@ describe('JustificationsService flujo completo', () => {
 
     it('uses the linked student contact after an email change', async () => {
       prisma.justification.findUnique.mockResolvedValue(pending);
-      prisma.assistantship.findMany.mockResolvedValue([{
-        teachingAssignment: { nrc: '10001' }, startsOn: new Date('2026-08-01'), endsOn: null,
-        approval: { assistant: { name: 'Previous name', email: 'old@example.test', student: { name: 'Current name', email: 'current@example.test' } } },
-        schedules: [{ weekday: 3, startsAtMinute: 490, endsAtMinute: 580 }],
-      }]);
-      const result = await service.decide('just-1', 'u', JustificationStatus.ACCEPTED);
-      expect(result.assistants).toEqual([{ name: 'Current name', email: 'current@example.test' }]);
-      const recipients = notifications.send.mock.calls.map(([message]: [{ to: string }]) => message.to);
+      prisma.assistantship.findMany.mockResolvedValue([
+        {
+          teachingAssignment: { nrc: '10001' },
+          startsOn: new Date('2026-08-01'),
+          endsOn: null,
+          approval: {
+            assistant: {
+              name: 'Previous name',
+              email: 'old@example.test',
+              student: { name: 'Current name', email: 'current@example.test' },
+            },
+          },
+          schedules: [{ weekday: 3, startsAtMinute: 490, endsAtMinute: 580 }],
+        },
+      ]);
+      const result = await service.decide(
+        'just-1',
+        'u',
+        JustificationStatus.ACCEPTED,
+      );
+      expect(result.assistants).toEqual([
+        { name: 'Current name', email: 'current@example.test' },
+      ]);
+      const recipients = notifications.send.mock.calls.map(
+        ([message]: [{ to: string }]) => message.to,
+      );
       expect(recipients).toContain('current@example.test');
       expect(recipients).not.toContain('old@example.test');
     });

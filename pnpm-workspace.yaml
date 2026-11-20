@@ -2,6 +2,7 @@ allowBuilds:
   '@apollo/protobufjs': false
   '@parcel/watcher': false
   '@prisma/engines': true
+  '@swc/core': false
   bcrypt: true
   prisma: true
   unrs-resolver: false

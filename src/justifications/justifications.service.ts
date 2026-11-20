@@ -404,7 +404,10 @@ export class JustificationsService {
         ...new Map(
           matching.map(({ approval: { assistant } }) => [
             (assistant.student?.email ?? assistant.email).toLowerCase(),
-            { name: assistant.student?.name ?? assistant.name, email: assistant.student?.email ?? assistant.email },
+            {
+              name: assistant.student?.name ?? assistant.name,
+              email: assistant.student?.email ?? assistant.email,
+            },
           ]),
         ).values(),
       ];

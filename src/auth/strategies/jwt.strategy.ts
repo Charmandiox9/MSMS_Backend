@@ -12,9 +12,14 @@ interface JwtPayload {
 }
 
 function extractJwtFromCookie(req: Request): string | null {
-  const parsedCookie: unknown = req.cookies?.token;
-  if (typeof parsedCookie === 'string') {
-    return parsedCookie;
+  const cookies: unknown = req.cookies;
+  if (
+    cookies &&
+    typeof cookies === 'object' &&
+    'token' in cookies &&
+    typeof cookies.token === 'string'
+  ) {
+    return cookies.token;
   }
 
   const rawCookie = req.headers.cookie
