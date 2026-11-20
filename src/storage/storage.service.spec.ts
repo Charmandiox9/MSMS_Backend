@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -252,6 +253,33 @@ describe('StorageService', () => {
 
       expect(sendMock).toHaveBeenCalledTimes(2);
       expect(signedKey()).toBe('uploads/missing.pdf');
+    });
+  });
+
+  describe('private file storage', () => {
+    it('stores titulation files under a random private key and deletes by key', async () => {
+      const service = createService();
+      const content = Buffer.from('%PDF-1.7');
+      const key = await service.uploadPrivateFile(
+        'acta.pdf',
+        'application/pdf',
+        content,
+      );
+
+      expect(key).toMatch(/^titulation-attachments\/[0-9a-f-]{36}\.pdf$/);
+      const upload = sendMock.mock.calls[0][0] as PutObjectCommand;
+      expect(upload.input).toEqual({
+        Bucket: 'evidence-bucket',
+        Key: key,
+        Body: content,
+        ContentType: 'application/pdf',
+        ContentLength: content.length,
+      });
+
+      await service.deleteFile(key);
+      const deletion = sendMock.mock.calls[1][0] as DeleteObjectCommand;
+      expect(deletion).toBeInstanceOf(DeleteObjectCommand);
+      expect(deletion.input).toEqual({ Bucket: 'evidence-bucket', Key: key });
     });
   });
 });

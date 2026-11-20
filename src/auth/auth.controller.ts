@@ -14,6 +14,14 @@ import { SessionAuthGuard } from './guards/session-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { resolveRedirectRoute } from './role-redirect/role-redirect.util';
 import { ConfigService } from '@nestjs/config';
+import type { Request, Response } from 'express';
+import type { SessionUser } from './guards/session-auth.guard';
+
+type GoogleAuthRequest = Omit<Request, 'user'> & {
+  user: Awaited<ReturnType<AuthService['validateGoogleUser']>>;
+};
+
+type SessionRequest = Omit<Request, 'user'> & { user: SessionUser };
 
 @Controller('auth')
 export class AuthController {
@@ -40,14 +48,17 @@ export class AuthController {
   @Public()
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  async googleAuth(@Req() req) {
+  googleAuth() {
     // Inicia el flujo de OAuth de Google
   }
 
   @Public()
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() req, @Res() res) {
+  async googleAuthRedirect(
+    @Req() req: GoogleAuthRequest,
+    @Res() res: Response,
+  ) {
     const user = req.user;
     const isProduction = this.config.get<string>('NODE_ENV') === 'production';
     const name = isProduction ? 'session' : 'token';
@@ -74,13 +85,13 @@ export class AuthController {
   @Header('Cache-Control', 'private, no-store')
   @Header('Vary', 'Cookie')
   @UseGuards(SessionAuthGuard)
-  getSession(@Req() req) {
+  getSession(@Req() req: SessionRequest) {
     return req.user;
   }
 
   @Public()
   @Post('logout')
-  async logout(@Req() req, @Res() res) {
+  async logout(@Req() req: Request, @Res() res: Response) {
     const isProduction = this.config.get<string>('NODE_ENV') === 'production';
     const name = isProduction ? 'session' : 'token';
     const sessionId = req.headers.cookie

@@ -30,8 +30,7 @@ export class InitialAdminService {
       const activeAdmins = await tx.user.count({
         where: { isActive: true, userRoles: { some: { roleId: role.id } } },
       });
-      if (activeAdmins)
-        return { status: 'already-initialized' };
+      if (activeAdmins) return { status: 'already-initialized' };
       const existing = await tx.preloadedUser.findFirst({
         where: { roles: { some: { roleId: role.id } } },
       });

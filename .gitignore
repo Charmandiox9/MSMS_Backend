@@ -35,6 +35,7 @@ lerna-debug.log*
 # Environment variables
 .env*
 !.env.example
+!.env.local.example
 
 # Prisma
 # Ya que generaste la db y schema

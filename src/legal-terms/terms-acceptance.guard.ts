@@ -7,9 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
 import { getRequestFromContext } from '../common/utils/execution-context.util';
-import {
-  SKIP_TERMS_ACCEPTANCE,
-} from './skip-terms-acceptance.decorator';
+import { SKIP_TERMS_ACCEPTANCE } from './skip-terms-acceptance.decorator';
 import { TermsService } from './terms.service';
 
 @Injectable()

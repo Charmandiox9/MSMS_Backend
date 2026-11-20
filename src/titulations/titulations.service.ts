@@ -1,0 +1,516 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, type TitulationProcess } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { normalizePiiSearch } from '../privacy/pii-policy';
+import { availableTitulationDrafts } from './titulation-drafts';
+import { createTitulationReference } from './titulation-reference.util';
+import { isValidChileanRut, normalizeChileanRut } from './chilean-rut.util';
+import { StudentIdentityService } from '../students/student-identity.service';
+import { TitulationAttachmentsService } from './titulation-attachments.service';
+import {
+  titulationViewWhere,
+  TITULATION_REVIEW_WHERE,
+} from './titulation-workflow';
+import {
+  CreateTitulationDto,
+  ListTitulationsDto,
+  UpdateTitulationDto,
+} from './titulations.dto';
+
+type TitulationInputFields = Partial<
+  Pick<
+    Prisma.TitulationProcessUncheckedCreateInput,
+    | 'studentName'
+    | 'studentRut'
+    | 'studentEmail'
+    | 'studentPhone'
+    | 'thesisTopic'
+    | 'degree'
+    | 'guideName'
+    | 'coGuideName'
+    | 'reviewerOneName'
+    | 'reviewerTwoName'
+    | 'defenseDate'
+    | 'stage'
+    | 'outcome'
+    | 'defenseAnnexesStatus'
+    | 'thesisSummaryStatus'
+    | 'libraryFormStatus'
+    | 'actaStatus'
+    | 'evaluationsStatus'
+  >
+>;
+
+type TitulationWithCareer = Prisma.TitulationProcessGetPayload<{
+  include: typeof PROCESS_RELATIONS;
+}>;
+
+const PROCESS_RELATIONS = {
+  career: { select: { id: true, code: true, name: true } },
+  student: { select: { id: true, name: true, email: true, rut: true } },
+} satisfies Prisma.TitulationProcessInclude;
+
+interface TitulationPeriodRecord {
+  year: number;
+  semester: number;
+}
+
+@Injectable()
+export class TitulationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly identities: StudentIdentityService,
+    private readonly attachments: TitulationAttachmentsService,
+  ) {}
+
+  async list({
+    page,
+    pageSize,
+    search,
+    stage,
+    careerId,
+    period,
+    view,
+    outcome,
+  }: ListTitulationsDto) {
+    const query = search?.trim();
+    const [piiIds, careerNames] = query
+      ? await Promise.all([
+          this.prisma.findPiiIds('TitulationProcess', query),
+          this.findCareerNames(query),
+        ])
+      : [[], []];
+    const referencePrefix = query
+      ?.match(/^TIT-\d{4}-([A-F0-9]{4,8})$/i)?.[1]
+      ?.toLowerCase();
+    const where: Prisma.TitulationProcessWhereInput = {
+      ...this.periodWhere(period),
+      ...(stage ? { stage } : {}),
+      ...(careerId ? { careerId } : {}),
+      ...(outcome ? { outcome } : {}),
+      AND: [titulationViewWhere(view)],
+      ...(query
+        ? {
+            OR: [
+              { id: { in: piiIds } },
+              ...(careerNames.length
+                ? [{ careerName: { in: careerNames } }]
+                : []),
+              ...(referencePrefix
+                ? [{ id: { startsWith: referencePrefix } }]
+                : []),
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction(
+      [
+        this.prisma.titulationProcess.findMany({
+          where,
+          select: {
+            id: true,
+            studentName: true,
+            thesisTopic: true,
+            degree: true,
+            careerName: true,
+            source: true,
+            defenseDate: true,
+            stage: true,
+            outcome: true,
+            defenseAnnexesStatus: true,
+            thesisSummaryStatus: true,
+            libraryFormStatus: true,
+            actaStatus: true,
+            evaluationsStatus: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.titulationProcess.count({ where }),
+      ],
+      { maxWait: 10_000, timeout: 30_000 },
+    );
+
+    return {
+      items: items.map((item) => this.presentSummary(item)),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async filterOptions() {
+    const [
+      periods,
+      careers,
+      recordsWithoutDate,
+      total,
+      review,
+      active,
+      graduated,
+    ] = await Promise.all([
+      this.prisma.$queryRaw<TitulationPeriodRecord[]>`
+        SELECT DISTINCT
+          DATE_PART('year', "defenseDate")::integer AS "year",
+          CASE WHEN DATE_PART('month', "defenseDate") <= 6 THEN 1 ELSE 2 END AS "semester"
+        FROM "TitulationProcess"
+        WHERE "defenseDate" IS NOT NULL
+        ORDER BY "year" DESC, "semester" DESC
+      `,
+      this.prisma.career.findMany({
+        where: { titulationProcesses: { some: {} } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.titulationProcess.count({ where: { defenseDate: null } }),
+      this.prisma.titulationProcess.count(),
+      this.prisma.titulationProcess.count({ where: TITULATION_REVIEW_WHERE }),
+      this.prisma.titulationProcess.count({
+        where: { outcome: 'IN_PROGRESS' },
+      }),
+      this.prisma.titulationProcess.count({ where: { outcome: 'GRADUATED' } }),
+    ]);
+
+    return {
+      periods: periods.map(({ year, semester }) => `${year}-S${semester}`),
+      careers,
+      hasUndated: recordsWithoutDate > 0,
+      counts: {
+        ALL: total,
+        REVIEW: review,
+        ACTIVE: active,
+        GRADUATED: graduated,
+      },
+    };
+  }
+
+  private periodWhere(
+    period?: string,
+  ): Pick<Prisma.TitulationProcessWhereInput, 'defenseDate'> {
+    if (!period) return {};
+    if (period === 'UNRECORDED') return { defenseDate: null };
+
+    const match = /^(\d{4})-S([12])$/.exec(period);
+    if (!match)
+      throw new BadRequestException('El período de defensa no es válido');
+
+    const year = Number(match[1]);
+    const startMonth = match[2] === '1' ? 0 : 6;
+    return {
+      defenseDate: {
+        gte: new Date(Date.UTC(year, startMonth, 1)),
+        lt: new Date(Date.UTC(year, startMonth + 6, 1)),
+      },
+    };
+  }
+
+  private async findCareerNames(query: string): Promise<string[]> {
+    const normalized = normalizePiiSearch(query);
+    if (!normalized) return [];
+
+    const names = await this.prisma.titulationProcess.groupBy({
+      by: ['careerName'],
+    });
+    return names
+      .map(({ careerName }) => careerName)
+      .filter((name) => normalizePiiSearch(name).includes(normalized));
+  }
+
+  async get(id: string) {
+    const process = await this.prisma.titulationProcess.findUnique({
+      where: { id },
+      include: PROCESS_RELATIONS,
+    });
+    if (!process) throw new NotFoundException('El proceso no existe');
+    return this.present(process);
+  }
+
+  async create(input: CreateTitulationDto, actorId: string) {
+    this.assertRut(input.studentRut);
+    const career = await this.resolveCareer(input.careerId);
+    const data: Prisma.TitulationProcessUncheckedCreateInput = {
+      ...this.processData(input),
+      studentName: input.studentName.trim(),
+      studentRut: input.studentRut
+        ? normalizeChileanRut(input.studentRut)
+        : null,
+      ...career,
+      stage: 'INTAKE',
+      createdById: actorId,
+      updatedById: actorId,
+    };
+
+    const process = await this.write(async (transaction) => {
+      data.studentId = await this.identities.resolve(
+        transaction,
+        {
+          name: input.studentName,
+          rut: input.studentRut,
+          email: input.studentEmail,
+          careerId: career.careerId,
+        },
+        input.studentId,
+      );
+      return transaction.titulationProcess.create({
+        data,
+        include: PROCESS_RELATIONS,
+      });
+    });
+    return this.present(process);
+  }
+
+  async update(id: string, input: UpdateTitulationDto, actorId: string) {
+    if (!Object.values(input).some((value) => value !== undefined))
+      throw new BadRequestException('Ingresa al menos un cambio');
+
+    const existing = await this.prisma.titulationProcess.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('El proceso no existe');
+
+    this.assertRut(input.studentRut);
+    const career =
+      input.careerId === undefined
+        ? {}
+        : await this.resolveCareer(input.careerId, existing.careerId);
+    const data: Prisma.TitulationProcessUncheckedUpdateInput = {
+      ...this.processData(input),
+      ...career,
+      updatedById: actorId,
+    };
+
+    const process = await this.write(async (transaction) => {
+      data.studentId = await this.identities.resolve(
+        transaction,
+        {
+          name: input.studentName ?? existing.studentName,
+          rut:
+            input.studentRut === undefined
+              ? existing.studentRut
+              : input.studentRut,
+          email:
+            input.studentEmail === undefined
+              ? existing.studentEmail
+              : input.studentEmail,
+          careerId: input.careerId ?? existing.careerId,
+        },
+        existing.studentId,
+      );
+      return transaction.titulationProcess.update({
+        where: { id },
+        data,
+        include: PROCESS_RELATIONS,
+      });
+    });
+    return this.present(process);
+  }
+
+  async delete(id: string) {
+    const process = await this.prisma.titulationProcess.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!process) throw new NotFoundException('El proceso no existe');
+
+    await this.attachments.deleteForProcess(id);
+    try {
+      await this.prisma.titulationProcess.delete({
+        where: { id },
+        select: { id: true },
+      });
+    } catch (cause: unknown) {
+      if (
+        cause instanceof Prisma.PrismaClientKnownRequestError &&
+        cause.code === 'P2025'
+      )
+        throw new NotFoundException('El proceso ya no existe');
+      throw cause;
+    }
+    return { success: true };
+  }
+
+  async findStudents(search: string) {
+    const ids = await this.prisma.findPiiIds('Student', search);
+    if (!ids.length) return [];
+    return this.prisma.student.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, email: true, rut: true, careerId: true },
+      orderBy: { id: 'asc' },
+      take: 20,
+    });
+  }
+
+  private present(process: TitulationWithCareer) {
+    return {
+      id: process.id,
+      studentId: process.studentId,
+      student: process.student,
+      reference: createTitulationReference(process.id, process.createdAt),
+      studentName: process.studentName,
+      studentRut: process.studentRut,
+      studentEmail: process.studentEmail,
+      studentPhone: process.studentPhone,
+      thesisTopic: process.thesisTopic,
+      degree: process.degree,
+      careerName: process.careerName,
+      careerId: process.careerId,
+      source: process.source,
+      guideName: process.guideName,
+      documentDrafts: availableTitulationDrafts(process.careerName),
+      coGuideName: process.coGuideName,
+      reviewerOneName: process.reviewerOneName,
+      reviewerTwoName: process.reviewerTwoName,
+      defenseDate: process.defenseDate,
+      stage: process.stage,
+      outcome: process.outcome,
+      defenseAnnexesStatus: process.defenseAnnexesStatus,
+      thesisSummaryStatus: process.thesisSummaryStatus,
+      libraryFormStatus: process.libraryFormStatus,
+      actaStatus: process.actaStatus,
+      evaluationsStatus: process.evaluationsStatus,
+      createdAt: process.createdAt,
+      updatedAt: process.updatedAt,
+    };
+  }
+
+  private presentSummary<
+    T extends Pick<
+      TitulationProcess,
+      | 'id'
+      | 'createdAt'
+      | 'studentName'
+      | 'thesisTopic'
+      | 'degree'
+      | 'careerName'
+      | 'source'
+      | 'defenseDate'
+      | 'stage'
+      | 'outcome'
+      | 'defenseAnnexesStatus'
+      | 'thesisSummaryStatus'
+      | 'libraryFormStatus'
+      | 'actaStatus'
+      | 'evaluationsStatus'
+      | 'updatedAt'
+    >,
+  >(process: T) {
+    return {
+      id: process.id,
+      reference: createTitulationReference(process.id, process.createdAt),
+      studentName: process.studentName,
+      thesisTopic: process.thesisTopic,
+      degree: process.degree,
+      careerName: process.careerName,
+      source: process.source,
+      defenseDate: process.defenseDate,
+      stage: process.stage,
+      outcome: process.outcome,
+      defenseAnnexesStatus: process.defenseAnnexesStatus,
+      thesisSummaryStatus: process.thesisSummaryStatus,
+      libraryFormStatus: process.libraryFormStatus,
+      actaStatus: process.actaStatus,
+      evaluationsStatus: process.evaluationsStatus,
+      updatedAt: process.updatedAt,
+    };
+  }
+
+  private assertRut(value: string | null | undefined) {
+    if (value && !isValidChileanRut(value))
+      throw new BadRequestException('El RUT ingresado no es válido');
+  }
+
+  private async write<T>(
+    operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 10_000,
+        timeout: 30_000,
+      });
+    } catch (cause: unknown) {
+      if (
+        cause instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P2002', 'P2034'].includes(cause.code)
+      )
+        throw new ConflictException(
+          'Los antecedentes del alumno cambiaron. Recarga y revisa el RUT y el correo antes de guardar',
+        );
+      throw cause;
+    }
+  }
+
+  private async resolveCareer(
+    careerId: string,
+    existingCareerId?: string | null,
+  ): Promise<{ careerId: string; careerName: string }> {
+    const career = await this.prisma.career.findUnique({
+      where: { id: careerId },
+      select: { id: true, name: true, isActive: true },
+    });
+    if (!career || (!career.isActive && career.id !== existingCareerId))
+      throw new BadRequestException(
+        'La carrera seleccionada no está disponible',
+      );
+    return { careerId: career.id, careerName: career.name };
+  }
+
+  private processData(
+    input: CreateTitulationDto | UpdateTitulationDto,
+  ): TitulationInputFields {
+    const data: TitulationInputFields = {};
+    if (input.studentName !== undefined)
+      data.studentName = input.studentName.trim();
+    if (input.studentRut !== undefined)
+      data.studentRut = input.studentRut
+        ? normalizeChileanRut(input.studentRut)
+        : null;
+    if (input.studentEmail !== undefined)
+      data.studentEmail = input.studentEmail?.trim().toLowerCase() || null;
+    if (input.studentPhone !== undefined)
+      data.studentPhone = input.studentPhone?.trim() || null;
+    if (input.thesisTopic !== undefined)
+      data.thesisTopic = input.thesisTopic?.trim() || null;
+    if (input.degree !== undefined) data.degree = input.degree?.trim() || null;
+    if (input.guideName !== undefined)
+      data.guideName = input.guideName?.trim() || null;
+    if (input.coGuideName !== undefined)
+      data.coGuideName = input.coGuideName?.trim() || null;
+    if (input.reviewerOneName !== undefined)
+      data.reviewerOneName = input.reviewerOneName?.trim() || null;
+    if (input.reviewerTwoName !== undefined)
+      data.reviewerTwoName = input.reviewerTwoName?.trim() || null;
+    if (input.defenseDate !== undefined)
+      data.defenseDate = input.defenseDate ? new Date(input.defenseDate) : null;
+    if ('stage' in input && input.stage !== undefined) data.stage = input.stage;
+    if ('outcome' in input && input.outcome !== undefined)
+      data.outcome = input.outcome;
+    if (
+      'defenseAnnexesStatus' in input &&
+      input.defenseAnnexesStatus !== undefined
+    )
+      data.defenseAnnexesStatus = input.defenseAnnexesStatus;
+    if (
+      'thesisSummaryStatus' in input &&
+      input.thesisSummaryStatus !== undefined
+    )
+      data.thesisSummaryStatus = input.thesisSummaryStatus;
+    if ('libraryFormStatus' in input && input.libraryFormStatus !== undefined)
+      data.libraryFormStatus = input.libraryFormStatus;
+    if ('actaStatus' in input && input.actaStatus !== undefined)
+      data.actaStatus = input.actaStatus;
+    if ('evaluationsStatus' in input && input.evaluationsStatus !== undefined)
+      data.evaluationsStatus = input.evaluationsStatus;
+    return data;
+  }
+}

@@ -24,13 +24,17 @@ model User {
   googleId String? @unique
 
   // Los roles y permisos son configurables y se asignan mediante relaciones RBAC.
-  userRoles             UserRole[]
-  createdJustifications Justification[]              @relation("JustificationCreatedBy")
-  decidedJustifications Justification[]              @relation("JustificationDecidedBy")
-  justificationHistory  JustificationStatusHistory[]
-  dataRightsRequests    DataRightsRequest[]          @relation("DataRightsSubject")
-  dataRightsActions     DataRightsRequestEvent[]     @relation("DataRightsActor")
-  legalTermsAcceptances LegalTermsAcceptance[]
+  userRoles                    UserRole[]
+  createdJustifications        Justification[]              @relation("JustificationCreatedBy")
+  decidedJustifications        Justification[]              @relation("JustificationDecidedBy")
+  justificationHistory         JustificationStatusHistory[]
+  dataRightsRequests           DataRightsRequest[]          @relation("DataRightsSubject")
+  dataRightsActions            DataRightsRequestEvent[]     @relation("DataRightsActor")
+  legalTermsAcceptances        LegalTermsAcceptance[]
+  createdTitulations           TitulationProcess[]          @relation("TitulationCreatedBy")
+  updatedTitulations           TitulationProcess[]          @relation("TitulationUpdatedBy")
+  createdTitulationAttachments TitulationAttachment[]       @relation("TitulationAttachmentCreatedBy")
+  reviewedAssistantshipApplications AssistantshipApplication[]
 
   isActive Boolean @default(true)
 
@@ -161,23 +165,108 @@ enum CourseAttemptOutcome {
   FAILED
 }
 
+enum SemesterBudgetCategoryCode {
+  HOURLY_TEACHERS
+  ASSISTANTSHIPS
+}
+
+enum TitulationStage {
+  UNCLASSIFIED
+  INTAKE
+  REVIEW
+  DEFENSE
+  CLOSED
+}
+
+enum TitulationDocumentStatus {
+  UNVERIFIED
+  PENDING
+  RECEIVED
+  PREPARED
+}
+
+enum TitulationOutcome {
+  UNCONFIRMED
+  IN_PROGRESS
+  GRADUATED
+  NOT_GRADUATED
+}
+
+enum TitulationDataSource {
+  MANUAL
+  LEGACY_ACCESS
+}
+
 model AcademicSemester {
-  id                 String                 @id @default(uuid())
-  name               String
-  startsOn           DateTime
-  endsOn             DateTime
-  isActive           Boolean                @default(false)
-  assignments        TeachingAssignment[]
-  courseSchedules    CourseSchedule[]
-  studentEnrollments StudentEnrollment[]
-  courseAttempts     StudentCourseAttempt[]
-  hourlyPayRates     HourlyPayRate[]
-  assistantships     Assistantship[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  id                   String                 @id @default(uuid())
+  name                 String
+  startsOn             DateTime
+  endsOn               DateTime
+  isActive             Boolean                @default(false)
+  assignments          TeachingAssignment[]
+  courseSchedules      CourseSchedule[]
+  studentEnrollments   StudentEnrollment[]
+  courseAttempts       StudentCourseAttempt[]
+  hourlyPayRates       HourlyPayRate[]
+  assistantships       Assistantship[]
+  assistantshipTariffs AssistantshipTariff[]
+  budget               SemesterBudget?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   @@unique([name])
   @@index([isActive])
+}
+
+/// Planned CLP budget for a semester. Thresholds track distributed category budgets.
+model SemesterBudget {
+  id             String                     @id @default(uuid())
+  semesterId     String                     @unique
+  totalAmountClp Decimal                    @db.Decimal(14, 0)
+  semester       AcademicSemester           @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  allocations    SemesterBudgetAllocation[]
+  thresholds     SemesterBudgetThreshold[]
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+}
+
+model SemesterBudgetAllocation {
+  id        String                      @id @default(uuid())
+  budgetId  String
+  name      String                      @db.VarChar(80)
+  code      SemesterBudgetCategoryCode?
+  amountClp Decimal                     @db.Decimal(14, 0)
+  budget    SemesterBudget              @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
+
+  @@unique([budgetId, name])
+  @@unique([budgetId, code])
+  @@index([budgetId])
+}
+
+model SemesterBudgetThreshold {
+  id             String                        @id @default(uuid())
+  budgetId       String
+  percentage     Int
+  budget         SemesterBudget                @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  recipientRoles SemesterBudgetThresholdRole[]
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  @@unique([budgetId, percentage])
+  @@index([budgetId])
+}
+
+model SemesterBudgetThresholdRole {
+  thresholdId String
+  roleId      String
+  threshold   SemesterBudgetThreshold @relation(fields: [thresholdId], references: [id], onDelete: Cascade)
+  role        Role                    @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedAt  DateTime                @default(now())
+
+  @@id([thresholdId, roleId])
+  @@index([roleId])
 }
 
 model Teacher {
@@ -233,7 +322,17 @@ model Student {
 
   id                        String                 @id @default(uuid())
   name                      String
-  email                     String                 @unique
+  email                     String?                @unique
+  givenNames                String?
+  rut                       String?
+  rutHash                   String?                @unique
+  personalEmail             String?
+  admission                 String?
+  paternalSurname           String?
+  maternalSurname           String?
+  birthDate                 String?
+  careerId                  String?
+  career                    Career?                @relation(fields: [careerId], references: [id], onDelete: Restrict)
   enrollments               StudentEnrollment[]
   careerCurriculumVersionId String?
   careerCurriculumVersion   CurriculumVersion?     @relation(fields: [careerCurriculumVersionId], references: [id], onDelete: Restrict)
@@ -242,8 +341,12 @@ model Student {
   justifications            Justification[]
   outputAuthorships         ResearchOutputAuthor[]
   teachingAssistant         TeachingAssistant?
+  assistantshipApplications AssistantshipApplication[]
+  titulationProcesses       TitulationProcess[]
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
+
+  @@index([careerId])
 }
 
 /// A student attends an NRC in a semester, independently of teachers or time slots.
@@ -283,18 +386,96 @@ model StudentCourseAttempt {
   @@index([courseId])
 }
 
+model Department {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  code        String?          @unique
+  description String?
+  careers     Career[]
+  projects    Project[]
+  outputs     ResearchOutput[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
 /// A career groups one or more curricula assigned to student cohorts.
 model Career {
-  id                 String              @id @default(uuid())
-  code               String              @unique
-  name               String              @unique
-  isActive           Boolean             @default(true)
-  departmentProjects Project[]
-  departmentOutputs  ResearchOutput[]
-  curriculumVersions CurriculumVersion[]
-  assistantships     Assistantship[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id                  String              @id @default(uuid())
+  code                String?             @unique
+  name                String              @unique
+  isActive            Boolean             @default(true)
+  departmentId        String?
+  department          Department?         @relation(fields: [departmentId], references: [id], onDelete: NoAction)
+  curriculumVersions  CurriculumVersion[]
+  students            Student[]
+  assistantships      Assistantship[]
+  titulationProcesses TitulationProcess[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([departmentId])
+}
+
+model TitulationProcess {
+  id                   String                   @id @default(uuid())
+  studentId            String?
+  student              Student?                 @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  piiVersion           Int                      @default(0)
+  studentName          String
+  studentRut           String?
+  studentRutHash       String?
+  studentEmail         String?
+  studentEmailHash     String?
+  studentPhone         String?
+  thesisTopic          String?                  @db.Text
+  degree               String?
+  careerName           String
+  careerId             String?
+  guideName            String?
+  coGuideName          String?
+  reviewerOneName      String?
+  reviewerTwoName      String?
+  defenseDate          DateTime?                @db.Date
+  stage                TitulationStage          @default(INTAKE)
+  outcome              TitulationOutcome        @default(IN_PROGRESS)
+  source               TitulationDataSource    @default(MANUAL)
+  defenseAnnexesStatus TitulationDocumentStatus @default(PENDING)
+  thesisSummaryStatus  TitulationDocumentStatus @default(PENDING)
+  libraryFormStatus    TitulationDocumentStatus @default(PENDING)
+  actaStatus           TitulationDocumentStatus @default(PENDING)
+  evaluationsStatus    TitulationDocumentStatus @default(PENDING)
+  createdById          String?
+  updatedById          String?
+  career               Career?                  @relation(fields: [careerId], references: [id], onDelete: SetNull)
+  createdBy            User?                    @relation("TitulationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                    @relation("TitulationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  attachments          TitulationAttachment[]
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([stage, defenseDate])
+  @@index([careerId, stage])
+  @@index([studentRutHash])
+  @@index([studentEmailHash])
+  @@index([studentId])
+  @@index([outcome, stage])
+  @@index([createdAt])
+}
+
+model TitulationAttachment {
+  id           String            @id @default(uuid())
+  processId    String
+  storageKey   String            @unique
+  originalName String            @db.VarChar(255)
+  contentType  String            @db.VarChar(128)
+  size         Int
+  createdById  String?
+  process      TitulationProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("TitulationAttachmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+
+  @@index([processId, createdAt])
+  @@index([createdById])
 }
 
 /// Curriculum version applied to an admission cohort; versions remain stable
@@ -346,6 +527,7 @@ model TeachingAssignment {
   @@unique([semesterId, teacherId, courseId, nrc])
   @@index([semesterId])
   @@index([teacherId])
+  @@index([nrc])
 }
 
 /// Assistant profile linked to the global academic student; legacy links may be absent.
@@ -400,12 +582,16 @@ model Assistantship {
   startsOn             DateTime                @db.Date
   endsOn               DateTime?               @db.Date
   weeklyHours          Decimal?                @db.Decimal(5, 2)
+  tariffId             String?
+  tariffRateClp        Decimal?                @db.Decimal(12, 2)
+  tariff               AssistantshipTariff?    @relation(fields: [tariffId, semesterId], references: [id, semesterId], onDelete: Restrict)
   teachingAssignment   TeachingAssignment?     @relation(fields: [teachingAssignmentId, courseId], references: [id, courseId], onDelete: Restrict)
   semester             AcademicSemester        @relation(fields: [semesterId], references: [id], onDelete: Restrict)
   course               Course                  @relation(fields: [courseId], references: [id], onDelete: Restrict)
   career               Career?                 @relation(fields: [careerId], references: [id], onDelete: Restrict)
   approval             AssistantCourseApproval @relation(fields: [assistantId, courseId, approvedOn], references: [assistantId, courseId, approvedOn], onDelete: Restrict)
   schedules            AssistantshipSchedule[]
+  application          AssistantshipApplication?
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
@@ -413,6 +599,67 @@ model Assistantship {
   @@index([assistantId, courseId, approvedOn])
   @@index([teachingAssignmentId, courseId])
   @@index([semesterId, courseId])
+}
+
+enum AssistantshipApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AssistantshipApplicationNotification {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  FAILED
+}
+
+/// An approved application is the draft until a complete assistantship is registered.
+model AssistantshipApplication {
+  id                     String                             @id @default(uuid())
+  piiVersion             Int                                @default(0)
+  externalResponseId     String
+  externalResponseIdHash String?                            @unique
+  studentEmail           String
+  name                   String
+  rut                    String
+  phone                  String
+  submittedCareer        String
+  address                String
+  subject                String
+  motivation             String
+  ppa                    String
+  submittedAt            DateTime
+  status                 AssistantshipApplicationStatus    @default(PENDING)
+  reviewNote             String?
+  reviewedAt             DateTime?
+  reviewedById           String?
+  reviewedBy             User?                              @relation(fields: [reviewedById], references: [id], onDelete: Restrict)
+  notification           AssistantshipApplicationNotification @default(NOT_REQUESTED)
+  studentId              String?
+  student                Student?                           @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  assistantshipId        String?                            @unique
+  assistantship          Assistantship?                     @relation(fields: [assistantshipId], references: [id], onDelete: Restrict)
+  createdAt              DateTime                           @default(now())
+
+  @@index([status, submittedAt, id])
+  @@index([studentId])
+}
+
+/// Monthly CLP rate per weekly assistantship hour.
+model AssistantshipTariff {
+  id             String           @id @default(uuid())
+  semesterId     String
+  name           String           @db.VarChar(80)
+  monthlyRateClp Decimal          @db.Decimal(12, 2)
+  semester       AcademicSemester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  assistantships Assistantship[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([id, semesterId])
+  @@unique([semesterId, name])
+  @@index([semesterId])
 }
 
 /// Weekly schedule in local campus time; weekdays follow ISO 8601 (1–7).
@@ -540,16 +787,17 @@ model JustificationStatusHistory {
 }
 
 model Role {
-  id          String              @id @default(uuid())
-  code        String              @unique
-  name        String              @unique
-  description String?
-  isSystem    Boolean             @default(false)
-  userRoles   UserRole[]
-  preloads    PreloadedUserRole[]
-  permissions RolePermission[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id                    String                        @id @default(uuid())
+  code                  String                        @unique
+  name                  String                        @unique
+  description           String?
+  isSystem              Boolean                       @default(false)
+  userRoles             UserRole[]
+  preloads              PreloadedUserRole[]
+  permissions           RolePermission[]
+  budgetAlertThresholds SemesterBudgetThresholdRole[]
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
 }
 
 model Permission {
@@ -687,7 +935,7 @@ enum ProjectStatus {
 /// General register: research, training, services, agreements and academic programs.
 model Project {
   departmentId String?
-  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: NoAction)
 
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)
@@ -805,7 +1053,7 @@ enum ResearchOutputKind {
 
 model ResearchOutput {
   departmentId String?
-  department   Career? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: NoAction)
 
   /// Application-encrypted PII; version 0 requires the offline backfill.
   piiVersion Int @default(0)

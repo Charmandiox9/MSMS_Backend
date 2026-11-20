@@ -11,7 +11,7 @@ import { InitialAdminService } from './initial-admin.service';
     ConfigModule.forRoot({
       isGlobal: true,
       ignoreEnvFile: process.env.NODE_ENV === 'production',
-      envFilePath: ['.env.pii', '.env.development', '.env'],
+      envFilePath: ['.env.local', '.env.pii', '.env.development', '.env'],
     }),
     PrismaModule,
   ],

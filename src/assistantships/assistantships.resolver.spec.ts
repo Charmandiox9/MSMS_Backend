@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ValidationPipe } from '@nestjs/common';
 import {
   GraphQLSchemaBuilderModule,
   GraphQLSchemaFactory,
@@ -11,6 +12,7 @@ import { AssistantshipsResolver } from './assistantships.resolver';
 import { AssistantshipsService } from './assistantships.service';
 import {
   AssistantshipFilters,
+  AssistantshipStudentsArgs,
   RegisterAssistantshipInput,
 } from './assistantships.dto';
 
@@ -19,7 +21,7 @@ describe('AssistantshipsResolver contract', () => {
     list: jest.fn(),
     get: jest.fn(),
     options: jest.fn(),
-    student: jest.fn(),
+    students: jest.fn(),
     careerCourses: jest.fn(),
     assignments: jest.fn(),
     register: jest.fn(),
@@ -55,23 +57,42 @@ describe('AssistantshipsResolver contract', () => {
   it('delegates registration and assignment queries to the service', () => {
     const input = new RegisterAssistantshipInput();
     void resolver.registerAssistantship(input);
-    void resolver.updateAssistantship({ id: 'assistantship' }, input);
+    void resolver.updateAssistantship('assistantship', input);
     void resolver.assistantshipAssignments({ semesterId: 'semester' });
     expect(service.register).toHaveBeenCalledWith(input);
     expect(service.update).toHaveBeenCalledWith('assistantship', input);
     expect(service.assignments).toHaveBeenCalledWith('semester');
   });
-  it('delegates protected student and career course lookups', () => {
-    void resolver.assistantshipStudent({ email: 'student@example.test' });
+  it('validates the update ID separately without rejecting the sibling input argument', async () => {
+    const types: unknown[] = Reflect.getMetadata(
+      'design:paramtypes',
+      AssistantshipsResolver.prototype,
+      'updateAssistantship',
+    );
+    expect(types[0]).toBe(String);
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    });
+    await expect(
+      pipe.transform('11111111-1111-4111-8111-111111111111', {
+        type: 'body',
+        metatype: String,
+        data: 'id',
+      }),
+    ).resolves.toBe('11111111-1111-4111-8111-111111111111');
+  });
+  it('delegates protected student search and career course lookups', () => {
+    void resolver.assistantshipStudents({ search: 'ana' });
     void resolver.assistantshipCareerCourses({ careerId: 'career' });
-    expect(service.student).toHaveBeenCalledWith('student@example.test');
+    expect(service.students).toHaveBeenCalledWith('ana');
     expect(service.careerCourses).toHaveBeenCalledWith('career');
   });
   it('validates IDs, email, confirmation, dates, hours and nested schedules', () => {
     const input = plainToInstance(RegisterAssistantshipInput, {
       teachingAssignmentId: 'bad',
-      assistantName: ' ',
-      assistantEmail: 'bad',
+      assistantshipNrc: ' ',
       approvedOn: 'bad',
       startsOn: 'bad',
       endsOn: 'bad',
@@ -83,8 +104,8 @@ describe('AssistantshipsResolver contract', () => {
     expect(fields).toEqual(
       expect.arrayContaining([
         'teachingAssignmentId',
-        'assistantName',
-        'assistantEmail',
+        'assistantshipNrc',
+        'studentId',
         'approvedOn',
         'startsOn',
         'endsOn',
@@ -92,6 +113,13 @@ describe('AssistantshipsResolver contract', () => {
         'weeklyHours',
         'schedules',
       ]),
+    );
+  });
+  it('requires at least two characters for protected student search', () => {
+    const input = plainToInstance(AssistantshipStudentsArgs, { search: ' a ' });
+    expect(input.search).toBe('a');
+    expect(validateSync(input).map((error) => error.property)).toContain(
+      'search',
     );
   });
   it('rejects excessive page sizes and invalid states', () => {
@@ -121,6 +149,7 @@ describe('Assistantships GraphQL schema', () => {
         'assistantship',
         'assistantshipOptions',
         'assistantshipAssignments',
+        'assistantshipStudents',
       ]),
     );
     expect(

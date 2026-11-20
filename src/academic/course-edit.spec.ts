@@ -103,7 +103,8 @@ describe('Edición de asignaturas', () => {
   });
 
   it('permite quitar el código, guardando null sin copiar el NRC', async () => {
-    const { code: _code, ...withoutCode } = input;
+    const withoutCode = { ...input };
+    delete withoutCode.code;
     expect(
       await validate(plainToInstance(UpdateCourseDto, withoutCode)),
     ).toHaveLength(0);

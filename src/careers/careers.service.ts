@@ -15,6 +15,7 @@ import {
 } from './careers.dto';
 
 const careerInclude = {
+  department: { select: { id: true, name: true } },
   curriculumVersions: {
     orderBy: { cohortYear: 'desc' as const },
     include: {
@@ -216,7 +217,11 @@ export class CareersService {
               manualCourses.map(({ courseId }) => courseId),
             );
           const career = await tx.career.create({
-            data: { code: input.code.trim(), name: input.name.trim() },
+            data: {
+              code: input.code?.trim() || null,
+              name: input.name.trim(),
+              departmentId: input.departmentId,
+            },
           });
           if (importedCourses) {
             await this.createImportedVersion(
@@ -245,6 +250,10 @@ export class CareersService {
       );
     } catch (cause: unknown) {
       if (cause instanceof Prisma.PrismaClientKnownRequestError) {
+        if (cause.code === 'P2003' && input.departmentId)
+          throw new BadRequestException(
+            'El departamento seleccionado no existe',
+          );
         if (cause.code === 'P2002')
           throw new ConflictException(
             'El código o nombre de carrera ya existe',
@@ -259,14 +268,23 @@ export class CareersService {
       return await this.prisma.career.update({
         where: { id },
         data: {
-          ...(input.code === undefined ? {} : { code: input.code.trim() }),
+          ...(input.code === undefined
+            ? {}
+            : { code: input.code?.trim() || null }),
           ...(input.name === undefined ? {} : { name: input.name.trim() }),
+          ...(input.departmentId === undefined
+            ? {}
+            : { departmentId: input.departmentId }),
           ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
         },
         include: careerInclude,
       });
     } catch (cause: unknown) {
       if (cause instanceof Prisma.PrismaClientKnownRequestError) {
+        if (cause.code === 'P2003' && input.departmentId)
+          throw new BadRequestException(
+            'El departamento seleccionado no existe',
+          );
         if (cause.code === 'P2002')
           throw new ConflictException(
             'El código o nombre de carrera ya existe',
@@ -325,7 +343,7 @@ export class CareersService {
         ['P2003', 'P2034'].includes(cause.code)
       )
         throw new ConflictException(
-          'La carrera cambió o tiene registros vinculados (estudiantes, ayudantías, proyectos o publicaciones). Recarga antes de eliminar',
+          'La carrera cambió o tiene registros vinculados. Recarga antes de eliminar',
         );
       throw cause;
     }

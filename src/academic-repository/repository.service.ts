@@ -620,7 +620,7 @@ export class RepositoryService {
   ) {
     if (
       id &&
-      !(await tx.career.findUnique({ where: { id }, select: { id: true } }))
+      !(await tx.department.findUnique({ where: { id }, select: { id: true } }))
     )
       throw new BadRequestException('El departamento seleccionado no existe');
   }

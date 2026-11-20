@@ -83,7 +83,7 @@ export class AcademicChartsService {
       ]);
     const [departments, projectDepartments, publicationDepartments] =
       await Promise.all([
-        this.prisma.career.findMany({
+        this.prisma.department.findMany({
           select: { id: true, name: true },
           orderBy: { name: 'asc' },
         }),

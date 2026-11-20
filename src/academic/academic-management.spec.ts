@@ -170,7 +170,10 @@ describe('Gestión individual de docentes y asignaturas', () => {
     expect(prisma.course.create).not.toHaveBeenCalled();
     expect(prisma.courseSchedule.createMany).toHaveBeenCalledWith({
       data: [
-        expect.objectContaining({ courseId: 'curriculum-course', nrc: '10001' }),
+        expect.objectContaining({
+          courseId: 'curriculum-course',
+          nrc: '10001',
+        }),
       ],
     });
   });

@@ -6,7 +6,11 @@ import { ConfigService } from '@nestjs/config';
 import { PiiCryptoService } from '../privacy/pii-crypto.service';
 import { piiExtension } from '../privacy/pii-extension';
 import { PiiStorageCodec } from '../privacy/pii-storage-codec';
-import { normalizePiiSearch, piiPolicies } from '../privacy/pii-policy';
+import {
+  normalizePiiLookup,
+  normalizePiiSearch,
+  piiPolicies,
+} from '../privacy/pii-policy';
 import { normalizePostgresSslMode } from './postgres-connection-string';
 
 @Injectable()
@@ -59,24 +63,39 @@ export class PrismaService
   }
 
   /** Exact substring verification after decryption; no plaintext search/sort keys are stored. */
-  async findPiiIds(model: string, search: string): Promise<string[]> {
+  async findPiiIds(
+    model: string,
+    search: string,
+    fields?: readonly string[],
+  ): Promise<string[]> {
     const policy = piiPolicies[model];
     if (!policy?.searchable.length)
       throw new Error('El modelo no permite búsqueda PII');
+    const searchableFields = fields ?? policy.searchable;
+    if (
+      !searchableFields.length ||
+      searchableFields.some((field) => !policy.searchable.includes(field))
+    )
+      throw new Error('Los campos no permiten búsqueda PII');
     const rows = await this.delegate(model).findMany({
       select: {
         id: true,
-        ...Object.fromEntries(policy.searchable.map((field) => [field, true])),
+        ...Object.fromEntries(searchableFields.map((field) => [field, true])),
       },
     });
-    const needle = normalizePiiSearch(search);
     return rows
       .filter((row) =>
-        policy.searchable.some(
-          (field) =>
-            typeof row[field] === 'string' &&
-            normalizePiiSearch(row[field]).includes(needle),
-        ),
+        searchableFields.some((field) => {
+          if (typeof row[field] !== 'string') return false;
+          const normalize = (value: string) => {
+            if (field.toLowerCase().includes('rut'))
+              return normalizePiiLookup(field, value).replace(/[.\s-]/g, '');
+            return field.toLowerCase().includes('email')
+              ? normalizePiiLookup(field, value)
+              : normalizePiiSearch(value);
+          };
+          return normalize(row[field]).includes(normalize(search));
+        }),
       )
       .map((row) => String(row.id));
   }

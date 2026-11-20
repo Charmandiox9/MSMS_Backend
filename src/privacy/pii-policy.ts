@@ -40,14 +40,78 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
     searchable: ['name', 'email', 'employeeCode', 'rut'],
   },
   Student: {
-    fields: ['name', 'email'],
-    lookups: { email: 'emailHash' },
-    searchable: ['name', 'email'],
+    fields: [
+      'name',
+      'email',
+      'givenNames',
+      'rut',
+      'personalEmail',
+      'paternalSurname',
+      'maternalSurname',
+      'birthDate',
+      'admission',
+    ],
+    lookups: { email: 'emailHash', rut: 'rutHash' },
+    searchable: [
+      'name',
+      'email',
+      'givenNames',
+      'rut',
+      'personalEmail',
+      'paternalSurname',
+      'maternalSurname',
+      'admission',
+    ],
+  },
+  TitulationProcess: {
+    fields: [
+      'studentName',
+      'studentRut',
+      'studentEmail',
+      'studentPhone',
+      'thesisTopic',
+      'degree',
+      'guideName',
+      'coGuideName',
+      'reviewerOneName',
+      'reviewerTwoName',
+    ],
+    lookups: {
+      studentRut: 'studentRutHash',
+      studentEmail: 'studentEmailHash',
+    },
+    searchable: [
+      'studentName',
+      'studentRut',
+      'studentEmail',
+      'thesisTopic',
+      'guideName',
+      'coGuideName',
+      'reviewerOneName',
+      'reviewerTwoName',
+    ],
   },
   TeachingAssistant: {
     fields: ['name', 'email', 'studentCode'],
     lookups: { email: 'emailHash', studentCode: 'studentCodeHash' },
     searchable: ['name', 'email', 'studentCode'],
+  },
+  AssistantshipApplication: {
+    fields: [
+      'externalResponseId',
+      'studentEmail',
+      'name',
+      'rut',
+      'phone',
+      'submittedCareer',
+      'address',
+      'subject',
+      'motivation',
+      'ppa',
+      'reviewNote',
+    ],
+    lookups: { externalResponseId: 'externalResponseIdHash' },
+    searchable: [],
   },
   JustificationInbox: {
     fields: [
@@ -102,7 +166,11 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
 };
 
 export function normalizePiiLookup(field: string, value: string): string {
-  if (field === 'rut') return value.replace(/[.\s]/g, '').toUpperCase();
+  if (field.toLowerCase().includes('rut')) {
+    const normalized = value.replace(/[.\s-]/g, '').toUpperCase();
+    const parts = normalized.match(/^(\d{7,8})([\dK])$/);
+    return parts ? `${parts[1]}-${parts[2]}` : normalized;
+  }
   if (field.toLowerCase().includes('email')) return value.trim().toLowerCase();
   return value.trim();
 }

@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -207,6 +208,28 @@ export class StorageService implements OnModuleDestroy {
     }
   }
 
+  async uploadPrivateFile(
+    fileName: string,
+    contentType: string,
+    body: Buffer,
+  ): Promise<string> {
+    const key = this.buildObjectKey(fileName, 'titulation-attachments');
+    await this.uploadFile(key, contentType, body, new AbortController().signal);
+    return key;
+  }
+
+  async deleteFile(key: string): Promise<void> {
+    if (!this.client || !this.bucketName)
+      throw new ServiceUnavailableException('Almacenamiento no configurado');
+    try {
+      await this.client.send(
+        new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }),
+      );
+    } catch {
+      throw new ServiceUnavailableException('No se pudo eliminar el archivo');
+    }
+  }
+
   async downloadFile(key: string, signal: AbortSignal) {
     if (!this.client || !this.bucketName)
       throw new ServiceUnavailableException('Almacenamiento no configurado');
@@ -329,11 +352,11 @@ export class StorageService implements OnModuleDestroy {
     }
   }
 
-  private buildObjectKey(fileName: string): string {
+  private buildObjectKey(fileName: string, prefix = 'uploads'): string {
     const extension = extname(fileName)
       .toLowerCase()
       .replace(/[^a-z0-9.]/g, '');
-    return `uploads/${randomUUID()}${extension}`;
+    return `${prefix}/${randomUUID()}${extension}`;
   }
 
   private getExpiresIn(): number {

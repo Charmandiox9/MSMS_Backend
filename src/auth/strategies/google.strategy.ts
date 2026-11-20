@@ -1,5 +1,9 @@
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback } from 'passport-google-oauth20';
+import {
+  Strategy,
+  type Profile,
+  type VerifyCallback,
+} from 'passport-google-oauth20';
 import {
   ForbiddenException,
   Injectable,
@@ -25,32 +29,40 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   async validate(
     accessToken: string,
     refreshToken: string,
-    profile: any,
+    profile: Profile,
     done: VerifyCallback,
-  ): Promise<any> {
-    const { id, name, emails, photos } = profile;
-    const email = emails[0].value;
+  ): Promise<void> {
+    const emailProfile = profile.emails?.[0];
 
-    if (!emails[0].verified) {
+    if (!emailProfile?.value || !emailProfile.verified) {
       return done(new UnauthorizedException('Correo no verificado'), false);
     }
 
+    const email = emailProfile.value;
     if (!this.whitelistService.isEmailAllowed(email)) {
       return done(new ForbiddenException('Correo no autorizado'), false);
     }
 
+    const name = [profile.name?.givenName, profile.name?.familyName]
+      .filter((part): part is string => Boolean(part))
+      .join(' ');
     const user = {
-      googleId: id,
+      googleId: profile.id,
       email,
-      name: name.givenName + ' ' + name.familyName,
-      avatarUrl: photos[0]?.value,
+      name: name || email.split('@')[0],
+      avatarUrl: profile.photos?.[0]?.value,
     };
 
     try {
       const validatedUser = await this.authService.validateGoogleUser(user);
       done(null, validatedUser);
-    } catch (err) {
-      done(err, false);
+    } catch (error: unknown) {
+      done(
+        error instanceof Error
+          ? error
+          : new Error('No fue posible validar la cuenta de Google'),
+        false,
+      );
     }
   }
 }

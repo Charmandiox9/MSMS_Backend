@@ -10,6 +10,7 @@ type AssistantshipScheduleView {
 }
 
 type AssistantshipView {
+  scheduleNotificationSent: Boolean
   id: ID!
   teachingAssignmentId: ID
   studentId: ID
@@ -31,6 +32,10 @@ type AssistantshipView {
   startsOn: String!
   endsOn: String
   weeklyHours: Float
+  tariffId: ID
+  tariffName: String
+  tariffRateClp: Float
+  estimatedAmountClp: Float
   state: AssistantshipState!
   schedules: [AssistantshipScheduleView!]!
 }
@@ -39,6 +44,23 @@ enum AssistantshipState {
   SCHEDULED
   ACTIVE
   COMPLETED
+}
+
+type AssistantshipTariffOption {
+  id: ID!
+  semesterId: ID!
+  name: String!
+  monthlyRateClp: Float!
+}
+
+type AssistantshipBudgetSummary {
+  semesterId: ID!
+  semesterName: String!
+  allocatedAmountClp: Float!
+  occupiedAmountClp: Float!
+  percentage: Float!
+  assistantships: Int!
+  unpricedCount: Int!
 }
 
 type AssistantshipPage {
@@ -91,7 +113,8 @@ type AssistantshipCareerOption {
 type AssistantshipStudentOption {
   id: ID!
   name: String!
-  email: String!
+  email: String
+  rut: String
   careerCurriculumVersionId: ID
   careerId: ID
   careerName: String
@@ -367,9 +390,11 @@ type Query {
   assistantships(filters: AssistantshipFilters): AssistantshipPage!
   assistantship(id: ID!): AssistantshipView
   assistantshipOptions: AssistantshipOptions!
-  assistantshipStudent(email: String!): AssistantshipStudentOption
+  assistantshipStudents(search: String!): [AssistantshipStudentOption!]!
   assistantshipCareerCourses(careerId: ID!): [AssistantshipCourseOption!]!
   assistantshipAssignments(semesterId: ID!): [AssistantshipAssignmentOption!]!
+  assistantshipTariffs(semesterId: ID!): [AssistantshipTariffOption!]!
+  assistantshipBudgetSummary(semesterId: ID!): AssistantshipBudgetSummary!
   repositoryProjectOptions(filters: RepositoryProjectOptionFilters): RepositoryProjectOptionPage!
   repositoryProject(id: ID!): RepositoryProjectDetail!
   repositoryResearchDetail(id: ID!): RepositoryResearchDetail!
@@ -433,28 +458,37 @@ input ResearchOutputListFilters {
 }
 
 type Mutation {
+  saveAssistantshipTariff(input: SaveAssistantshipTariffInput!): AssistantshipTariffOption!
+  deleteAssistantshipTariff(id: ID!): Boolean!
   registerAssistantship(input: RegisterAssistantshipInput!): AssistantshipView!
   updateAssistantship(id: ID!, input: RegisterAssistantshipInput!): AssistantshipView!
 }
 
+input SaveAssistantshipTariffInput {
+  id: ID
+  semesterId: ID!
+  name: String!
+  monthlyRateClp: Float!
+}
+
 input RegisterAssistantshipInput {
-  assistantshipNrc: String
+  notifySchedule: Boolean
+  applicationId: ID
+  assistantshipNrc: String!
   teachingAssignmentId: ID
   semesterId: ID!
   courseId: ID
   careerId: ID
-  careerCurriculumVersionId: ID
-  studentId: ID
+  studentId: ID!
+  tariffId: ID
   courseNrc: String
-  assistantName: String!
-  assistantEmail: String!
   studentCode: String
   approvedOn: String!
   startsOn: String!
   endsOn: String!
   approvalConfirmed: Boolean!
-  weeklyHours: Float
-  schedules: [AssistantshipScheduleInput!]
+  weeklyHours: Float!
+  schedules: [AssistantshipScheduleInput!]!
 }
 
 input AssistantshipScheduleInput {

@@ -41,9 +41,15 @@ describe('RBAC permission matrix migration', () => {
   });
 
   it('does not give support staff automated justification processing', () => {
-    expect(migration).toContain("('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_CREATE')");
-    expect(migration).not.toContain("('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_PROCESS')");
-    expect(migration).not.toContain("('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_NOTIFY')");
+    expect(migration).toContain(
+      "('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_CREATE')",
+    );
+    expect(migration).not.toContain(
+      "('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_PROCESS')",
+    );
+    expect(migration).not.toContain(
+      "('TEACHING_SUPPORT_COORDINATOR', 'JUSTIFICATIONS_NOTIFY')",
+    );
   });
 });
 

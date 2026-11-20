@@ -4,6 +4,27 @@ import { testPiiCrypto } from './pii-test-config';
 describe('Persistencia cifrada y contratos de consulta Prisma', () => {
   const crypto = testPiiCrypto();
   const codec = new PiiStorageCodec(crypto);
+  it('cifra todos los datos personales del estudiante y solo expone su texto descifrado en lectura', () => {
+    const profile = {
+      name: 'Ana Soto Paz',
+      email: 'ana@example.test',
+      givenNames: 'Ana',
+      rut: '12.345.678-5',
+      personalEmail: 'ana.personal@example.test',
+      admission: '202610',
+      paternalSurname: 'Soto',
+      maternalSurname: 'Paz',
+      birthDate: '2000-01-02',
+    };
+    const stored = codec.write('Student', profile) as Record<string, unknown>;
+    for (const field of Object.keys(profile))
+      expect(stored[field]).toEqual(expect.stringMatching(/^pii:v1:/));
+    expect(stored.emailHash).toEqual(expect.any(String));
+    expect(stored.rutHash).toEqual(expect.any(String));
+    expect(JSON.stringify(stored)).not.toContain('ana@example.test');
+    expect(JSON.stringify(stored)).not.toContain('202610');
+    expect(codec.read('Student', stored)).toEqual(profile);
+  });
   it('cifra las respuestas de solicitudes de derechos antes de persistirlas', () => {
     const row = codec.write('DataRightsRequest', {
       id: 'request-1',
