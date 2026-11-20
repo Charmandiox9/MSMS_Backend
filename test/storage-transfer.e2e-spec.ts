@@ -140,7 +140,7 @@ describe('private storage through backend (e2e)', () => {
     await http()
       .put(path)
       .set('Content-Type', 'application/pdf')
-      .send(Buffer.alloc(MAX_STORAGE_UPLOAD_BYTES + 1))
+      .set('Content-Length', String(MAX_STORAGE_UPLOAD_BYTES + 1))
       .expect(413);
     await http()
       .post('/api/storage/presigned-upload/forms')
