@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { CURRENT_TERMS_VERSION } from '../../src/legal-terms/terms-content';
 
 type Where = Record<string, unknown>;
 type RoleCode = string;
@@ -113,6 +114,19 @@ export function createInMemoryPrisma() {
           userRoles: user.roles.map((code) => ({ role: { code } })),
         });
       },
+    },
+
+    legalTermsAcceptance: {
+      findUnique: ({
+        where: { userId_version: { userId, version } },
+      }: {
+        where: { userId_version: { userId: string; version: string } };
+      }) =>
+        Promise.resolve(
+          users.has(userId) && version === CURRENT_TERMS_VERSION
+            ? { id: `terms-${userId}`, version, acceptedAt: new Date(0) }
+            : null,
+        ),
     },
 
     teachingAssignment: {
