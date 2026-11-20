@@ -17,6 +17,7 @@ describe('JwtStrategy', () => {
   const mockUser = {
     id: 'user-1',
     email: 'test@ucn.cl',
+    name: 'Test User',
     avatarUrl: null,
     isActive: true,
     userRoles: [{ role: { code: 'ACADEMIC_SECRETARY' } }],
@@ -49,6 +50,7 @@ describe('JwtStrategy', () => {
     expect(result).toEqual({
       id: mockUser.id,
       email: mockUser.email,
+      displayName: mockUser.name,
       roles: ['ACADEMIC_SECRETARY'],
     });
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
@@ -72,6 +74,7 @@ describe('JwtStrategy', () => {
     const cachedUser = {
       id: mockUser.id,
       email: mockUser.email,
+      displayName: mockUser.name,
       roles: ['ACADEMIC_SECRETARY'],
     };
     cache.get.mockResolvedValue(

@@ -24,7 +24,11 @@ describe('SessionAuthGuard', () => {
     email: 'user@ucn.cl',
     roles: ['ACADEMIC_SECRETARY'],
   };
-  const requestUser = { ...session, id: 'user-1' };
+  const requestUser = {
+    ...session,
+    displayName: 'User Name',
+    id: 'user-1',
+  };
   let jwtService: { verifyAsync: jest.Mock };
   let sessionService: { get: jest.Mock };
   let activeUsers: { findActive: jest.Mock };
@@ -36,6 +40,7 @@ describe('SessionAuthGuard', () => {
       findActive: jest.fn().mockResolvedValue({
         id: 'user-1',
         email: 'user@ucn.cl',
+        displayName: 'User Name',
         roles: ['ACADEMIC_SECRETARY'],
       }),
     };
