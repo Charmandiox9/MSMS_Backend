@@ -18,10 +18,9 @@ pipeline {
 
         stage('Install & Test') {
             steps {
-                // Instala dependencias y corre tests usando el entorno local de Jenkins o un contenedor Node
-                sh 'npm ci'
-                sh 'npx prisma generate'
-                sh 'npm run test'
+                sh 'corepack pnpm install --frozen-lockfile'
+                sh 'corepack pnpm exec prisma generate'
+                sh 'corepack pnpm test'
             }
         }
 
