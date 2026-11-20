@@ -8,7 +8,7 @@ import { buildScenarios, Scenario, StressConfig } from './scenarios';
  *   STRESS_BASE_URL=http://localhost:3001/api \
  *   STRESS_AUTH_COOKIE="token=<jwt>" \
  *   STRESS_FORMS_SECRET=<secreto> \
- *   npm run test:stress
+ *   pnpm run test:stress
  *
  * Variables opcionales: STRESS_SCENARIOS (lista separada por comas),
  * STRESS_DURATION (segundos), STRESS_CONNECTIONS, STRESS_MAX_P99_MS,
