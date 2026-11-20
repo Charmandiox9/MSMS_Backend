@@ -247,7 +247,7 @@ docker compose --env-file .env.docker-test -p marsys-validation exec -T nginx ng
 docker compose --env-file .env.docker-test -p marsys-validation exec -T api node dist/maintenance/bootstrap-admin.js
 docker compose --env-file .env.docker-test -p marsys-validation build backend-tests frontend-tests
 docker compose --env-file .env.docker-test -p marsys-validation run --rm --no-deps backend-tests
-docker compose --env-file .env.docker-test -p marsys-validation run --rm --no-deps backend-tests npm run test:e2e -- --runInBand
+docker compose --env-file .env.docker-test -p marsys-validation run --rm --no-deps backend-tests pnpm run test:e2e --runInBand
 docker compose --env-file .env.docker-test -p marsys-validation run --rm --no-deps frontend-tests
 ```
 

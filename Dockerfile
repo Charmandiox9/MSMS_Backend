@@ -1,19 +1,17 @@
 ARG NODE_IMAGE=node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN corepack enable pnpm
 COPY prisma ./prisma
 COPY prisma.config.ts ./
-RUN npm ci --no-audit --no-fund
-RUN npx prisma generate
+RUN pnpm install --frozen-lockfile
+RUN pnpm exec prisma generate
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
 FROM builder AS production-deps
-RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
-# Prisma Client declares the CLI as an optional peer; npm may retain it after prune.
-# The migration-enabled image retains the CLI separately.
-RUN node -e "const fs=require('node:fs');fs.rmSync('node_modules/prisma',{recursive:true,force:true});fs.rmSync('node_modules/.bin/prisma',{force:true})"
+RUN pnpm prune --prod --ignore-scripts
 
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
@@ -21,12 +19,12 @@ ENV NODE_ENV=production PORT=3001
 RUN addgroup -S nodejs && adduser -S marsys -G nodejs
 
 FROM base AS migration
-COPY --from=builder --chown=marsys:nodejs /app/package*.json ./
+COPY --from=builder --chown=marsys:nodejs /app/package.json ./
 COPY --from=builder --chown=marsys:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=marsys:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=marsys:nodejs /app/prisma.config.ts ./
 USER marsys
-CMD ["npx", "prisma", "migrate", "deploy"]
+CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
 
 # Opt-in, single-replica Dokploy deployment: migrate before bootstrap/API startup.
 # Retains the pinned CLI and migrations; runtime below is the lean alternative.
@@ -39,7 +37,7 @@ ENTRYPOINT ["/bin/sh", "/app/docker/deploy.sh"]
 CMD ["node", "dist/main.js"]
 
 FROM base AS runtime
-COPY --from=builder --chown=marsys:nodejs /app/package*.json ./
+COPY --from=builder --chown=marsys:nodejs /app/package.json ./
 COPY --from=production-deps --chown=marsys:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=marsys:nodejs /app/dist ./dist
 COPY --chown=marsys:nodejs docker/start.sh ./docker/start.sh

@@ -15,7 +15,7 @@ Abrir http://localhost (puerto configurable mediante `NGINX_HTTP_PORT`). Registr
 el callback exacto de Google en el cliente OAuth. Los servicios de desarrollo
 pueden seguir usando sus propios `.env` y puertos.
 
-El build del backend instala dependencias, ejecuta `prisma generate` y `npm run build`.
+El build del backend ejecuta `pnpm install --frozen-lockfile`, `pnpm exec prisma generate` y `pnpm run build`.
 Al iniciar, espera PostgreSQL saludable, Redis y la inicialización del bucket;
 el entrypoint ejecuta `prisma migrate deploy`, el bootstrap opcional y finalmente
 `node dist/main.js`. Si migrar falla, no inicia la API. No se migra durante el build:
