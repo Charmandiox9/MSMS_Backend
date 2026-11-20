@@ -23,6 +23,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -46,3 +55,35 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:ci-test-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/marsys_test
       - name: API end-to-end tests
         run: pnpm run test:e2e --runInBand
+      - name: Start the Dokploy image and verify the API responds
+        env:
+          DATABASE_URL: postgresql://postgres:ci-test-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/marsys_test
+          REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports['6379'] }}
+          PII_ACTIVE_KEY_ID: ci
+          ALLOWED_DOMAINS: example.test
+          GOOGLE_CLIENT_ID: ci-client-id
+          GOOGLE_CLIENT_SECRET: ci-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:3001/api/auth/google/callback
+        run: |
+          docker build --target dokploy -t marsys-backend-ci .
+          JWT_SECRET="$(openssl rand -hex 32)"
+          encryption_key="$(openssl rand -base64 32)"
+          PII_ENCRYPTION_KEYS="$(printf '{"ci":"%s"}' "$encryption_key")"
+          PII_BLIND_INDEX_KEY="$(openssl rand -base64 32)"
+          export JWT_SECRET PII_ENCRYPTION_KEYS PII_BLIND_INDEX_KEY
+          container=$(docker run --detach --network host \
+            --env DATABASE_URL --env REDIS_URL --env JWT_SECRET \
+            --env PII_ACTIVE_KEY_ID --env PII_ENCRYPTION_KEYS --env PII_BLIND_INDEX_KEY \
+            --env ALLOWED_DOMAINS --env GOOGLE_CLIENT_ID --env GOOGLE_CLIENT_SECRET \
+            --env GOOGLE_CALLBACK_URL marsys-backend-ci)
+          trap 'result=$?; if (( result )); then docker logs "$container"; fi; docker rm -f "$container" >/dev/null' EXIT
+          for _ in {1..60}; do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:3001/api/health/live; then
+              exit 0
+            fi
+            if [[ $(docker inspect --format '{{.State.Running}}' "$container") != true ]]; then
+              exit 1
+            fi
+            sleep 1
+          done
+          exit 1
