@@ -12,6 +12,8 @@ describe('Persistencia cifrada y contratos de consulta Prisma', () => {
       rut: '12.345.678-5',
       personalEmail: 'ana.personal@example.test',
       admission: '202610',
+      importedCareerCode: '8506',
+      importedCareerName: 'Ingeniería Marina',
       paternalSurname: 'Soto',
       maternalSurname: 'Paz',
       birthDate: '2000-01-02',

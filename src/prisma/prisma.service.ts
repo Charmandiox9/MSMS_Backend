@@ -30,7 +30,10 @@ export class PrismaService
         : connectionString,
     });
     const adapter = new PrismaPg(pool, { disposeExternalPool: true });
-    super({ adapter });
+    super({
+      adapter,
+      omit: { student: { importedCareerCode: true, importedCareerName: true } },
+    });
     return this.$extends(
       piiExtension(new PiiStorageCodec(crypto)),
     ) as unknown as PrismaService;

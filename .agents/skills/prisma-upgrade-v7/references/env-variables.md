@@ -17,7 +17,7 @@ You must manually load environment variables using `dotenv` or similar.
 ### 1. Install dotenv
 
 ```bash
-npm install dotenv
+pnpm add dotenv
 ```
 
 ### 2. Import in prisma.config.ts
@@ -53,7 +53,7 @@ export default defineConfig({
 ### Using dotenv-cli
 
 ```bash
-npm install -D dotenv-cli
+pnpm add -D dotenv-cli
 ```
 
 ```json
@@ -155,7 +155,7 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
 steps:
-  - run: npx prisma migrate deploy
+  - run: pnpm exec prisma migrate deploy
 ```
 
 No need for dotenv in CI if variables are set directly.

@@ -111,7 +111,7 @@ export default defineConfig({
 
 1. Run `prisma generate`:
    ```bash
-   npx prisma generate
+   pnpm exec prisma generate
    ```
 
 2. Update imports throughout your codebase:

@@ -1,6 +1,6 @@
 # Dependency audit baseline
 
-Recorded on 2026-11-18 from the repository lockfiles using pnpm audit and npm audit. These commands report known advisory matches; runtime exposure and compatible remediation require review.
+Recorded on 2026-11-18 from the repository lockfiles using the package managers configured at that time. These commands report known advisory matches; runtime exposure and compatible remediation require review.
 
 | Repository | Scope | Critical | High | Moderate | Low |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -15,10 +15,10 @@ The backend production dependency tree reports high severity matches involving `
 
 The frontend production audit reports a transitive picomatch advisory through @parcel/watcher. The complete tree includes additional matches in build, lint and test tooling. See the [picomatch advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
 
-Counts from npm and pnpm use their respective reporting formats and should be interpreted per repository. Some advisories have no patched range in the registry response. Automatic major version changes need compatibility assessment.
+Audit tools can report different counts because of their formats and should be interpreted per repository. Some advisories have no patched range in the registry response. Automatic major version changes need compatibility assessment.
 
 ## Reproduction
 
-Backend: run `pnpm audit --json` and `pnpm audit --prod --json`. Frontend: run `npm audit --json` and `npm audit --omit=dev --json`.
+Backend and frontend: run `pnpm audit --json` and `pnpm audit --prod --json`.
 
 Raw reports remain in ignored local cache directories. They must not contain application environment values or student data.

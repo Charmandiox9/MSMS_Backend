@@ -118,7 +118,9 @@ export function createInMemoryPrisma() {
 
     legalTermsAcceptance: {
       findUnique: ({
-        where: { userId_version: { userId, version } },
+        where: {
+          userId_version: { userId, version },
+        },
       }: {
         where: { userId_version: { userId: string; version: string } };
       }) =>

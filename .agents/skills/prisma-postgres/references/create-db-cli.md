@@ -13,16 +13,16 @@ CRITICAL
 ## Commands
 
 ```bash
-npx create-db@latest
-npx create-db@latest create [options]
-npx create-db@latest regions
+pnpm dlx create-db@latest
+pnpm dlx create-db@latest create [options]
+pnpm dlx create-db@latest regions
 ```
 
 Aliases:
 
 ```bash
-npx create-pg@latest
-npx create-postgres@latest
+pnpm dlx create-pg@latest
+pnpm dlx create-postgres@latest
 ```
 
 ## Command discovery (`--help`)
@@ -30,9 +30,9 @@ npx create-postgres@latest
 Always use `--help` first when integrating CLI commands:
 
 ```bash
-npx create-db@latest --help
-npx create-db@latest create --help
-npx create-db@latest regions --help
+pnpm dlx create-db@latest --help
+pnpm dlx create-db@latest create --help
+pnpm dlx create-db@latest regions --help
 ```
 
 Top-level commands currently exposed:
@@ -66,7 +66,7 @@ You can also use `create-db` programmatically in Node.js/Bun instead of shelling
 Install:
 
 ```bash
-npm install create-db
+pnpm add create-db
 # or
 bun add create-db
 ```
@@ -107,30 +107,30 @@ Programmatic `create()` defaults to `us-east-1` if no region is passed.
 
 ```bash
 # quick database
-npx create-db@latest
+pnpm dlx create-db@latest
 
 # region-specific database
-npx create-db@latest --region eu-central-1
+pnpm dlx create-db@latest --region eu-central-1
 
 # interactive region selection
-npx create-db@latest --interactive
+pnpm dlx create-db@latest --interactive
 
 # write env vars for app bootstrap
-npx create-db@latest --env .env
+pnpm dlx create-db@latest --env .env
 
 # auto-delete sooner
-npx create-db@latest --ttl 2h
+pnpm dlx create-db@latest --ttl 2h
 
 # copy connection string to clipboard
-npx create-db@latest --copy
+pnpm dlx create-db@latest --copy
 
 # print only the connection string
-npx create-db@latest --quiet
+pnpm dlx create-db@latest --quiet
 
 # CI-friendly output
-npx create-db@latest --json
+pnpm dlx create-db@latest --json
 ```
 
 ## References
 
-- [npx create-db docs](https://www.prisma.io/docs/postgres/introduction/npx-create-db)
+- [create-db documentation](https://www.prisma.io/docs/postgres/introduction/npx-create-db)

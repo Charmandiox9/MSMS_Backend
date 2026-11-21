@@ -114,7 +114,7 @@ export default defineComputeConfig({
   app: {
     framework: "custom",
     build: {
-      command: "npm run build",
+      command: "pnpm run build",
       outputDirectory: "build",
       entrypoint: "handler.js",
     },

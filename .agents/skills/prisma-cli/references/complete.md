@@ -15,7 +15,7 @@ For a direct global CLI installation, load the output using the shell's normal s
 source <(prisma complete zsh)
 ```
 
-Prisma also integrates with supported package-manager completion flows. `npx` and `bunx` do not themselves provide completion; invoke the installed binary or the package manager's supported execution form such as `npm exec` or `bun x`.
+In this repository, run the installed Prisma CLI with `pnpm exec`. Use `pnpm dlx` for a one-off Prisma tool that is not installed in the project.
 
 ## Reference
 

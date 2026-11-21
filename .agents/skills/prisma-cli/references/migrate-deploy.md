@@ -43,7 +43,7 @@ prisma migrate deploy
 ```yaml
 # GitHub Actions example
 - name: Apply migrations
-  run: npx prisma migrate deploy
+  run: pnpm exec prisma migrate deploy
   env:
     DATABASE_URL: ${{ secrets.DATABASE_URL }}
 ```
@@ -52,7 +52,7 @@ prisma migrate deploy
 
 ```dockerfile
 # Run migrations before starting app
-CMD npx prisma migrate deploy && node dist/index.js
+CMD pnpm exec prisma migrate deploy && node dist/index.js
 ```
 
 ## Comparison with migrate dev

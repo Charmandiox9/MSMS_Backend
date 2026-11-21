@@ -9,6 +9,7 @@ const USER_CACHE_TTL_MS = 60 * 1000;
 export type AuthenticatedUser = {
   id: string;
   email: string;
+  displayName: string;
   roles: string[];
   avatarUrl?: string;
 };
@@ -39,6 +40,8 @@ export class ActiveUserService {
         result.id === id &&
         'email' in result &&
         typeof result.email === 'string' &&
+        'displayName' in result &&
+        typeof result.displayName === 'string' &&
         'roles' in result &&
         Array.isArray(result.roles) &&
         result.roles.every((role: unknown) => typeof role === 'string')
@@ -58,6 +61,7 @@ export class ActiveUserService {
     const authenticatedUser: AuthenticatedUser = {
       id: user.id,
       email: user.email,
+      displayName: user.name,
       roles: user.userRoles.map(({ role }) => role.code),
       ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
     };

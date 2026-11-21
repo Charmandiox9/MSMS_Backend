@@ -53,17 +53,17 @@ Use Prisma Console for manual setup and operations:
 Use `create-db` when you need a database immediately:
 
 ```bash
-npx create-db@latest
+pnpm dlx create-db@latest
 ```
 
 Aliases:
 
 ```bash
-npx create-pg@latest
-npx create-postgres@latest
+pnpm dlx create-pg@latest
+pnpm dlx create-postgres@latest
 ```
 
-For app integrations, you can also use the programmatic API (`create()` / `regions()`) from the `create-db` npm package.
+For app integrations, you can also use the programmatic API (`create()` / `regions()`) from the published `create-db` package.
 
 Temporary databases auto-delete after ~24 hours unless claimed.
 
@@ -72,11 +72,11 @@ Temporary databases auto-delete after ~24 hours unless claimed.
 For databases that belong to a Project (not throwaway `create-db` databases), use `@prisma/cli`:
 
 ```bash
-npx -y @prisma/cli@latest database create --help
-npx -y @prisma/cli@latest database list --json
-npx -y @prisma/cli@latest database connection create db_123
-npx -y @prisma/cli@latest database usage db_123
-npx -y @prisma/cli@latest database backup list db_123
+pnpm dlx @prisma/cli@latest database create --help
+pnpm dlx @prisma/cli@latest database list --json
+pnpm dlx @prisma/cli@latest database connection create db_123
+pnpm dlx @prisma/cli@latest database usage db_123
+pnpm dlx @prisma/cli@latest database backup list db_123
 ```
 
 `database create` and `database connection create` print a one-time connection URL; store it immediately. Destructive commands (`remove`, `restore`) require exact `--confirm <id>`.
@@ -122,7 +122,7 @@ Auth options:
 Install and use:
 
 ```bash
-npm install @prisma/management-api-sdk
+pnpm add @prisma/management-api-sdk
 ```
 
 Use `createManagementApiClient` for existing tokens, or `createManagementApiSdk` for OAuth + token refresh.
