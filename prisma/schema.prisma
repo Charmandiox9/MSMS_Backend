@@ -185,6 +185,14 @@ enum TitulationDocumentStatus {
   PREPARED
 }
 
+enum TitulationDocumentKind {
+  DEFENSE_ANNEXES
+  THESIS_SUMMARY
+  LIBRARY_FORM
+  ACTA
+  EVALUATIONS
+}
+
 enum TitulationOutcome {
   UNCONFIRMED
   IN_PROGRESS
@@ -465,6 +473,7 @@ model TitulationProcess {
 model TitulationAttachment {
   id           String            @id @default(uuid())
   processId    String
+  documentKind TitulationDocumentKind?
   storageKey   String            @unique
   originalName String            @db.VarChar(255)
   contentType  String            @db.VarChar(128)
