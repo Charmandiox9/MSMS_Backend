@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { resolveCareer } from '../careers/career-match';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadCurrentCourses } from '../academic/current-courses';
 import {
@@ -347,8 +348,18 @@ export class StudentsService {
           );
       }
       const effectiveCareerId =
-        input.careerId ?? data.careerId ?? existingStudent?.careerId;
-      if (effectiveCareerId && input.admission) {
+        data.careerId === undefined ? existingStudent?.careerId : data.careerId;
+      if (
+        data.careerId !== undefined &&
+        data.careerId !== existingStudent?.careerId &&
+        !input.careerCurriculumVersionId
+      )
+        data.careerCurriculumVersionId = null;
+      const shouldResolveByAdmission =
+        id === undefined
+          ? !input.careerCurriculumVersionId
+          : input.careerCurriculumVersionId === undefined;
+      if (effectiveCareerId && input.admission && shouldResolveByAdmission) {
         data.careerId = effectiveCareerId;
         const cohortYear = Number(input.admission.slice(0, 4));
         const cohort = await tx.curriculumCohort.findUnique({
@@ -530,35 +541,21 @@ export class StudentsService {
             select: { id: true, code: true, name: true },
           })
         : [];
-      const normalizeCareer = (value: string) =>
-        value
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .trim()
-          .toLocaleLowerCase('es');
-      const careerFor = (row: (typeof validated)[number]) => {
-        const byCode = row.careerCode
-          ? careers.find(
-              (career) =>
-                career.code?.trim().toLowerCase() ===
-                row.careerCode!.toLowerCase(),
-            )
-          : undefined;
-        return (
-          byCode ??
-          (row.careerName
-            ? careers.find(
-                (career) =>
-                  normalizeCareer(career.name) ===
-                  normalizeCareer(row.careerName!),
-              )
-            : undefined)
-        );
-      };
+      const careerFor = (row: (typeof validated)[number]) =>
+        resolveCareer(careers, row.careerCode, row.careerName);
       const existing = await tx.student.findMany({
         where: { email: { in: rows.map(({ email }) => email) } },
-        select: { id: true, email: true, name: true },
+        select: {
+          email: true,
+          name: true,
+          admission: true,
+          careerId: true,
+          careerCurriculumVersionId: true,
+        },
       });
+      const existingByEmail = new Map(
+        existing.map((student) => [student.email, student]),
+      );
       await tx.student.createMany({
         data: validated.map((row) => {
           const career = careerFor(row);
@@ -597,12 +594,8 @@ export class StudentsService {
           throw new ConflictException(
             'La lista de estudiantes cambió. Reintenta la importación',
           );
-        if (
-          existing.some(
-            (student) =>
-              student.email === row.email && student.name !== row.name,
-          )
-        )
+        const current = existingByEmail.get(row.email);
+        if (!row.registry && current && current.name !== row.name)
           await tx.student.update({
             where: { id: byEmail.get(row.email)! },
             data: { name: row.name },
@@ -624,14 +617,19 @@ export class StudentsService {
       for (const row of validated.filter(({ registry }) => registry)) {
         const studentId = byEmail.get(row.email);
         if (!studentId) continue;
-        const career = careerFor(row);
+        const current = existingByEmail.get(row.email);
+        const careerId = current?.careerId ?? careerFor(row)?.id ?? null;
+        const currentVersionId = current?.careerCurriculumVersionId ?? null;
+        const admission = currentVersionId
+          ? (current?.admission ?? row.admission ?? null)
+          : (row.admission ?? current?.admission ?? null);
         const cohort =
-          career && row.admission
+          !currentVersionId && careerId && admission
             ? await tx.curriculumCohort.findUnique({
                 where: {
                   careerId_cohortYear: {
-                    careerId: career.id,
-                    cohortYear: Number(row.admission.slice(0, 4)),
+                    careerId,
+                    cohortYear: Number(admission.slice(0, 4)),
                   },
                 },
                 select: { curriculumVersionId: true },
@@ -646,12 +644,15 @@ export class StudentsService {
             givenNames: row.name,
             rut: row.rut ?? null,
             personalEmail: row.personalEmail ?? null,
-            admission: row.admission ?? null,
+            admission,
+            ...(row.careerCode ? { importedCareerCode: row.careerCode } : {}),
+            ...(row.careerName ? { importedCareerName: row.careerName } : {}),
             paternalSurname: row.paternalSurname ?? null,
             maternalSurname: row.maternalSurname ?? null,
             birthDate: row.birthDate ?? null,
-            careerId: career?.id ?? null,
-            careerCurriculumVersionId: cohort?.curriculumVersionId ?? null,
+            careerId,
+            careerCurriculumVersionId:
+              currentVersionId ?? cohort?.curriculumVersionId ?? null,
           },
         });
       }

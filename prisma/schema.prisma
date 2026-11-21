@@ -336,6 +336,8 @@ model Student {
   rutHash                   String?                @unique
   personalEmail             String?
   admission                 String?
+  importedCareerCode        String?
+  importedCareerName        String?
   paternalSurname           String?
   maternalSurname           String?
   birthDate                 String?

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveCareer } from './career-match';
 import {
   AddCurriculumVersionDto,
   CreateCareerDto,
@@ -170,12 +171,16 @@ export class CareersService {
             where: { id: careerId },
           });
           if (!career) throw new NotFoundException('La carrera no existe');
-          return this.createVersion(
+          const version = await this.createVersion(
             tx,
             careerId,
             input.cohortYear,
             await this.resolveNamedCourses(tx, input.courses),
           );
+          return tx.curriculumVersion.findUniqueOrThrow({
+            where: { id: version.id },
+            include: careerInclude.curriculumVersions.include,
+          });
         },
         {
           maxWait: 10_000,
@@ -202,7 +207,7 @@ export class CareersService {
     cohortYear: number,
     courses: CurriculumCourseInputDto[],
   ) {
-    return tx.curriculumVersion.create({
+    const version = await tx.curriculumVersion.create({
       data: {
         careerId,
         cohortYear,
@@ -214,8 +219,83 @@ export class CareersService {
           })),
         },
       },
-      include: careerInclude.curriculumVersions.include,
+      select: { id: true },
     });
+    await this.assignPendingStudents(tx, careerId, cohortYear, version.id);
+    return version;
+  }
+
+  private async assignPendingStudents(
+    tx: Prisma.TransactionClient,
+    careerId: string,
+    cohortYear: number,
+    versionId: string,
+  ) {
+    const batchSize = 500;
+    const admissionCodes = [`${cohortYear}10`, `${cohortYear}20`];
+    const pendingCareer = { OR: [{ careerId }, { careerId: null }] };
+    let afterId: string | undefined;
+    let careers:
+      { id: string; code: string | null; name: string }[] | undefined;
+    for (;;) {
+      const students = await tx.student.findMany({
+        where: {
+          ...(afterId ? { id: { gt: afterId } } : {}),
+          careerCurriculumVersionId: null,
+          admission: { not: null },
+          OR: [
+            { careerId },
+            {
+              careerId: null,
+              OR: [
+                { importedCareerCode: { not: null } },
+                { importedCareerName: { not: null } },
+              ],
+            },
+          ],
+        },
+        select: {
+          id: true,
+          careerId: true,
+          admission: true,
+          importedCareerCode: true,
+          importedCareerName: true,
+        },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+      });
+      const ids: string[] = [];
+      for (const student of students) {
+        if (!student.admission || !admissionCodes.includes(student.admission))
+          continue;
+        if (student.careerId === careerId) {
+          ids.push(student.id);
+        } else if (student.careerId === null) {
+          careers ??= await tx.career.findMany({
+            select: { id: true, code: true, name: true },
+          });
+          if (
+            resolveCareer(
+              careers,
+              student.importedCareerCode,
+              student.importedCareerName,
+            )?.id === careerId
+          )
+            ids.push(student.id);
+        }
+      }
+      if (ids.length)
+        await tx.student.updateMany({
+          where: {
+            id: { in: ids },
+            careerCurriculumVersionId: null,
+            ...pendingCareer,
+          },
+          data: { careerId, careerCurriculumVersionId: versionId },
+        });
+      if (students.length < batchSize) return;
+      afterId = students.at(-1)?.id;
+    }
   }
 
   async create(input: CreateCareerDto) {
@@ -383,15 +463,34 @@ export class CareersService {
                 curriculumVersionId: version.id,
               },
             });
+            await this.assignPendingStudents(
+              tx,
+              careerId,
+              input.cohortYear,
+              version.id,
+            );
             return tx.curriculumVersion.findUniqueOrThrow({
               where: { id: version.id },
               include: careerInclude.curriculumVersions.include,
             });
           }
           const courses = await this.resolveManualCourses(tx, input);
-          return this.createVersion(tx, careerId, input.cohortYear, courses);
+          const version = await this.createVersion(
+            tx,
+            careerId,
+            input.cohortYear,
+            courses,
+          );
+          return tx.curriculumVersion.findUniqueOrThrow({
+            where: { id: version.id },
+            include: careerInclude.curriculumVersions.include,
+          });
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        {
+          maxWait: 10_000,
+          timeout: 60_000,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
       );
     } catch (cause: unknown) {
       if (cause instanceof Prisma.PrismaClientKnownRequestError) {

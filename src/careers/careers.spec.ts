@@ -24,6 +24,7 @@ describe('CareersService', () => {
     career: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -36,6 +37,7 @@ describe('CareersService', () => {
     },
     curriculumCourse: { deleteMany: jest.fn(), createMany: jest.fn() },
     curriculumCohort: { create: jest.fn() },
+    student: { findMany: jest.fn(), updateMany: jest.fn() },
     course: { findMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
   };
   const prisma = {
@@ -71,6 +73,7 @@ describe('CareersService', () => {
     tx.course.create.mockResolvedValue({ id: courseId, name: 'Biología' });
     tx.career.findUnique.mockResolvedValue({ id: careerId });
     tx.career.create.mockResolvedValue({ id: careerId });
+    tx.student.findMany.mockResolvedValue([]);
     tx.curriculumVersion.create.mockResolvedValue({ id: versionId });
     tx.career.findUniqueOrThrow.mockResolvedValue({ id: careerId });
     tx.curriculumVersion.findUniqueOrThrow.mockResolvedValue({ id: versionId });
@@ -238,6 +241,60 @@ describe('CareersService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('assigns only pending students with the matching admission year and an unambiguous career', async () => {
+    tx.career.findMany.mockResolvedValue([
+      { id: careerId, code: 'BM', name: 'Ingeniería Marina' },
+      { id: 'other', code: 'OC', name: 'Oceanografía' },
+      { id: 'ambiguous', code: null, name: 'Oceanografia' },
+    ]);
+    const student = {
+      careerId: null,
+      admission: '202710',
+      importedCareerCode: null,
+      importedCareerName: null,
+    };
+    tx.student.findMany.mockResolvedValueOnce([
+      { ...student, id: 'direct', careerId, admission: '202720' },
+      {
+        ...student,
+        id: 'code',
+        importedCareerCode: ' bm ',
+        importedCareerName: 'Oceanografía',
+      },
+      { ...student, id: 'name', importedCareerName: 'Ing. MARINA' },
+      { ...student, id: 'other-year', careerId, admission: '202610' },
+      {
+        ...student,
+        id: 'other-career',
+        careerId: 'other',
+        importedCareerCode: 'BM',
+      },
+      { ...student, id: 'ambiguous', importedCareerName: 'Oceanografia' },
+      { ...student, id: 'partial', importedCareerName: 'Ingeniería' },
+      { ...student, id: 'none' },
+    ]);
+    await service.addVersion(careerId, {
+      cohortYear: 2027,
+      existingVersionId: versionId,
+    });
+    expect(tx.student.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          careerCurriculumVersionId: null,
+          admission: { not: null },
+        }),
+      }),
+    );
+    expect(tx.student.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['direct', 'code', 'name'] },
+        careerCurriculumVersionId: null,
+        OR: [{ careerId }, { careerId: null }],
+      },
+      data: { careerId, careerCurriculumVersionId: versionId },
+    });
+  });
+
   it('saves named manual courses alongside catalog selections in the same transaction', async () => {
     const newId = '55555555-5555-4555-8555-555555555555';
     tx.course.findMany
@@ -253,6 +310,7 @@ describe('CareersService', () => {
       ],
     };
     await service.addVersion(careerId, input);
+    expect(tx.student.findMany).toHaveBeenCalled();
     expect(tx.course.createMany).toHaveBeenCalledWith({
       data: [{ name: 'Oceanografía' }],
     });
