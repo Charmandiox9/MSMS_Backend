@@ -22,7 +22,7 @@ DATABASE_URL="prisma+postgres://accelerate.prisma-data.net/..."
 ### 2. Install Accelerate extension
 
 ```bash
-npm install @prisma/extension-accelerate
+pnpm add @prisma/extension-accelerate
 ```
 
 ### 3. Configure prisma.config.ts

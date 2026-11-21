@@ -102,7 +102,7 @@ En la prueba local, **las 21 migraciones existentes se aplicaron desde cero**, s
 
 ### 5.1. Migraciones automáticas en la Application existente
 
-Para la instalación actual de una sola réplica, seleccionar **Docker Build Stage = `dokploy`** en General → Build Type → Dockerfile. Mantener Dockerfile Path `Dockerfile`, Docker Context Path `.`, una réplica y Run Command/Arguments vacíos. No reemplazar el entrypoint del Dockerfile. Este destino conserva las herramientas de la imagen de migraciones, por lo que es mayor que `runtime`; no descarga Prisma mediante npx al arrancar.
+Para la instalación actual de una sola réplica, seleccionar **Docker Build Stage = `dokploy`** en General → Build Type → Dockerfile. Mantener Dockerfile Path `Dockerfile`, Docker Context Path `.`, una réplica y Run Command/Arguments vacíos. No reemplazar el entrypoint del Dockerfile. Este destino conserva las herramientas de la imagen de migraciones, por lo que es mayor que `runtime`; Prisma ya viene incluido y no se descarga al arrancar.
 
 Cada arranque de esta imagen ejecuta, en este orden:
 
@@ -272,7 +272,7 @@ Si Docker Desktop falla al exportar con `parent snapshot ... does not exist`, es
 
 Validación local: builds Linux correctos, 21 migraciones desde cero, **571 pruebas unitarias/SQL**, **276 E2E HTTP** y **275 pruebas frontend** correctas. También se probaron dos réplicas API, TTL/cifrado/revocación de sesiones, reinicios, URLs firmadas, CORS del bucket privado, readiness ante caída del storage y restauración de PostgreSQL con descifrado PII.
 
-La auditoría npm de dependencias de producción dio cero avisos en frontend y cero altos/críticos en backend. Permanecen dos avisos moderados de la cadena ExcelJS/uuid; no se aplicó una bajada mayor de ExcelJS ni un override incompatible de uuid para ocultarlos. Evaluar una actualización compatible y el camino afectado antes de la aprobación de seguridad. La imagen de mantenimiento incluye herramientas adicionales y no debe publicarse como servicio web.
+La auditoría de dependencias de producción dio cero avisos en frontend y cero altos/críticos en backend. Permanecen dos avisos moderados de la cadena ExcelJS/uuid; no se aplicó una bajada mayor de ExcelJS ni un override incompatible de uuid para ocultarlos. Evaluar una actualización compatible y el camino afectado antes de la aprobación de seguridad. La imagen de mantenimiento incluye herramientas adicionales y no debe publicarse como servicio web.
 
 La prueba local no instala Dokploy ni valida un servidor remoto, certificados, correo entregado ni credenciales OAuth reales. El endpoint local es `http://localhost`; no existe un bypass de autenticación para entrar con la cuenta sintética. Los respaldos locales prueban restaurabilidad, pero no sustituyen un destino externo ante pérdida de la VM.
 
