@@ -1,4 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
+import {
+  TitulationDocumentKind,
+  TitulationDocumentStatus,
+} from '@prisma/client';
 import { Readable } from 'node:stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -18,6 +22,7 @@ const file: TitulationUploadFile = {
 };
 const attachment = {
   id: attachmentId,
+  documentKind: TitulationDocumentKind.ACTA,
   originalName: 'acta de prueba.pdf',
   contentType: 'application/pdf',
   size: pdfContent.length,
@@ -25,13 +30,25 @@ const attachment = {
 };
 
 function createService() {
+  const transactionClient = {
+    titulationProcess: {
+      update: jest.fn().mockResolvedValue({ id: processId }),
+    },
+    titulationAttachment: {
+      create: jest.fn().mockResolvedValue(attachment),
+    },
+  };
   const prisma = {
+    $transaction: jest.fn(
+      async (
+        operation: (client: typeof transactionClient) => Promise<unknown>,
+      ) => operation(transactionClient),
+    ),
     titulationProcess: {
       findUnique: jest.fn().mockResolvedValue({ id: processId }),
     },
     titulationAttachment: {
       findMany: jest.fn().mockResolvedValue([attachment]),
-      create: jest.fn().mockResolvedValue(attachment),
       delete: jest.fn().mockResolvedValue({ id: attachmentId }),
       findFirst: jest.fn().mockResolvedValue({
         storageKey,
@@ -51,25 +68,32 @@ function createService() {
     prisma as unknown as PrismaService,
     storage as unknown as StorageService,
   );
-  return { service, prisma, storage };
+  return { service, prisma, storage, transactionClient };
 }
 
 describe('TitulationAttachmentsService', () => {
   it('stores a validated file privately and associates its metadata with a process', async () => {
-    const { service, prisma, storage } = createService();
+    const { service, storage, transactionClient } = createService();
 
-    await expect(service.upload(processId, file, 'actor-id')).resolves.toEqual(
-      attachment,
-    );
+    await expect(
+      service.upload(
+        processId,
+        file,
+        TitulationDocumentKind.ACTA,
+        TitulationDocumentStatus.RECEIVED,
+        'actor-id',
+      ),
+    ).resolves.toEqual(attachment);
 
     expect(storage.uploadPrivateFile).toHaveBeenCalledWith(
       attachment.originalName,
       attachment.contentType,
       pdfContent,
     );
-    expect(prisma.titulationAttachment.create).toHaveBeenCalledWith({
+    expect(transactionClient.titulationAttachment.create).toHaveBeenCalledWith({
       data: {
         processId,
+        documentKind: TitulationDocumentKind.ACTA,
         storageKey,
         originalName: attachment.originalName,
         contentType: attachment.contentType,
@@ -78,7 +102,45 @@ describe('TitulationAttachmentsService', () => {
       },
       select: expect.not.objectContaining({ storageKey: true }),
     });
+    expect(transactionClient.titulationProcess.update).toHaveBeenCalledWith({
+      where: { id: processId },
+      data: {
+        actaStatus: TitulationDocumentStatus.RECEIVED,
+        updatedById: 'actor-id',
+      },
+      select: { id: true },
+    });
   });
+
+  it.each([
+    [TitulationDocumentKind.DEFENSE_ANNEXES, 'defenseAnnexesStatus'],
+    [TitulationDocumentKind.THESIS_SUMMARY, 'thesisSummaryStatus'],
+    [TitulationDocumentKind.LIBRARY_FORM, 'libraryFormStatus'],
+    [TitulationDocumentKind.ACTA, 'actaStatus'],
+    [TitulationDocumentKind.EVALUATIONS, 'evaluationsStatus'],
+  ] as const)(
+    'marks %s as received after the attachment is stored',
+    async (documentKind, statusField) => {
+      const { service, transactionClient } = createService();
+
+      await service.upload(
+        processId,
+        file,
+        documentKind,
+        TitulationDocumentStatus.PREPARED,
+        'actor-id',
+      );
+
+      expect(transactionClient.titulationProcess.update).toHaveBeenCalledWith({
+        where: { id: processId },
+        data: {
+          [statusField]: TitulationDocumentStatus.PREPARED,
+          updatedById: 'actor-id',
+        },
+        select: { id: true },
+      });
+    },
+  );
 
   it('does not store invalid uploads or uploads for missing processes', async () => {
     const { service, prisma, storage } = createService();
@@ -87,6 +149,8 @@ describe('TitulationAttachmentsService', () => {
       service.upload(
         processId,
         { ...file, mimetype: 'text/plain' },
+        TitulationDocumentKind.ACTA,
+        TitulationDocumentStatus.RECEIVED,
         'actor-id',
       ),
     ).rejects.toThrow();
@@ -94,20 +158,32 @@ describe('TitulationAttachmentsService', () => {
 
     prisma.titulationProcess.findUnique.mockResolvedValueOnce(null);
     await expect(
-      service.upload(processId, file, 'actor-id'),
+      service.upload(
+        processId,
+        file,
+        TitulationDocumentKind.ACTA,
+        TitulationDocumentStatus.RECEIVED,
+        'actor-id',
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(storage.uploadPrivateFile).not.toHaveBeenCalled();
   });
 
   it('removes an uploaded object when persisting its metadata fails', async () => {
-    const { service, prisma, storage } = createService();
-    prisma.titulationAttachment.create.mockRejectedValueOnce(
+    const { service, storage, transactionClient } = createService();
+    transactionClient.titulationProcess.update.mockRejectedValueOnce(
       new Error('database unavailable'),
     );
 
-    await expect(service.upload(processId, file, 'actor-id')).rejects.toThrow(
-      'database unavailable',
-    );
+    await expect(
+      service.upload(
+        processId,
+        file,
+        TitulationDocumentKind.ACTA,
+        TitulationDocumentStatus.RECEIVED,
+        'actor-id',
+      ),
+    ).rejects.toThrow('database unavailable');
     expect(storage.deleteFile).toHaveBeenCalledWith(storageKey);
   });
 

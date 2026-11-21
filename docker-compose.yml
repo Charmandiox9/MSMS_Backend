@@ -169,7 +169,7 @@ services:
     build:
       context: ../frontend
       target: test
-    command: ['npm', 'test', '--', '--maxWorkers=2']
+    command: ['pnpm', 'test', '--maxWorkers=2']
 
 # Persistent local data; survives docker compose down without -v.
 volumes:

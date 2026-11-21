@@ -50,6 +50,8 @@ export const piiPolicies: Readonly<Record<string, PiiPolicy>> = {
       'maternalSurname',
       'birthDate',
       'admission',
+      'importedCareerCode',
+      'importedCareerName',
     ],
     lookups: { email: 'emailHash', rut: 'rutHash' },
     searchable: [

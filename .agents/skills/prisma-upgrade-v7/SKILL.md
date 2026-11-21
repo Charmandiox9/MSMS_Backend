@@ -71,17 +71,17 @@ Prisma 7 has no MongoDB connector. Do not apply any step in this guide to a proj
 
 ```bash
 # Update packages
-npm install @prisma/client@7
-npm install -D prisma@7
+pnpm add @prisma/client@7
+pnpm add -D prisma@7
 
 # Install a driver adapter (PostgreSQL or Prisma Postgres via direct TCP)
-npm install @prisma/adapter-pg pg
+pnpm add @prisma/adapter-pg pg
 
 # Install dotenv for env loading
-npm install dotenv
+pnpm add dotenv
 
 # Regenerate client
-npx prisma generate
+pnpm exec prisma generate
 ```
 
 ## Breaking Changes Summary
@@ -177,22 +177,22 @@ export default defineConfig({
 
 ```bash
 # PostgreSQL
-npm install @prisma/adapter-pg pg
+pnpm add @prisma/adapter-pg pg
 
 # MySQL
-npm install @prisma/adapter-mariadb mariadb
+pnpm add @prisma/adapter-mariadb mariadb
 
 # SQLite
-npm install @prisma/adapter-better-sqlite3 better-sqlite3
+pnpm add @prisma/adapter-better-sqlite3 better-sqlite3
 
 # Prisma Postgres in standard Node.js apps (recommended)
-npm install @prisma/adapter-pg pg
+pnpm add @prisma/adapter-pg pg
 
 # Prisma Postgres serverless driver (edge/serverless)
-npm install @prisma/adapter-ppg @prisma/ppg
+pnpm add @prisma/adapter-ppg @prisma/ppg
 
 # Neon
-npm install @prisma/adapter-neon
+pnpm add @prisma/adapter-neon
 ```
 
 MongoDB does not have a SQL `@prisma/adapter-*` package in the published Prisma 7.6.0 packages. If you're upgrading a MongoDB project, stop and keep that project on the latest Prisma 6.x release instead of following the standard Prisma 7 migration path.
@@ -230,8 +230,8 @@ const userSelect = {
 ### 8. Run migrations and generate
 
 ```bash
-npx prisma generate
-npx prisma migrate dev  # if needed
+pnpm exec prisma generate
+pnpm exec prisma migrate dev  # if needed
 ```
 
 ## Troubleshooting

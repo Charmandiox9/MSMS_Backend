@@ -12,19 +12,19 @@ Informe de la tarea **"Pruebas Unitarias, E2E, Estrés"**: pruebas funcionales, 
 
 | Nivel     | Comando               | Suites        | Tests | Resultado                                                                                                                                                                                                                 |
 | --------- | --------------------- | ------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unitarias | `npm test`            | 26 (26 ✅)    | 195   | **195 pasan · 0 fallan**                                                                                                                                                                                                  |
-| E2E       | `npm run test:e2e`    | 4 (4 ✅)      | 237   | **237 pasan · 0 fallan**                                                                                                                                                                                                  |
-| Estrés    | `npm run test:stress` | 10 escenarios | —     | **Backend real: 8/9 dentro de los umbrales.** `justifications-list` pasó de 2 a 11 req/s y su p99 de 4,8 s a 1,6 s; sigue sobre el umbral por la latencia de red hacia la BD ([ver Estrés](#después-de-las-correcciones)) |
-| Build     | `npm run build`       | —             | —     | ✅ Compila                                                                                                                                                                                                                |
+| Unitarias | `pnpm test`            | 26 (26 ✅)    | 195   | **195 pasan · 0 fallan**                                                                                                                                                                                                  |
+| E2E       | `pnpm run test:e2e`    | 4 (4 ✅)      | 237   | **237 pasan · 0 fallan**                                                                                                                                                                                                  |
+| Estrés    | `pnpm run test:stress` | 10 escenarios | —     | **Backend real: 8/9 dentro de los umbrales.** `justifications-list` pasó de 2 a 11 req/s y su p99 de 4,8 s a 1,6 s; sigue sobre el umbral por la latencia de red hacia la BD ([ver Estrés](#después-de-las-correcciones)) |
+| Build     | `pnpm run build`       | —             | —     | ✅ Compila                                                                                                                                                                                                                |
 
 Antes de esta tarea había 17 suites unitarias con 70 tests y 1 test E2E. En la primera entrega (rol QA) 9 tests unitarios fallaban a propósito porque comprobaban comportamientos incorrectos; después de las correcciones pasan todos.
 
 ## Cómo ejecutar
 
 ```bash
-npm test                 # unitarias
-npm run test:e2e         # E2E (no necesita base de datos ni servicios externos)
-npm run test:stress      # estrés, contra un backend ya levantado (ver sección Estrés)
+pnpm test                 # unitarias
+pnpm run test:e2e         # E2E (no necesita base de datos ni servicios externos)
+pnpm run test:stress      # estrés, contra un backend ya levantado (ver sección Estrés)
 ```
 
 ## Qué se probó
@@ -160,7 +160,7 @@ Ejemplo:
 STRESS_BASE_URL=http://localhost:3001/api \
 STRESS_AUTH_COOKIE="token=<jwt>" \
 STRESS_FORMS_SECRET=<secreto> \
-npm run test:stress
+pnpm run test:stress
 ```
 
 ### Escenarios
@@ -281,8 +281,7 @@ Observaciones de la validación:
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tsconfig.json`      | Se quitó el cambio local sin commitear `"ignoreDeprecations": "6.0"`: TypeScript 5.9.3 no lo acepta (error TS5103) y hacía fallar las 17 suites.                               |
 | `package.json`       | Nuevo script `test:stress` y devDependency `autocannon@^8.0.0`.                                                                                                                |
-| `package-lock.json`  | Agrega autocannon (lo usa `npm ci` en Jenkins; validado con `npm ci --dry-run`). npm 11 además podó entradas _peer_ opcionales de `chokidar`/`readdirp` sin cambiar versiones. |
-| `pnpm-lock.yaml`     | Regenerado por pnpm: agrega autocannon y `@swc/core`/`@swc/cli`, que ya estaban en `package.json` pero faltaban en el lockfile. Formato `lockfileVersion 9.0` sin cambios.     |
+| `pnpm-lock.yaml`     | Lockfile único del backend; agrega autocannon y `@swc/core`/`@swc/cli`, que ya estaban en `package.json` pero faltaban en el lockfile. Formato `lockfileVersion 9.0`.            |
 | `test/jest-e2e.json` | `setupFiles` con `test/support/e2e-env.ts`.                                                                                                                                    |
 | `.env.example`       | Variables `STRESS_*` documentadas (comentadas) según la regla 8 de `AGENTS.md`. `.env.development` no se modificó ni se versiona.                                              |
 | `README.md`          | Sección "Verificación": `pnpm test:stress` y enlace a este documento.                                                                                                          |
@@ -298,7 +297,7 @@ Observaciones de la validación:
 
 Estado de cada test tal como lo reporta Jest. _Origen_ indica si el archivo es nuevo, si existía y se amplió o ajustó, o si existía sin cambios.
 
-### Unitarias (`npm test`) — 195 tests
+### Unitarias (`pnpm test`) — 195 tests
 
 #### `src/academic/academic.controller.spec.ts`
 
@@ -677,7 +676,7 @@ Existente, ampliado o ajustado · ✅ 17 pasan · ❌ 0 fallan
 | ✅  | UsersService account administration › permanentlyDelete › conserva cuentas con actividad en justificaciones      |
 | ✅  | UsersService account administration › permanentlyDelete › elimina cuentas sin actividad e invalida el caché      |
 
-### E2E (`npm run test:e2e`) — 237 tests
+### E2E (`pnpm run test:e2e`) — 237 tests
 
 #### `test/app.e2e-spec.ts`
 

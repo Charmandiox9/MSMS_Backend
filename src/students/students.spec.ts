@@ -40,8 +40,9 @@ describe('Módulo de estudiantes', () => {
       count: jest.fn(),
     },
     teachingAssistant: { findMany: jest.fn() },
-    career: { findMany: jest.fn() },
+    career: { findMany: jest.fn(), findUnique: jest.fn() },
     curriculumVersion: { findUnique: jest.fn() },
+    curriculumCohort: { findUnique: jest.fn() },
     studentEnrollment: {
       findMany: jest.fn(),
       createMany: jest.fn(),
@@ -136,6 +137,73 @@ describe('Módulo de estudiantes', () => {
     ]);
     expect(prisma.findPiiIds).toHaveBeenCalledWith('Student', 'Ana');
     expect((await controller.get(studentId)).assistantships).toHaveLength(2);
+  });
+
+  it('conserva la malla de la misma carrera elegida al editar, aunque su cohorte difiera de la admisión', async () => {
+    const career = { id: 'current-career', isActive: true };
+    prisma.career.findUnique.mockResolvedValue(career);
+    prisma.curriculumVersion.findUnique.mockResolvedValue({
+      id: 'chosen-plan',
+      career,
+    });
+    await service.save(
+      {
+        ...profile,
+        careerId: career.id,
+        careerCurriculumVersionId: 'chosen-plan',
+        admission: '202410',
+      },
+      studentId,
+    );
+    expect(prisma.curriculumCohort.findUnique).not.toHaveBeenCalled();
+    expect(prisma.student.update).toHaveBeenCalledWith({
+      where: { id: studentId },
+      data: expect.objectContaining({
+        careerCurriculumVersionId: 'chosen-plan',
+        admission: '202410',
+      }),
+    });
+  });
+
+  it('rechaza seleccionar una malla que pertenece a otra carrera', async () => {
+    prisma.curriculumVersion.findUnique.mockResolvedValue({
+      id: 'other-plan',
+      career: { id: 'other-career', isActive: true },
+    });
+    await expect(
+      service.save(
+        {
+          ...profile,
+          careerId: 'current-career',
+          careerCurriculumVersionId: 'other-plan',
+          admission: '202410',
+        },
+        studentId,
+      ),
+    ).rejects.toThrow('La carrera no coincide con la malla seleccionada');
+    expect(prisma.student.update).not.toHaveBeenCalled();
+  });
+
+  it('permite quitar la malla de un estudiante incluso si hay una cohorte para su admisión', async () => {
+    prisma.career.findUnique.mockResolvedValue({
+      id: 'current-career',
+      isActive: true,
+    });
+    await service.save(
+      {
+        ...profile,
+        careerId: 'current-career',
+        careerCurriculumVersionId: null,
+        admission: '202410',
+      },
+      studentId,
+    );
+    expect(prisma.curriculumCohort.findUnique).not.toHaveBeenCalled();
+    expect(prisma.student.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ careerCurriculumVersionId: null }),
+      }),
+    );
   });
 
   it('crea un estudiante global y vincula la asignatura sin depender de un profesor', async () => {
@@ -330,7 +398,9 @@ describe('Módulo de estudiantes', () => {
     prisma.career.findMany.mockResolvedValue([
       { id: careerId, code: '8506', name: 'Ingeniería Marina' },
     ]);
-    prisma.curriculumVersion.findUnique.mockResolvedValue({ id: curriculumId });
+    prisma.curriculumCohort.findUnique.mockResolvedValue({
+      curriculumVersionId: curriculumId,
+    });
     prisma.student.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: studentId, email: 'ana@example.com' }]);
@@ -358,9 +428,9 @@ describe('Módulo de estudiantes', () => {
         ],
       }),
     );
-    expect(prisma.curriculumVersion.findUnique).toHaveBeenCalledWith({
+    expect(prisma.curriculumCohort.findUnique).toHaveBeenCalledWith({
       where: { careerId_cohortYear: { careerId, cohortYear: 2026 } },
-      select: { id: true },
+      select: { curriculumVersionId: true },
     });
     expect(prisma.student.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -372,6 +442,65 @@ describe('Módulo de estudiantes', () => {
       }),
     );
   });
+  it('conserva el código y nombre importados cuando la carrera aún no existe', async () => {
+    prisma.career.findMany.mockResolvedValue([]);
+    prisma.student.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: studentId, email: 'ana@example.com' }]);
+    const csv = [
+      'codigo_carrera;carrera;ADMISION;RUT;NOMBRE;AP_PATERNO;AP_MATERNO;EMAIL_ESTUDIANTE;EMAIL_PERSONAL;FECHA_NACIMIENTO',
+      '8506;Ing. Marina;202710;12345678-9;Ana;Soto;Paz;ana@example.com;;',
+    ].join('\n');
+
+    await service.importCsv({ csv });
+
+    expect(prisma.student.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          admission: '202710',
+          importedCareerCode: '8506',
+          importedCareerName: 'Ing. Marina',
+          careerId: null,
+          careerCurriculumVersionId: null,
+        }),
+      }),
+    );
+  });
+
+  it('conserva la carrera y malla asignadas cuando se vuelve a importar el padrón', async () => {
+    prisma.career.findMany.mockResolvedValue([
+      { id: 'other', code: '8506', name: 'Ing. Marina' },
+    ]);
+    prisma.student.findMany
+      .mockResolvedValueOnce([
+        {
+          name: 'Ana Soto Paz',
+          email: 'ana@example.com',
+          admission: '202610',
+          careerId: 'assigned-career',
+          careerCurriculumVersionId: 'assigned-plan',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: studentId, email: 'ana@example.com' }]);
+    const csv = [
+      'codigo_carrera;carrera;ADMISION;RUT;NOMBRE;AP_PATERNO;AP_MATERNO;EMAIL_ESTUDIANTE;EMAIL_PERSONAL;FECHA_NACIMIENTO',
+      '8506;Ing. Marina;202710;12345678-9;Ana;Soto;Paz;ana@example.com;;',
+    ].join('\n');
+
+    await service.importCsv({ csv });
+
+    expect(prisma.curriculumCohort.findUnique).not.toHaveBeenCalled();
+    expect(prisma.student.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          admission: '202610',
+          careerId: 'assigned-career',
+          careerCurriculumVersionId: 'assigned-plan',
+        }),
+      }),
+    );
+  });
+
   it('rechaza importar si no hay semestre activo y protege el catálogo ambiguo', async () => {
     prisma.academicSemester.findFirst.mockResolvedValue(null);
     await expect(

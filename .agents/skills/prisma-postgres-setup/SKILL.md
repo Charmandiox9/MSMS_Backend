@@ -125,7 +125,7 @@ Extract the direct connection string from `data.endpoints.direct.connectionStrin
 1. Install dependencies:
 
 ```bash
-npm install prisma @prisma/client @prisma/adapter-pg pg dotenv
+pnpm add prisma @prisma/client @prisma/adapter-pg pg dotenv
 ```
 
 All five packages are required:
@@ -145,7 +145,7 @@ DATABASE_URL="<direct-connection-string>"
 
 4. Ensure `package.json` has `"type": "module"` set (Prisma 7 generates ESM output).
 
-5. If `prisma/schema.prisma` does not exist, run `npx prisma init` to scaffold the project. This creates both `prisma/schema.prisma` and `prisma.config.ts`.
+5. If `prisma/schema.prisma` does not exist, run `pnpm exec prisma init` to scaffold the project. This creates both `prisma/schema.prisma` and `prisma.config.ts`.
 
 6. Ensure `schema.prisma` has the `postgresql` provider and **no** `url` or `directUrl` in the datasource block (Prisma 7 manages connection URLs in `prisma.config.ts`, not in the schema):
 
@@ -187,12 +187,12 @@ If the schema already has models, skip to pushing. Otherwise, **present these op
 Once the schema has models and the user is ready, create a migration and generate the client:
 
 ```bash
-npx prisma migrate dev --name init
+pnpm exec prisma migrate dev --name init
 ```
 
 This creates migration files in `prisma/migrations/` **and** generates the client in one step. Migration history is essential for CI/CD workflows (`prisma migrate deploy`) and production deployments.
 
-Only use `npx prisma db push` if the user explicitly asks for prototyping-only mode (no migration history). In that case, follow it with `npx prisma generate`.
+Only use `pnpm exec prisma db push` if the user explicitly asks for prototyping-only mode (no migration history). In that case, follow it with `pnpm exec prisma generate`.
 
 ### Step 7: Verify the connection
 
@@ -220,7 +220,7 @@ await pool.end()
 Run it:
 
 ```bash
-npx tsx test-connection.ts
+pnpm dlx tsx test-connection.ts
 ```
 
 **Prisma 7 client instantiation rules:**
@@ -235,7 +235,7 @@ After verification succeeds, delete `test-connection.ts`.
 
 Then share links for the user to explore their database:
 
-- **Prisma Studio (CLI):** `npx prisma studio` — opens a visual data browser locally
+- **Prisma Studio (CLI):** `pnpm exec prisma studio` — opens a visual data browser locally
 - **Console:** `https://console.prisma.io/<workspaceId>/<projectId>/<databaseId>/dashboard` — strip the prefixes (`wksp_`, `proj_`, `db_`) from the IDs returned in Step 3 to build this URL
 
 Read `references/prisma7-client.md` for the full client instantiation reference.

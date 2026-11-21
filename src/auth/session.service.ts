@@ -7,6 +7,7 @@ import { PiiCryptoService } from '../privacy/pii-crypto.service';
 export type AuthSession = {
   sub: string;
   email: string;
+  displayName?: string;
   roles: string[];
   avatarUrl?: string;
 };
@@ -43,6 +44,7 @@ export class SessionService {
       typeof result.sub !== 'string' ||
       !('email' in result) ||
       typeof result.email !== 'string' ||
+      ('displayName' in result && typeof result.displayName !== 'string') ||
       !('roles' in result) ||
       !Array.isArray(result.roles) ||
       !result.roles.every((role: unknown) => typeof role === 'string')

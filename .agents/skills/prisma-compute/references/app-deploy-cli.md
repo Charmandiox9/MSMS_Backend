@@ -17,7 +17,7 @@ The examples in help output may call the binary `prisma-cli`. When using package
 
 ```bash
 bunx @prisma/cli@latest app deploy
-npx @prisma/cli@latest app deploy
+pnpm dlx @prisma/cli@latest app deploy
 pnpm dlx @prisma/cli@latest app deploy
 ```
 

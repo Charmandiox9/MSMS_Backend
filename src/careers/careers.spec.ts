@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import {
+  AddCurriculumVersionDto,
   CreateCareerFromCsvDto,
   DeleteCareerDto,
   UpdateCareerDto,
@@ -23,6 +24,7 @@ describe('CareersService', () => {
     career: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -34,6 +36,8 @@ describe('CareersService', () => {
       findUniqueOrThrow: jest.fn(),
     },
     curriculumCourse: { deleteMany: jest.fn(), createMany: jest.fn() },
+    curriculumCohort: { create: jest.fn() },
+    student: { findMany: jest.fn(), updateMany: jest.fn() },
     course: { findMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
   };
   const prisma = {
@@ -69,12 +73,13 @@ describe('CareersService', () => {
     tx.course.create.mockResolvedValue({ id: courseId, name: 'Biología' });
     tx.career.findUnique.mockResolvedValue({ id: careerId });
     tx.career.create.mockResolvedValue({ id: careerId });
+    tx.student.findMany.mockResolvedValue([]);
     tx.curriculumVersion.create.mockResolvedValue({ id: versionId });
     tx.career.findUniqueOrThrow.mockResolvedValue({ id: careerId });
     tx.curriculumVersion.findUniqueOrThrow.mockResolvedValue({ id: versionId });
     tx.curriculumVersion.findFirst.mockResolvedValue({
       id: versionId,
-      _count: { students: 0 },
+      _count: { students: 0, cohorts: 1 },
     });
   });
 
@@ -171,16 +176,181 @@ describe('CareersService', () => {
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       maxWait: 10_000,
       timeout: 60_000,
+      isolationLevel: 'Serializable',
     });
     expect(tx.curriculumVersion.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
           careerId,
           cohortYear: 2026,
+          cohorts: { create: { cohortYear: 2026 } },
           courses: { create: [{ courseId, termNumber: 1 }] },
         },
       }),
     );
+  });
+
+  it('registers a cohort against the selected plan without writing a new version or courses', async () => {
+    const controller = new CareersController(service);
+    const input = { cohortYear: 2027, existingVersionId: versionId };
+    expect(
+      await validate(plainToInstance(AddCurriculumVersionDto, input)),
+    ).toEqual([]);
+    expect(
+      Reflect.getMetadata(
+        ROLES_KEY,
+        CareersController.prototype.addCurriculumVersion,
+      ),
+    ).toEqual(['ACADEMIC_SECRETARY']);
+
+    await expect(
+      controller.addCurriculumVersion(careerId, input),
+    ).resolves.toEqual({ id: versionId });
+    expect(tx.curriculumVersion.findFirst).toHaveBeenCalledWith({
+      where: { id: versionId, careerId },
+      select: { id: true },
+    });
+    expect(tx.curriculumCohort.create).toHaveBeenCalledWith({
+      data: { careerId, cohortYear: 2027, curriculumVersionId: versionId },
+    });
+    expect(tx.curriculumVersion.create).not.toHaveBeenCalled();
+    expect(tx.course.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects unavailable plans and conflicting cohort registrations', async () => {
+    const input = { cohortYear: 2027, existingVersionId: versionId };
+    tx.curriculumVersion.findFirst.mockResolvedValueOnce(null);
+    await expect(service.addVersion(careerId, input)).rejects.toThrow(
+      'no existe en la carrera',
+    );
+    expect(tx.curriculumCohort.create).not.toHaveBeenCalled();
+    tx.curriculumCohort.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Duplicate', {
+        code: 'P2002',
+        clientVersion: '7',
+      }),
+    );
+    await expect(service.addVersion(careerId, input)).rejects.toThrow(
+      ConflictException,
+    );
+    await expect(
+      service.addVersion(careerId, {
+        ...input,
+        courses: [{ courseId, termNumber: 1 }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('assigns only pending students with the matching admission year and an unambiguous career', async () => {
+    tx.career.findMany.mockResolvedValue([
+      { id: careerId, code: 'BM', name: 'Ingeniería Marina' },
+      { id: 'other', code: 'OC', name: 'Oceanografía' },
+      { id: 'ambiguous', code: null, name: 'Oceanografia' },
+    ]);
+    const student = {
+      careerId: null,
+      admission: '202710',
+      importedCareerCode: null,
+      importedCareerName: null,
+    };
+    tx.student.findMany.mockResolvedValueOnce([
+      { ...student, id: 'direct', careerId, admission: '202720' },
+      {
+        ...student,
+        id: 'code',
+        importedCareerCode: ' bm ',
+        importedCareerName: 'Oceanografía',
+      },
+      { ...student, id: 'name', importedCareerName: 'Ing. MARINA' },
+      { ...student, id: 'other-year', careerId, admission: '202610' },
+      {
+        ...student,
+        id: 'other-career',
+        careerId: 'other',
+        importedCareerCode: 'BM',
+      },
+      { ...student, id: 'ambiguous', importedCareerName: 'Oceanografia' },
+      { ...student, id: 'partial', importedCareerName: 'Ingeniería' },
+      { ...student, id: 'none' },
+    ]);
+    await service.addVersion(careerId, {
+      cohortYear: 2027,
+      existingVersionId: versionId,
+    });
+    expect(tx.student.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          careerCurriculumVersionId: null,
+          admission: { not: null },
+        }),
+      }),
+    );
+    expect(tx.student.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['direct', 'code', 'name'] },
+        careerCurriculumVersionId: null,
+        OR: [{ careerId }, { careerId: null }],
+      },
+      data: { careerId, careerCurriculumVersionId: versionId },
+    });
+  });
+
+  it('saves named manual courses alongside catalog selections in the same transaction', async () => {
+    const newId = '55555555-5555-4555-8555-555555555555';
+    tx.course.findMany
+      .mockResolvedValueOnce([{ id: courseId }])
+      .mockResolvedValueOnce([{ id: courseId, name: 'Biología' }])
+      .mockResolvedValueOnce([{ id: newId, name: 'Oceanografía' }]);
+    const input = {
+      cohortYear: 2027,
+      courses: [{ courseId, termNumber: 1 }],
+      newCourses: [
+        { courseName: 'Oceanografía', termNumber: 2 },
+        { courseName: 'Biologia', termNumber: 3 },
+      ],
+    };
+    await service.addVersion(careerId, input);
+    expect(tx.student.findMany).toHaveBeenCalled();
+    expect(tx.course.createMany).toHaveBeenCalledWith({
+      data: [{ name: 'Oceanografía' }],
+    });
+    expect(tx.curriculumVersion.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          careerId,
+          cohortYear: 2027,
+          cohorts: { create: { cohortYear: 2027 } },
+          courses: {
+            create: [
+              input.courses[0],
+              { courseId: newId, termNumber: 2 },
+              { courseId, termNumber: 3 },
+            ],
+          },
+        },
+      }),
+    );
+    expect(
+      await validate(
+        plainToInstance(AddCurriculumVersionDto, {
+          cohortYear: 2027,
+          newCourses: [{ courseName: ' ', termNumber: 21 }],
+        }),
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it('blocks edits to a shared plan even before students are assigned', async () => {
+    tx.curriculumVersion.findFirst.mockResolvedValueOnce({
+      id: versionId,
+      _count: { students: 0, cohorts: 2 },
+    });
+    await expect(
+      service.updateVersion(careerId, versionId, {
+        courses: [{ courseId, termNumber: 1 }],
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(tx.curriculumCourse.deleteMany).not.toHaveBeenCalled();
   });
 
   it('assigns and clears career departments while preserving omitted assignments', async () => {
@@ -238,6 +408,7 @@ describe('CareersService', () => {
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       maxWait: 10_000,
       timeout: 60_000,
+      isolationLevel: 'Serializable',
     });
     expect(tx.course.createMany).toHaveBeenCalledWith({
       data: [{ name: 'Oceanografía' }],
@@ -247,6 +418,7 @@ describe('CareersService', () => {
         data: {
           careerId,
           cohortYear: 2026,
+          cohorts: { create: { cohortYear: 2026 } },
           courses: {
             create: [
               { courseId, termNumber: 1 },

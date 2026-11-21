@@ -36,6 +36,7 @@ import {
 } from './titulation-attachments.util';
 import type { TitulationUploadFile } from './titulation-attachments.util';
 import { TitulationAttachmentsService } from './titulation-attachments.service';
+import { CreateTitulationAttachmentDto } from './titulation-attachments.dto';
 
 const TITULATION_READ_ROLES = [
   'ACADEMIC_SECRETARY',
@@ -127,10 +128,17 @@ export class TitulationsController {
   )
   uploadAttachment(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: CreateTitulationAttachmentDto,
     @UploadedFile() file: TitulationUploadFile | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.attachments.upload(id, file, user.id);
+    return this.attachments.upload(
+      id,
+      file,
+      input.documentKind,
+      input.documentStatus,
+      user.id,
+    );
   }
 
   @Get(':id/attachments/:attachmentId/file')

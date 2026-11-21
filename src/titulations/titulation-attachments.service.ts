@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  TitulationDocumentKind,
+  TitulationDocumentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import type { TitulationUploadFile } from './titulation-attachments.util';
@@ -10,11 +14,23 @@ import {
 
 const ATTACHMENT_SUMMARY_SELECT = {
   id: true,
+  documentKind: true,
   originalName: true,
   contentType: true,
   size: true,
   createdAt: true,
 } satisfies Prisma.TitulationAttachmentSelect;
+
+const DOCUMENT_STATUS_FIELDS = {
+  [TitulationDocumentKind.DEFENSE_ANNEXES]: 'defenseAnnexesStatus',
+  [TitulationDocumentKind.THESIS_SUMMARY]: 'thesisSummaryStatus',
+  [TitulationDocumentKind.LIBRARY_FORM]: 'libraryFormStatus',
+  [TitulationDocumentKind.ACTA]: 'actaStatus',
+  [TitulationDocumentKind.EVALUATIONS]: 'evaluationsStatus',
+} satisfies Record<
+  TitulationDocumentKind,
+  keyof Prisma.TitulationProcessUpdateInput
+>;
 
 @Injectable()
 export class TitulationAttachmentsService {
@@ -35,6 +51,8 @@ export class TitulationAttachmentsService {
   async upload(
     processId: string,
     file: TitulationUploadFile | undefined,
+    documentKind: TitulationDocumentKind,
+    documentStatus: TitulationDocumentStatus,
     actorId: string,
   ) {
     await this.assertProcessExists(processId);
@@ -46,16 +64,30 @@ export class TitulationAttachmentsService {
     );
 
     try {
-      return await this.prisma.titulationAttachment.create({
-        data: {
-          processId,
-          storageKey,
-          originalName: metadata.originalName,
-          contentType: metadata.contentType,
-          size: metadata.size,
-          createdById: actorId,
-        },
-        select: ATTACHMENT_SUMMARY_SELECT,
+      return await this.prisma.$transaction(async (transaction) => {
+        const attachment = await transaction.titulationAttachment.create({
+          data: {
+            processId,
+            documentKind,
+            storageKey,
+            originalName: metadata.originalName,
+            contentType: metadata.contentType,
+            size: metadata.size,
+            createdById: actorId,
+          },
+          select: ATTACHMENT_SUMMARY_SELECT,
+        });
+
+        await transaction.titulationProcess.update({
+          where: { id: processId },
+          data: {
+            [DOCUMENT_STATUS_FIELDS[documentKind]]: documentStatus,
+            updatedById: actorId,
+          },
+          select: { id: true },
+        });
+
+        return attachment;
       });
     } catch (error: unknown) {
       await this.storage.deleteFile(storageKey).catch(() => undefined);

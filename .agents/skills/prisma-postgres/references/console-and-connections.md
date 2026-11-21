@@ -22,7 +22,7 @@ Many Prisma Postgres tasks are quickest in the Console: viewing Studio data, che
 You can also inspect data locally:
 
 ```bash
-npx prisma studio
+pnpm exec prisma studio
 ```
 
 ## Linking an existing project

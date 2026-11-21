@@ -42,7 +42,7 @@ Run `validate` in your CI pipeline to catch schema errors early:
 
 ```yaml
 - name: Validate Schema
-  run: npx prisma validate
+  run: pnpm exec prisma validate
 ```
 
 ## Common Errors
