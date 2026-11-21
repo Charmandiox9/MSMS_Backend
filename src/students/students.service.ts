@@ -351,13 +351,13 @@ export class StudentsService {
       if (effectiveCareerId && input.admission) {
         data.careerId = effectiveCareerId;
         const cohortYear = Number(input.admission.slice(0, 4));
-        const curriculum = await tx.curriculumVersion.findUnique({
+        const cohort = await tx.curriculumCohort.findUnique({
           where: {
             careerId_cohortYear: { careerId: effectiveCareerId, cohortYear },
           },
-          select: { id: true },
+          select: { curriculumVersionId: true },
         });
-        data.careerCurriculumVersionId = curriculum?.id ?? null;
+        data.careerCurriculumVersionId = cohort?.curriculumVersionId ?? null;
       }
       const student = id
         ? await tx.student.update({ where: { id }, data })
@@ -625,16 +625,16 @@ export class StudentsService {
         const studentId = byEmail.get(row.email);
         if (!studentId) continue;
         const career = careerFor(row);
-        const curriculum =
+        const cohort =
           career && row.admission
-            ? await tx.curriculumVersion.findUnique({
+            ? await tx.curriculumCohort.findUnique({
                 where: {
                   careerId_cohortYear: {
                     careerId: career.id,
                     cohortYear: Number(row.admission.slice(0, 4)),
                   },
                 },
-                select: { id: true },
+                select: { curriculumVersionId: true },
               })
             : null;
         await tx.student.update({
@@ -651,7 +651,7 @@ export class StudentsService {
             maternalSurname: row.maternalSurname ?? null,
             birthDate: row.birthDate ?? null,
             careerId: career?.id ?? null,
-            careerCurriculumVersionId: curriculum?.id ?? null,
+            careerCurriculumVersionId: cohort?.curriculumVersionId ?? null,
           },
         });
       }

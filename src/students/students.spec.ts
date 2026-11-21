@@ -42,6 +42,7 @@ describe('Módulo de estudiantes', () => {
     teachingAssistant: { findMany: jest.fn() },
     career: { findMany: jest.fn() },
     curriculumVersion: { findUnique: jest.fn() },
+    curriculumCohort: { findUnique: jest.fn() },
     studentEnrollment: {
       findMany: jest.fn(),
       createMany: jest.fn(),
@@ -330,7 +331,9 @@ describe('Módulo de estudiantes', () => {
     prisma.career.findMany.mockResolvedValue([
       { id: careerId, code: '8506', name: 'Ingeniería Marina' },
     ]);
-    prisma.curriculumVersion.findUnique.mockResolvedValue({ id: curriculumId });
+    prisma.curriculumCohort.findUnique.mockResolvedValue({
+      curriculumVersionId: curriculumId,
+    });
     prisma.student.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: studentId, email: 'ana@example.com' }]);
@@ -358,9 +361,9 @@ describe('Módulo de estudiantes', () => {
         ],
       }),
     );
-    expect(prisma.curriculumVersion.findUnique).toHaveBeenCalledWith({
+    expect(prisma.curriculumCohort.findUnique).toHaveBeenCalledWith({
       where: { careerId_cohortYear: { careerId, cohortYear: 2026 } },
-      select: { id: true },
+      select: { curriculumVersionId: true },
     });
     expect(prisma.student.update).toHaveBeenCalledWith(
       expect.objectContaining({

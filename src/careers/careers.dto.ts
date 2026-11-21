@@ -30,22 +30,47 @@ export class CurriculumCourseInputDto {
   termNumber!: number;
 }
 
-export class CurriculumVersionInputDto {
+class CohortYearDto {
   @Type(() => Number)
   @IsInt()
   @Min(1900)
   @Max(2200)
   cohortYear!: number;
+}
 
+export class CurriculumCourseNameInputDto {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  courseName!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  termNumber!: number;
+}
+
+export class UpdateCurriculumVersionDto {
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(300)
   @ValidateNested({ each: true })
   @Type(() => CurriculumCourseInputDto)
-  courses!: CurriculumCourseInputDto[];
+  courses?: CurriculumCourseInputDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => CurriculumCourseNameInputDto)
+  newCourses?: CurriculumCourseNameInputDto[];
 }
 
-export class CreateCareerDto {
+export class CreateCareerDto extends UpdateCurriculumVersionDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string | null;
@@ -67,14 +92,6 @@ export class CreateCareerDto {
   @Min(1900)
   @Max(2200)
   cohortYear!: number;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayNotEmpty()
-  @ArrayMaxSize(300)
-  @ValidateNested({ each: true })
-  @Type(() => CurriculumCourseInputDto)
-  courses?: CurriculumCourseInputDto[];
 
   @IsOptional()
   @IsArray()
@@ -109,29 +126,19 @@ export class UpdateCareerDto {
   isActive?: boolean;
 }
 
-export class AddCurriculumVersionDto extends CurriculumVersionInputDto {}
+export class AddCurriculumVersionDto extends UpdateCurriculumVersionDto {
+  @IsOptional()
+  @IsUUID()
+  existingVersionId?: string;
 
-export class CurriculumCourseNameInputDto {
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  courseName!: string;
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(20)
-  termNumber!: number;
-}
-
-export class ImportCurriculumDto {
   @Type(() => Number)
   @IsInt()
   @Min(1900)
   @Max(2200)
   cohortYear!: number;
+}
 
+export class ImportCurriculumDto extends CohortYearDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(300)
@@ -169,15 +176,6 @@ export class CreateCareerFromCsvDto {
   @ValidateNested({ each: true })
   @Type(() => CurriculumCourseNameInputDto)
   courses!: CurriculumCourseNameInputDto[];
-}
-
-export class UpdateCurriculumVersionDto {
-  @IsArray()
-  @ArrayNotEmpty()
-  @ArrayMaxSize(300)
-  @ValidateNested({ each: true })
-  @Type(() => CurriculumCourseInputDto)
-  courses!: CurriculumCourseInputDto[];
 }
 
 export class DeleteCareerDto {

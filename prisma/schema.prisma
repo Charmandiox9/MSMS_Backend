@@ -496,10 +496,22 @@ model CurriculumVersion {
   career     Career             @relation(fields: [careerId], references: [id], onDelete: Restrict)
   students   Student[]
   courses    CurriculumCourse[]
+  cohorts    CurriculumCohort[]
   createdAt  DateTime           @default(now())
 
   @@unique([careerId, cohortYear])
+  @@unique([id, careerId])
   @@index([careerId])
+}
+
+model CurriculumCohort {
+  careerId            String
+  cohortYear          Int
+  curriculumVersionId String
+  curriculumVersion   CurriculumVersion @relation(fields: [curriculumVersionId, careerId], references: [id, careerId], onDelete: Cascade)
+
+  @@id([careerId, cohortYear])
+  @@index([curriculumVersionId, careerId])
 }
 
 /// A global course included in one version of a career's curriculum.

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AddCurriculumVersionDto,
   CreateCareerDto,
+  CurriculumCourseInputDto,
   ImportCurriculumDto,
   UpdateCareerDto,
   UpdateCurriculumVersionDto,
@@ -20,6 +21,10 @@ const careerInclude = {
     orderBy: { cohortYear: 'desc' as const },
     include: {
       _count: { select: { students: true } },
+      cohorts: {
+        orderBy: { cohortYear: 'asc' as const },
+        select: { cohortYear: true },
+      },
       courses: {
         orderBy: [
           { termNumber: 'asc' as const },
@@ -52,7 +57,11 @@ export class CareersService {
         isActive: true,
         curriculumVersions: {
           orderBy: { cohortYear: 'desc' },
-          select: { id: true, cohortYear: true },
+          select: {
+            id: true,
+            cohortYear: true,
+            cohorts: careerInclude.curriculumVersions.include.cohorts,
+          },
         },
       },
     });
@@ -85,10 +94,8 @@ export class CareersService {
       .toLocaleLowerCase('es');
   }
 
-  private async createImportedVersion(
+  private async resolveNamedCourses(
     tx: Prisma.TransactionClient,
-    careerId: string,
-    cohortYear: number,
     input: ImportCurriculumDto['courses'],
   ) {
     const catalog = await tx.course.findMany({
@@ -124,28 +131,35 @@ export class CareersService {
         resolved.set(this.normalizeCourseName(course.name), course.id);
     }
 
-    const courseIds = input.map(({ courseName }) => {
+    return input.map(({ courseName, termNumber }) => {
       const courseId = resolved.get(this.normalizeCourseName(courseName));
       if (!courseId)
         throw new BadRequestException(
           `No fue posible resolver la asignatura «${courseName}»`,
         );
-      return courseId;
+      return { courseId, termNumber };
     });
+  }
 
-    return tx.curriculumVersion.create({
-      data: {
-        careerId,
-        cohortYear,
-        courses: {
-          create: input.map(({ termNumber }, index) => ({
-            courseId: courseIds[index],
-            termNumber,
-          })),
-        },
-      },
-      include: careerInclude.curriculumVersions.include,
-    });
+  private async resolveManualCourses(
+    tx: Prisma.TransactionClient,
+    { courses = [], newCourses }: UpdateCurriculumVersionDto,
+  ) {
+    const selected = courses ?? [];
+    const total = selected.length + (newCourses?.length ?? 0);
+    if (total < 1 || total > 300)
+      throw new BadRequestException(
+        'La malla debe tener entre 1 y 300 asignaturas',
+      );
+    if (selected.length)
+      await this.assertCoursesExist(
+        tx,
+        selected.map(({ courseId }) => courseId),
+      );
+    const named = newCourses
+      ? await this.resolveNamedCourses(tx, newCourses)
+      : [];
+    return [...selected, ...named];
   }
 
   async importVersion(careerId: string, input: ImportCurriculumDto) {
@@ -156,21 +170,28 @@ export class CareersService {
             where: { id: careerId },
           });
           if (!career) throw new NotFoundException('La carrera no existe');
-          return this.createImportedVersion(
+          return this.createVersion(
             tx,
             careerId,
             input.cohortYear,
-            input.courses,
+            await this.resolveNamedCourses(tx, input.courses),
           );
         },
-        { maxWait: 10_000, timeout: 60_000 },
+        {
+          maxWait: 10_000,
+          timeout: 60_000,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
       );
     } catch (cause: unknown) {
-      if (
-        cause instanceof Prisma.PrismaClientKnownRequestError &&
-        cause.code === 'P2002'
-      )
-        throw new ConflictException('Ya existe una malla para esa cohorte');
+      if (cause instanceof Prisma.PrismaClientKnownRequestError) {
+        if (cause.code === 'P2002')
+          throw new ConflictException('Ya existe una malla para esa cohorte');
+        if (cause.code === 'P2034')
+          throw new ConflictException(
+            'Los datos cambiaron. Recarga e intenta nuevamente',
+          );
+      }
       throw cause;
     }
   }
@@ -178,20 +199,16 @@ export class CareersService {
   private async createVersion(
     tx: Prisma.TransactionClient,
     careerId: string,
-    input: AddCurriculumVersionDto,
-    coursesAlreadyValidated = false,
+    cohortYear: number,
+    courses: CurriculumCourseInputDto[],
   ) {
-    if (!coursesAlreadyValidated)
-      await this.assertCoursesExist(
-        tx,
-        input.courses.map(({ courseId }) => courseId),
-      );
     return tx.curriculumVersion.create({
       data: {
         careerId,
-        cohortYear: input.cohortYear,
+        cohortYear,
+        cohorts: { create: { cohortYear } },
         courses: {
-          create: input.courses.map(({ courseId, termNumber }) => ({
+          create: courses.map(({ courseId, termNumber }) => ({
             courseId,
             termNumber,
           })),
@@ -205,17 +222,15 @@ export class CareersService {
     try {
       return await this.prisma.$transaction(
         async (tx) => {
-          const manualCourses = input.courses;
+          const hasManualCourses = Boolean(input.courses || input.newCourses);
           const importedCourses = input.curriculumCourses;
-          if (Boolean(manualCourses) === Boolean(importedCourses))
+          if (hasManualCourses === Boolean(importedCourses))
             throw new BadRequestException(
               'Debes agregar asignaturas manualmente o importar una malla CSV',
             );
-          if (manualCourses)
-            await this.assertCoursesExist(
-              tx,
-              manualCourses.map(({ courseId }) => courseId),
-            );
+          const courses = importedCourses
+            ? await this.resolveNamedCourses(tx, importedCourses)
+            : await this.resolveManualCourses(tx, input);
           const career = await tx.career.create({
             data: {
               code: input.code?.trim() || null,
@@ -223,30 +238,17 @@ export class CareersService {
               departmentId: input.departmentId,
             },
           });
-          if (importedCourses) {
-            await this.createImportedVersion(
-              tx,
-              career.id,
-              input.cohortYear,
-              importedCourses,
-            );
-          } else if (manualCourses) {
-            await this.createVersion(
-              tx,
-              career.id,
-              {
-                cohortYear: input.cohortYear,
-                courses: manualCourses,
-              },
-              true,
-            );
-          }
+          await this.createVersion(tx, career.id, input.cohortYear, courses);
           return tx.career.findUniqueOrThrow({
             where: { id: career.id },
             include: careerInclude,
           });
         },
-        { maxWait: 10_000, timeout: 60_000 },
+        {
+          maxWait: 10_000,
+          timeout: 60_000,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
       );
     } catch (cause: unknown) {
       if (cause instanceof Prisma.PrismaClientKnownRequestError) {
@@ -257,6 +259,10 @@ export class CareersService {
         if (cause.code === 'P2002')
           throw new ConflictException(
             'El código o nombre de carrera ya existe',
+          );
+        if (cause.code === 'P2034')
+          throw new ConflictException(
+            'Los datos cambiaron. Recarga e intenta nuevamente',
           );
       }
       throw cause;
@@ -351,17 +357,51 @@ export class CareersService {
 
   async addVersion(careerId: string, input: AddCurriculumVersionDto) {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const career = await tx.career.findUnique({ where: { id: careerId } });
-        if (!career) throw new NotFoundException('La carrera no existe');
-        return this.createVersion(tx, careerId, input);
-      });
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const career = await tx.career.findUnique({
+            where: { id: careerId },
+          });
+          if (!career) throw new NotFoundException('La carrera no existe');
+          if (input.existingVersionId) {
+            if (input.courses || input.newCourses)
+              throw new BadRequestException(
+                'Selecciona una malla existente o ingresa asignaturas para una nueva',
+              );
+            const version = await tx.curriculumVersion.findFirst({
+              where: { id: input.existingVersionId, careerId },
+              select: { id: true },
+            });
+            if (!version)
+              throw new NotFoundException(
+                'La versión de malla no existe en la carrera',
+              );
+            await tx.curriculumCohort.create({
+              data: {
+                careerId,
+                cohortYear: input.cohortYear,
+                curriculumVersionId: version.id,
+              },
+            });
+            return tx.curriculumVersion.findUniqueOrThrow({
+              where: { id: version.id },
+              include: careerInclude.curriculumVersions.include,
+            });
+          }
+          const courses = await this.resolveManualCourses(tx, input);
+          return this.createVersion(tx, careerId, input.cohortYear, courses);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
     } catch (cause: unknown) {
-      if (
-        cause instanceof Prisma.PrismaClientKnownRequestError &&
-        cause.code === 'P2002'
-      )
-        throw new ConflictException('Ya existe una malla para esa cohorte');
+      if (cause instanceof Prisma.PrismaClientKnownRequestError) {
+        if (cause.code === 'P2002')
+          throw new ConflictException('Ya existe una malla para esa cohorte');
+        if (cause.code === 'P2034' || cause.code === 'P2003')
+          throw new ConflictException(
+            'Los datos cambiaron. Recarga e intenta nuevamente',
+          );
+      }
       throw cause;
     }
   }
@@ -376,7 +416,10 @@ export class CareersService {
         async (tx) => {
           const version = await tx.curriculumVersion.findFirst({
             where: { id: versionId, careerId },
-            select: { id: true, _count: { select: { students: true } } },
+            select: {
+              id: true,
+              _count: { select: { students: true, cohorts: true } },
+            },
           });
           if (!version)
             throw new NotFoundException('La versión de malla no existe');
@@ -384,15 +427,16 @@ export class CareersService {
             throw new ConflictException(
               'La malla ya está asignada a estudiantes y no puede modificarse',
             );
-          await this.assertCoursesExist(
-            tx,
-            input.courses.map(({ courseId }) => courseId),
-          );
+          if (version._count.cohorts > 1)
+            throw new ConflictException(
+              'La malla ya está compartida por varias cohortes',
+            );
+          const courses = await this.resolveManualCourses(tx, input);
           await tx.curriculumCourse.deleteMany({
             where: { curriculumVersionId: versionId },
           });
           await tx.curriculumCourse.createMany({
-            data: input.courses.map(({ courseId, termNumber }) => ({
+            data: courses.map(({ courseId, termNumber }) => ({
               curriculumVersionId: versionId,
               courseId,
               termNumber,
