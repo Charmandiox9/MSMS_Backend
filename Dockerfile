@@ -16,7 +16,7 @@ RUN pnpm prune --prod --ignore-scripts
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 ENV NODE_ENV=production PORT=3001
-RUN addgroup -S nodejs && adduser -S marsys -G nodejs
+RUN apk add --no-cache ffmpeg && addgroup -S nodejs && adduser -S marsys -G nodejs
 
 FROM base AS migration
 COPY --from=builder --chown=marsys:nodejs /app/package.json ./

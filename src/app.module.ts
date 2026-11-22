@@ -32,6 +32,7 @@ import { TermsAcceptanceGuard } from './legal-terms/terms-acceptance.guard';
 import { CareersModule } from './careers/careers.module';
 import { SemesterBudgetsModule } from './semester-budgets/semester-budgets.module';
 import { TitulationsModule } from './titulations/titulations.module';
+import { EditorialModule } from './editorial/editorial.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -79,6 +80,7 @@ const devProviders =
     CareersModule,
     SemesterBudgetsModule,
     TitulationsModule,
+    EditorialModule,
     HealthModule,
   ],
   controllers: [AppController],

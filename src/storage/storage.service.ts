@@ -41,6 +41,7 @@ export class StorageService implements OnModuleDestroy {
   private readonly presignedUrlExpiresIn: number;
   private readonly client: S3Client | undefined;
   private readonly signingClient: S3Client | undefined;
+  private readonly streamClient: S3Client | undefined;
 
   constructor(private readonly configService: ConfigService) {
     if (
@@ -102,6 +103,12 @@ export class StorageService implements OnModuleDestroy {
       endpoint,
       ...options,
     });
+    // A precomputed Content-MD5 keeps streamed PUTs interoperable with R2 and S3.
+    this.streamClient = new S3Client({
+      endpoint,
+      ...options,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+    });
     this.signingClient =
       isR2 || publicEndpoint === endpoint
         ? this.client
@@ -116,6 +123,7 @@ export class StorageService implements OnModuleDestroy {
 
   onModuleDestroy() {
     this.client?.destroy();
+    this.streamClient?.destroy();
     if (this.signingClient !== this.client) this.signingClient?.destroy();
   }
 
@@ -190,16 +198,40 @@ export class StorageService implements OnModuleDestroy {
     body: Buffer,
     signal: AbortSignal,
   ) {
-    if (!this.client || !this.bucketName)
+    await this.putFile(key, contentType, body, body.length, signal);
+  }
+
+  async uploadStream(
+    key: string,
+    contentType: string,
+    body: Readable,
+    length: number,
+    signal: AbortSignal,
+    contentMd5: string,
+  ) {
+    await this.putFile(key, contentType, body, length, signal, contentMd5);
+  }
+
+  private async putFile(
+    key: string,
+    contentType: string,
+    body: Buffer | Readable,
+    length: number,
+    signal: AbortSignal,
+    contentMd5?: string,
+  ) {
+    const client = contentMd5 ? this.streamClient : this.client;
+    if (!client || !this.bucketName)
       throw new ServiceUnavailableException('Almacenamiento no configurado');
     try {
-      await this.client.send(
+      await client.send(
         new PutObjectCommand({
           Bucket: this.bucketName,
           Key: key,
           Body: body,
           ContentType: contentType,
-          ContentLength: body.length,
+          ContentLength: length,
+          ...(contentMd5 ? { ContentMD5: contentMd5 } : {}),
         }),
         { abortSignal: signal },
       );
@@ -230,7 +262,7 @@ export class StorageService implements OnModuleDestroy {
     }
   }
 
-  async downloadFile(key: string, signal: AbortSignal) {
+  async downloadFile(key: string, signal: AbortSignal, range?: string) {
     if (!this.client || !this.bucketName)
       throw new ServiceUnavailableException('Almacenamiento no configurado');
     try {
@@ -238,11 +270,16 @@ export class StorageService implements OnModuleDestroy {
         new GetObjectCommand({
           Bucket: this.bucketName,
           Key: key,
+          ...(range ? { Range: range } : {}),
         }),
         { abortSignal: signal },
       );
       if (!(result.Body instanceof Readable)) throw new Error('Missing stream');
-      return { body: result.Body, length: result.ContentLength };
+      return {
+        body: result.Body,
+        length: result.ContentLength,
+        ...(result.ContentRange ? { contentRange: result.ContentRange } : {}),
+      };
     } catch (error: unknown) {
       if (
         error &&

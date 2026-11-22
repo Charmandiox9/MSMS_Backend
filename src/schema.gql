@@ -382,6 +382,124 @@ type RepositoryResearchDetail {
   project: RepositoryLinkedRecord
 }
 
+type EditorialFileView {
+  id: ID!
+  kind: EditorialFileKind!
+  language: EditorialLanguage!
+  status: EditorialFileStatus!
+  fileName: String!
+  size: Int
+  duration: Float
+  videoId: ID
+}
+
+enum EditorialFileKind {
+  PDF
+  VIDEO
+  CAPTIONS
+}
+
+enum EditorialLanguage {
+  ES
+  EN
+}
+
+enum EditorialFileStatus {
+  PENDING
+  UPLOADING
+  READY
+  DELETING
+}
+
+type EditorialRevisionView {
+  number: Int!
+  topic: EditorialTopic
+  titleEs: String!
+  summaryEs: String!
+  bodyEs: String!
+  titleEn: String
+  summaryEn: String
+  bodyEn: String
+  destination: EditorialDestination
+  guideId: ID
+  files: [EditorialFileView!]!
+}
+
+enum EditorialTopic {
+  PLATFORM
+  JUSTIFICATIONS
+  DEPARTMENTS_CAREERS
+  SUBJECTS
+  TEACHERS
+  STUDENTS
+  PROJECTS
+  RESEARCH
+  ASSISTANTSHIPS
+  TITULATION
+  REPORTS_CHARTS
+  ADMINISTRATION
+}
+
+enum EditorialDestination {
+  DASHBOARD
+  JUSTIFICATIONS
+  CAREERS
+  SUBJECTS
+  TEACHERS
+  STUDENTS
+  PROJECTS
+  RESEARCH
+  RESEARCH_OUTPUTS
+  ASSISTANTSHIPS
+  TITULATION
+  REPORTS
+  CHARTS
+  SETTINGS
+}
+
+type EditorialPublication {
+  id: ID!
+  kind: EditorialKind!
+  featured: Boolean!
+  firstPublishedAt: DateTime
+  publishedAt: DateTime
+  published: EditorialRevisionView
+}
+
+enum EditorialKind {
+  NEWS
+  GUIDE
+}
+
+type EditorialManagedEntry {
+  id: ID!
+  kind: EditorialKind!
+  featured: Boolean!
+  firstPublishedAt: DateTime
+  publishedAt: DateTime
+  published: EditorialRevisionView
+  status: EditorialStatus!
+  version: Int!
+  updatedAt: DateTime!
+  draft: EditorialRevisionView
+}
+
+enum EditorialStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+type EditorialPage {
+  items: [EditorialPublication!]!
+  total: Int!
+}
+
+type EditorialManagedPage {
+  items: [EditorialManagedEntry!]!
+  total: Int!
+}
+
 type Query {
   hello: String!
   academicReportSemesters: [AcademicChartSemester!]!
@@ -402,6 +520,11 @@ type Query {
   repositoryProjects(filters: RepositoryListFilters): RepositoryListPage!
   repositoryResearch(filters: RepositoryListFilters): RepositoryListPage!
   repositoryResearchOutputs(filters: ResearchOutputListFilters): ResearchOutputListPage!
+  editorialPublications(filters: EditorialFilters): EditorialPage!
+  editorialPublication(id: ID!): EditorialPublication!
+  editorialFeaturedPublication: EditorialPublication
+  editorialManagedEntries(filters: EditorialFilters): EditorialManagedPage!
+  editorialManagedEntry(id: ID!): EditorialManagedEntry!
 }
 
 input AcademicReportQuery {
@@ -457,11 +580,31 @@ input ResearchOutputListFilters {
   sortOrder: String
 }
 
+input EditorialFilters {
+  kind: EditorialKind
+  topic: EditorialTopic
+  format: EditorialFormat
+  search: String
+  page: Int! = 1
+  pageSize: Int! = 20
+}
+
+enum EditorialFormat {
+  TEXT
+  PDF
+  VIDEO
+}
+
 type Mutation {
   saveAssistantshipTariff(input: SaveAssistantshipTariffInput!): AssistantshipTariffOption!
   deleteAssistantshipTariff(id: ID!): Boolean!
   registerAssistantship(input: RegisterAssistantshipInput!): AssistantshipView!
   updateAssistantship(id: ID!, input: RegisterAssistantshipInput!): AssistantshipView!
+  createEditorialEntry(kind: EditorialKind!): EditorialManagedEntry!
+  saveEditorialDraft(input: EditorialDraftInput!): EditorialManagedEntry!
+  publishEditorialEntry(input: EditorialVersionInput!): EditorialManagedEntry!
+  archiveEditorialEntry(input: EditorialVersionInput!): EditorialManagedEntry!
+  setEditorialFeatured(input: EditorialVersionInput!, featured: Boolean!): EditorialManagedEntry!
 }
 
 input SaveAssistantshipTariffInput {
@@ -496,4 +639,24 @@ input AssistantshipScheduleInput {
   startsAtMinute: Int!
   endsAtMinute: Int!
   location: String
+}
+
+input EditorialDraftInput {
+  id: ID!
+  version: Int!
+  topic: EditorialTopic
+  titleEs: String!
+  summaryEs: String!
+  bodyEs: String!
+  titleEn: String
+  summaryEn: String
+  bodyEn: String
+  destination: EditorialDestination
+  guideId: ID
+  fileIds: [ID!]!
+}
+
+input EditorialVersionInput {
+  id: ID!
+  version: Int!
 }

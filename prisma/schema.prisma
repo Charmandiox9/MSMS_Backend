@@ -5,6 +5,160 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum EditorialKind {
+  NEWS
+  GUIDE
+}
+
+enum EditorialStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EditorialTopic {
+  PLATFORM
+  JUSTIFICATIONS
+  DEPARTMENTS_CAREERS
+  SUBJECTS
+  TEACHERS
+  STUDENTS
+  PROJECTS
+  RESEARCH
+  ASSISTANTSHIPS
+  TITULATION
+  REPORTS_CHARTS
+  ADMINISTRATION
+}
+
+enum EditorialDestination {
+  DASHBOARD
+  JUSTIFICATIONS
+  CAREERS
+  SUBJECTS
+  TEACHERS
+  STUDENTS
+  PROJECTS
+  RESEARCH
+  RESEARCH_OUTPUTS
+  ASSISTANTSHIPS
+  TITULATION
+  REPORTS
+  CHARTS
+  SETTINGS
+}
+
+enum EditorialFileKind {
+  PDF
+  VIDEO
+  CAPTIONS
+}
+
+enum EditorialLanguage {
+  ES
+  EN
+}
+
+enum EditorialFileStatus {
+  PENDING
+  UPLOADING
+  READY
+  DELETING
+}
+
+enum EditorialAction {
+  CREATED
+  SAVED
+  PUBLISHED
+  ARCHIVED
+  FEATURED
+  UNFEATURED
+}
+
+model EditorialEntry {
+  id               String              @id @default(uuid())
+  kind             EditorialKind
+  status           EditorialStatus     @default(DRAFT)
+  version          Int                 @default(1)
+  createdById      String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  firstPublishedAt DateTime?
+  publishedAt      DateTime?
+  featured         Boolean             @default(false)
+  draftId          String?             @unique
+  publishedId      String?             @unique
+  draft            EditorialRevision?  @relation("EditorialDraft", fields: [draftId], references: [id], onDelete: SetNull)
+  published        EditorialRevision?  @relation("EditorialPublished", fields: [publishedId], references: [id], onDelete: SetNull)
+  revisions        EditorialRevision[] @relation("EditorialHistory")
+  linkedBy         EditorialRevision[] @relation("EditorialGuide")
+  files            EditorialFile[]
+  events           EditorialEvent[]
+
+  @@index([status, firstPublishedAt, id])
+  @@index([kind, status, firstPublishedAt, id])
+}
+
+model EditorialRevision {
+  id          String                @id @default(uuid())
+  entryId     String
+  entry       EditorialEntry        @relation("EditorialHistory", fields: [entryId], references: [id], onDelete: Cascade)
+  number      Int
+  authorId    String
+  topic       EditorialTopic?
+  titleEs     String                @default("")
+  summaryEs   String                @default("")
+  bodyEs      String                @default("")
+  titleEn     String?
+  summaryEn   String?
+  bodyEn      String?
+  destination EditorialDestination?
+  guideId     String?
+  guide       EditorialEntry?       @relation("EditorialGuide", fields: [guideId], references: [id], onDelete: Restrict)
+  files       EditorialFile[]
+  draftOf     EditorialEntry?       @relation("EditorialDraft")
+  publishedOf EditorialEntry?       @relation("EditorialPublished")
+
+  @@unique([entryId, number])
+  @@index([guideId])
+}
+
+model EditorialFile {
+  id        String              @id @default(uuid())
+  entryId   String
+  entry     EditorialEntry      @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  authorId  String
+  key       String              @unique
+  kind      EditorialFileKind
+  language  EditorialLanguage
+  fileName  String
+  status    EditorialFileStatus @default(PENDING)
+  size      Int?
+  duration  Float?
+  videoId   String?
+  video     EditorialFile?      @relation("EditorialCaptions", fields: [videoId], references: [id], onDelete: Restrict)
+  captions  EditorialFile[]     @relation("EditorialCaptions")
+  revisions EditorialRevision[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([entryId])
+  @@index([videoId])
+  @@index([updatedAt])
+}
+
+model EditorialEvent {
+  id        String          @id @default(uuid())
+  entryId   String
+  entry     EditorialEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  actorId   String
+  action    EditorialAction
+  version   Int
+  createdAt DateTime        @default(now())
+
+  @@index([entryId, createdAt])
+}
+
 datasource db {
   provider = "postgresql"
 }
