@@ -1,10 +1,112 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SemesterBudgetsService } from './semester-budgets.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { UpdateSemesterBudgetDto } from './semester-budgets.dto';
 
 describe('SemesterBudgetsService', () => {
+  it('rejects duplicate module links, regardless of the category names', async () => {
+    const service = new SemesterBudgetsService({} as PrismaService);
+    await expect(
+      service.update('semester-id', {
+        totalAmountClp: 100,
+        allocations: [
+          { name: 'Profesores por hora', amountClp: 20 },
+          { name: 'Docencia', code: 'HOURLY_TEACHERS', amountClp: 30 },
+        ],
+        thresholds: [{ percentage: 80, roleCodes: [] }],
+      }),
+    ).rejects.toThrow(
+      'Cada categoría presupuestaria solo puede aparecer una vez',
+    );
+  });
+
+  it('does not silently relink an explicitly unlinked category with a reserved name', async () => {
+    const service = new SemesterBudgetsService({} as PrismaService);
+    await expect(
+      service.update('semester-id', {
+        totalAmountClp: 100,
+        allocations: [{ name: 'AYUDANTÍAS', code: null, amountClp: 20 }],
+        thresholds: [{ percentage: 80, roleCodes: [] }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns only the PH allocation and estimated contract commitments for the requested semester', async () => {
+    const decimal = (amount: number) => new Prisma.Decimal(amount);
+    const legacyAllocation = {
+      name: 'Profesores por hora',
+      code: null,
+      amountClp: decimal(15000),
+    };
+    const prisma = {
+      academicSemester: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({
+            name: '2026-20',
+            budget: {
+              allocations: [
+                legacyAllocation,
+                {
+                  name: 'Docencia externa',
+                  code: 'HOURLY_TEACHERS',
+                  amountClp: decimal(25000),
+                },
+              ],
+            },
+          })
+          .mockResolvedValueOnce({
+            name: '2026-20',
+            budget: { allocations: [legacyAllocation] },
+          })
+          .mockResolvedValueOnce({ name: '2026-20', budget: null })
+          .mockResolvedValueOnce(null),
+      },
+      hourlyTeachingContract: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            startsOn: new Date('2026-08-01'),
+            endsOn: new Date('2026-08-31'),
+            directHours: decimal(2),
+            hourlyRateClp: decimal(10000),
+          },
+        ]),
+      },
+    };
+    const service = new SemesterBudgetsService(
+      prisma as unknown as PrismaService,
+    );
+    await expect(service.hourlyTeachersSummary('semester-id')).resolves.toEqual(
+      {
+        semesterName: '2026-20',
+        categoryName: 'Docencia externa',
+        allocatedClp: 25000,
+        estimatedClp: 20000,
+      },
+    );
+    await expect(
+      service.hourlyTeachersSummary('semester-id'),
+    ).resolves.toMatchObject({
+      categoryName: 'Profesores por hora',
+      allocatedClp: 15000,
+    });
+    await expect(
+      service.hourlyTeachersSummary('semester-id'),
+    ).resolves.toMatchObject({
+      categoryName: null,
+      allocatedClp: null,
+      estimatedClp: 20000,
+    });
+    await expect(
+      service.hourlyTeachersSummary('missing'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.hourlyTeachingContract.findMany).toHaveBeenCalledTimes(3);
+    expect(prisma.hourlyTeachingContract.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { semesterId: 'semester-id' } }),
+    );
+  });
+
   it('rejects allocations above the semester budget', async () => {
     const prisma = {} as PrismaService;
     const service = new SemesterBudgetsService(prisma);

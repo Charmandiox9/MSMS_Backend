@@ -30,6 +30,23 @@ describe('Semester budget controllers', () => {
     ).toBeUndefined();
   });
 
+  it('allows teacher-page roles to read the PH summary for the requested semester', async () => {
+    const hourlyTeachersSummary = jest
+      .fn()
+      .mockResolvedValue({ allocatedClp: 8000000 });
+    const controller = new SemesterBudgetSettingsController({
+      hourlyTeachersSummary,
+    } as unknown as SemesterBudgetsService);
+    expect(Reflect.getMetadata(ROLES_KEY, controller.hourlyTeachers)).toEqual([
+      'ACADEMIC_SECRETARY',
+      'ACADEMIC_PROCESS_ANALYST',
+    ]);
+    await expect(controller.hourlyTeachers('semester-id')).resolves.toEqual({
+      allocatedClp: 8000000,
+    });
+    expect(hourlyTeachersSummary).toHaveBeenCalledWith('semester-id');
+  });
+
   it('protects the read-only budget overview for analysts', async () => {
     const overview = jest.fn().mockResolvedValue({ state: 'no-semester' });
     const controller = new SemesterBudgetAlertsController({

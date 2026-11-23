@@ -24,6 +24,17 @@ const inferredCategoryCode = (
   return undefined;
 };
 
+function findCategoryAllocation<
+  T extends { name: string; code: SemesterBudgetCategoryCode | null },
+>(allocations: T[], code: SemesterBudgetCategoryCode) {
+  return (
+    allocations.find((item) => item.code === code) ??
+    allocations.find(
+      (item) => item.code === null && inferredCategoryCode(item.name) === code,
+    )
+  );
+}
+
 const BUDGET_INCLUDE = {
   allocations: { orderBy: { name: 'asc' as const } },
   thresholds: {
@@ -54,6 +65,13 @@ const assistantshipBudgetFields = {
   endsOn: true,
 } as const;
 
+const hourlyContractBudgetFields = {
+  hourlyRateClp: true,
+  directHours: true,
+  startsOn: true,
+  endsOn: true,
+} as const;
+
 @Injectable()
 export class SemesterBudgetsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -73,6 +91,7 @@ export class SemesterBudgetsService {
       allocations:
         budget?.allocations.map((item) => ({
           ...item,
+          code: item.code ?? inferredCategoryCode(item.name) ?? null,
           amountClp: item.amountClp.toNumber(),
         })) ?? [],
       thresholds:
@@ -86,6 +105,15 @@ export class SemesterBudgetsService {
   }
 
   async update(semesterId: string, dto: UpdateSemesterBudgetDto) {
+    if (
+      dto.allocations.some(
+        ({ code, name }) => code === null && inferredCategoryCode(name),
+      )
+    ) {
+      throw new BadRequestException(
+        'Para dejar una categoría sin vínculo, usa un nombre distinto de Ayudantías o Profesores por hora',
+      );
+    }
     const allocations = dto.allocations.map((item) => ({
       ...item,
       code: item.code ?? inferredCategoryCode(item.name),
@@ -218,11 +246,9 @@ export class SemesterBudgetsService {
       include: { budget: { include: { allocations: true } } },
     });
     if (!semester) throw new NotFoundException('Semestre no encontrado');
-    const allocation = semester.budget?.allocations.find(
-      (item) =>
-        item.code === SemesterBudgetCategoryCode.ASSISTANTSHIPS ||
-        inferredCategoryCode(item.name) ===
-          SemesterBudgetCategoryCode.ASSISTANTSHIPS,
+    const allocation = findCategoryAllocation(
+      semester.budget?.allocations ?? [],
+      SemesterBudgetCategoryCode.ASSISTANTSHIPS,
     );
     const records = await this.prisma.assistantship.findMany({
       where: { semesterId },
@@ -264,6 +290,35 @@ export class SemesterBudgetsService {
     };
   }
 
+  async hourlyTeachersSummary(semesterId: string) {
+    const semester = await this.prisma.academicSemester.findUnique({
+      where: { id: semesterId },
+      select: { name: true, budget: { include: { allocations: true } } },
+    });
+    if (!semester) throw new NotFoundException('Semestre no encontrado');
+
+    const allocation = findCategoryAllocation(
+      semester.budget?.allocations ?? [],
+      SemesterBudgetCategoryCode.HOURLY_TEACHERS,
+    );
+    const contracts = await this.prisma.hourlyTeachingContract.findMany({
+      where: { semesterId },
+      select: hourlyContractBudgetFields,
+    });
+    const estimatedClp = contracts.reduce(
+      (total, contract) =>
+        total + Number(calculateHourlyPayment(contract).totalAmountClp),
+      0,
+    );
+
+    return {
+      semesterName: semester.name,
+      categoryName: allocation?.name ?? null,
+      allocatedClp: allocation?.amountClp.toNumber() ?? null,
+      estimatedClp,
+    };
+  }
+
   async overview() {
     const semester = await this.prisma.academicSemester.findFirst({
       where: { isActive: true },
@@ -287,12 +342,7 @@ export class SemesterBudgetsService {
     const [contracts, assistantships] = await Promise.all([
       this.prisma.hourlyTeachingContract.findMany({
         where: { semesterId: semester.id },
-        select: {
-          hourlyRateClp: true,
-          directHours: true,
-          startsOn: true,
-          endsOn: true,
-        },
+        select: hourlyContractBudgetFields,
       }),
       this.prisma.assistantship.findMany({
         where: { semesterId: semester.id },

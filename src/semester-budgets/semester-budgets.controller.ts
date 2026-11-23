@@ -24,6 +24,12 @@ export class SemesterBudgetSettingsController {
     return this.budgets.get(semesterId);
   }
 
+  @Get('hourly-teachers')
+  @Roles('ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
+  hourlyTeachers(@Param('semesterId', ParseUUIDPipe) semesterId: string) {
+    return this.budgets.hourlyTeachersSummary(semesterId);
+  }
+
   @Put()
   update(
     @Param('semesterId', ParseUUIDPipe) semesterId: string,

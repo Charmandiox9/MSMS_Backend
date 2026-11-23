@@ -19,7 +19,7 @@ import {
 export class BudgetAllocationDto {
   @IsOptional()
   @IsEnum(SemesterBudgetCategoryCode)
-  code?: SemesterBudgetCategoryCode;
+  code?: SemesterBudgetCategoryCode | null;
 
   @IsString()
   @MinLength(2)
