@@ -20,10 +20,21 @@ import {
   EditorialVersionInput,
 } from './editorial.graphql';
 import { validatePublication } from './editorial-publication.rules';
+import { visibleEditorialPublication } from './editorial-visibility';
+
+const audienceInclude = {
+  select: { roleId: true, role: { select: { code: true } } },
+} satisfies Prisma.EditorialRevision$audienceRolesArgs;
 
 const revisionInclude = {
   files: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
-  guide: { select: { status: true } },
+  audienceRoles: audienceInclude,
+  guide: {
+    select: {
+      status: true,
+      published: { select: { audienceRoles: audienceInclude } },
+    },
+  },
 } satisfies Prisma.EditorialRevisionInclude;
 
 const managedInclude = {
@@ -42,11 +53,11 @@ const publishedOrder = [
 export class EditorialService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async publications(filters: EditorialFilters) {
+  async publications(filters: EditorialFilters, role?: string) {
     const where: Prisma.EditorialEntryWhereInput = {
-      status: EditorialStatus.PUBLISHED,
+      ...visibleEditorialPublication(role),
       kind: filters.kind ?? undefined,
-      published: { is: this.revisionFilter(filters) },
+      AND: { published: { is: this.revisionFilter(filters) } },
     };
     const [items, total] = await this.prisma.$transaction(
       [
@@ -61,46 +72,64 @@ export class EditorialService {
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    return { items: items.map((item) => this.readerView(item)), total };
+    return { items: items.map((item) => this.readerView(item, role)), total };
   }
 
-  async publication(id: string) {
+  async publication(id: string, role?: string) {
     const entry = await this.prisma.editorialEntry.findFirst({
       where: {
         id,
-        status: EditorialStatus.PUBLISHED,
+        ...visibleEditorialPublication(role),
         publishedId: { not: null },
       },
       include: publishedInclude,
     });
     if (!entry) throw new NotFoundException('Publicación no disponible');
-    return this.readerView(entry);
+    return this.readerView(entry, role);
   }
 
-  async featuredPublication() {
-    const entry = await this.prisma.editorialEntry.findFirst({
-      where: {
-        featured: true,
-        status: EditorialStatus.PUBLISHED,
-        kind: EditorialKind.NEWS,
-      },
-      include: publishedInclude,
+  async featuredPublication(role?: string) {
+    const findFeatured = (
+      audienceRoles: Prisma.EditorialRevisionRoleListRelationFilter,
+    ) =>
+      this.prisma.editorialEntry.findFirst({
+        where: {
+          featured: true,
+          status: EditorialStatus.PUBLISHED,
+          kind: EditorialKind.NEWS,
+          published: { is: { audienceRoles } },
+        },
+        orderBy: [{ featuredAt: 'desc' }, ...publishedOrder],
+        include: publishedInclude,
+      });
+    const targeted = role
+      ? await findFeatured({ some: { role: { code: role } } })
+      : null;
+    const entry = targeted ?? (await findFeatured({ none: {} }));
+    return entry ? this.readerView(entry, role) : null;
+  }
+
+  roles() {
+    return this.prisma.role.findMany({
+      select: { code: true, name: true },
+      orderBy: { name: 'asc' },
     });
-    return entry ? this.readerView(entry) : null;
   }
 
   async managedEntries(filters: EditorialFilters) {
     const revision = this.revisionFilter(filters);
     const where: Prisma.EditorialEntryWhereInput = {
       kind: filters.kind ?? undefined,
-      ...(Object.keys(revision).length
-        ? {
-            OR: [
-              { draft: { is: revision } },
-              { draftId: null, published: { is: revision } },
-            ],
-          }
-        : {}),
+      ...(filters.publishedOnly
+        ? { status: EditorialStatus.PUBLISHED, published: { is: revision } }
+        : Object.keys(revision).length
+          ? {
+              OR: [
+                { draft: { is: revision } },
+                { draftId: null, published: { is: revision } },
+              ],
+            }
+          : {}),
     };
     const [items, total] = await this.prisma.$transaction(
       [
@@ -203,10 +232,27 @@ export class EditorialService {
           guideId: input.guideId ?? null,
         };
         const files = attachedFiles.map(({ id }) => ({ id }));
+        const roles = await this.audienceRoleIds(
+          tx,
+          input.roleCodes,
+          (entry.draft ?? entry.published)?.audienceRoles ?? [],
+        );
         if (entry.draftId) {
+          const audienceRoles = roles.length
+            ? {
+                deleteMany: {
+                  roleId: { notIn: roles.map(({ roleId }) => roleId) },
+                },
+                createMany: { data: roles, skipDuplicates: true },
+              }
+            : { deleteMany: {} };
           await tx.editorialRevision.update({
             where: { id: entry.draftId },
-            data: { ...content, files: { set: files } },
+            data: {
+              ...content,
+              files: { set: files },
+              ...(input.roleCodes != null ? { audienceRoles } : {}),
+            },
           });
           return {};
         }
@@ -216,6 +262,9 @@ export class EditorialService {
             number: entry.version + 1,
             entryId: entry.id,
             files: { connect: files },
+            ...(roles.length
+              ? { audienceRoles: { createMany: { data: roles } } }
+              : {}),
           },
         });
         return { draftId: draft.id };
@@ -265,7 +314,11 @@ export class EditorialService {
           throw new BadRequestException(
             'Solo se pueden archivar publicaciones',
           );
-        return { status: EditorialStatus.ARCHIVED, featured: false };
+        return {
+          status: EditorialStatus.ARCHIVED,
+          featured: false,
+          featuredAt: null,
+        };
       },
     );
   }
@@ -279,7 +332,7 @@ export class EditorialService {
       input,
       actorId,
       featured ? EditorialAction.FEATURED : EditorialAction.UNFEATURED,
-      async (tx, entry) => {
+      async (_tx, entry) => {
         if (
           entry.status !== EditorialStatus.PUBLISHED ||
           entry.kind !== EditorialKind.NEWS
@@ -288,27 +341,27 @@ export class EditorialService {
             'Solo se pueden destacar novedades publicadas',
           );
         }
-        if (featured && !entry.featured) {
-          const previous = await tx.editorialEntry.findFirst({
-            where: { featured: true },
-          });
-          if (previous) {
-            const unset = await tx.editorialEntry.update({
-              where: { id: previous.id },
-              data: { featured: false, version: { increment: 1 } },
-            });
-            await this.recordEvent(
-              tx,
-              unset.id,
-              unset.version,
-              actorId,
-              EditorialAction.UNFEATURED,
-            );
-          }
-        }
-        return { featured };
+        return { featured, featuredAt: featured ? new Date() : null };
       },
     );
+  }
+
+  private async audienceRoleIds(
+    tx: Prisma.TransactionClient,
+    codes: string[] | undefined,
+    current: { roleId: string }[],
+  ) {
+    if (codes == null) return current.map(({ roleId }) => ({ roleId }));
+    if (!codes.length) return [];
+    const roles = await tx.role.findMany({
+      where: { code: { in: codes } },
+      select: { id: true },
+    });
+    if (roles.length !== codes.length)
+      throw new BadRequestException(
+        'La audiencia incluye un rol que no está en el catálogo',
+      );
+    return roles.map(({ id }) => ({ roleId: id }));
   }
 
   private revisionFilter(
@@ -345,14 +398,20 @@ export class EditorialService {
     entry: Prisma.EditorialEntryGetPayload<{
       include: typeof publishedInclude;
     }>,
+    role?: string,
   ) {
     const published = entry.published;
+    const guide = published?.guide;
+    const guideAudience = guide?.published?.audienceRoles;
     return {
       ...entry,
       published: published && {
         ...published,
         guideId:
-          published.guide?.status === EditorialStatus.PUBLISHED
+          guide?.status === EditorialStatus.PUBLISHED &&
+          guideAudience &&
+          (!guideAudience.length ||
+            guideAudience.some(({ role: option }) => option.code === role))
             ? published.guideId
             : null,
       },

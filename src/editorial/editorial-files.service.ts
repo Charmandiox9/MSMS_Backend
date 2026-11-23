@@ -34,6 +34,7 @@ import {
   verifyStorageTransfer,
 } from '../storage/storage-transfer-token';
 import { EditorialAccessGuard } from './editorial-access.guard';
+import { editorialAudience } from './editorial-visibility';
 import {
   editorialFileRules,
   validateEditorialFile,
@@ -303,18 +304,18 @@ export class EditorialFilesService implements OnModuleInit, OnModuleDestroy {
     suppliedRole?: string,
   ) {
     const role = preview
-      ? (suppliedRole ?? (user.roles.length === 1 ? user.roles[0] : undefined))
-      : undefined;
+      ? this.access.requestedRole(user, suppliedRole)
+      : await this.access.readerRole(user, suppliedRole);
     if (preview && (!role || !(await this.access.canManage(user.id, role)))) {
       throw new ForbiddenException(
         'El rol activo no puede previsualizar contenido editorial',
       );
     }
-    await this.visibleFile(id, user.id, preview);
+    await this.visibleFile(id, user.id, preview, role);
     const token = signStorageTransfer(
       {
         action: 'download',
-        key: JSON.stringify([id, user.id, role ?? null]),
+        key: JSON.stringify([id, user.id, role ?? null, preview]),
         expiresAt: Date.now() + expiresIn * 1000,
       },
       this.ticketSecret(),
@@ -340,19 +341,26 @@ export class EditorialFilesService implements OnModuleInit, OnModuleDestroy {
     const payload: unknown = JSON.parse(claims.key);
     if (
       !Array.isArray(payload) ||
-      payload.length !== 3 ||
+      (payload.length !== 3 && payload.length !== 4) ||
       payload[0] !== id ||
       payload[1] !== userId ||
-      (payload[2] !== null && typeof payload[2] !== 'string')
+      (payload[2] !== null && typeof payload[2] !== 'string') ||
+      (payload.length === 4 && typeof payload[3] !== 'boolean')
     ) {
       throw new UnauthorizedException(
         'El acceso temporal no corresponde al archivo',
       );
     }
     const role = typeof payload[2] === 'string' ? payload[2] : undefined;
-    if (role && !(await this.access.canManage(userId, role)))
-      throw new ForbiddenException();
-    const file = await this.visibleFile(id, userId, Boolean(role));
+    // Older tickets only carried a role when issued for editorial preview.
+    const preview = payload.length === 3 ? Boolean(role) : payload[3] === true;
+    if (preview) {
+      if (!role || !(await this.access.canManage(userId, role)))
+        throw new ForbiddenException();
+    } else if (role) {
+      await this.access.assertAssignedRole(userId, role);
+    }
+    const file = await this.visibleFile(id, userId, preview, role);
     const range =
       file.kind === EditorialFileKind.VIDEO
         ? parseEditorialRange(requestedRange, file.size)
@@ -428,7 +436,12 @@ export class EditorialFilesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async visibleFile(id: string, userId: string, preview: boolean) {
+  private async visibleFile(
+    id: string,
+    userId: string,
+    preview: boolean,
+    role?: string,
+  ) {
     const file = await this.prisma.editorialFile.findFirst({
       where: {
         id,
@@ -440,6 +453,7 @@ export class EditorialFilesService implements OnModuleInit, OnModuleDestroy {
           : {
               revisions: {
                 some: {
+                  ...editorialAudience(role),
                   publishedOf: { is: { status: EditorialStatus.PUBLISHED } },
                 },
               },

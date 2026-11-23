@@ -19,6 +19,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -50,6 +51,11 @@ for (const [name, values] of Object.entries({
 
 @InputType()
 export class EditorialFilters {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  publishedOnly?: boolean;
+
   @Field(() => EditorialKind, { nullable: true })
   @IsOptional()
   @IsEnum(EditorialKind)
@@ -152,6 +158,15 @@ export class EditorialDraftInput extends EditorialVersionInput {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   fileIds!: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  roleCodes?: string[];
 }
 
 @ObjectType()
@@ -181,6 +196,13 @@ export class EditorialRevisionView {
   destination!: EditorialDestination | null;
   @Field(() => ID, { nullable: true }) guideId!: string | null;
   @Field(() => [EditorialFileView]) files!: EditorialFileView[];
+  @Field(() => [String]) roleCodes!: string[];
+}
+
+@ObjectType()
+export class EditorialRoleOption {
+  @Field() code!: string;
+  @Field() name!: string;
 }
 
 @ObjectType()

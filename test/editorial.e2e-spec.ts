@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { ForbiddenException } from '@nestjs/common';
 import request from 'supertest';
 import { EditorialAccessGuard } from '../src/editorial/editorial-access.guard';
 import { EditorialFilesService } from '../src/editorial/editorial-files.service';
@@ -59,6 +60,73 @@ describe('Novedades y guías (HTTP y GraphQL)', () => {
       400,
     );
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('valida el rol activo del lector antes de consultar el catálogo y protege las opciones editoriales', async () => {
+    const access = ctx.app.get(EditorialAccessGuard);
+    const membership = jest
+      .spyOn(EditorialAccessGuard.prototype, 'assertAssignedRole')
+      .mockImplementation(async (_id, role) => {
+        if (role !== 'ACADEMIC_SECRETARY') throw new ForbiddenException();
+      });
+    const service = ctx.app.get(EditorialService);
+    const publications = jest
+      .spyOn(service, 'publications')
+      .mockResolvedValue({ items: [], total: 0 });
+    const data = { query: '{ editorialPublications { total } }' };
+    const reader = request(ctx.app.getHttpServer());
+    const cookie = ctx.cookieFor('secretary');
+    const accepted = await reader
+      .post('/api/graphql')
+      .set('Cookie', cookie)
+      .set('X-Marsys-Active-Role', 'ACADEMIC_SECRETARY')
+      .send(data);
+    expect(accepted.body).toEqual({
+      data: { editorialPublications: { total: 0 } },
+    });
+    expect(publications).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'ACADEMIC_SECRETARY',
+    );
+    const rejected = await reader
+      .post('/api/graphql')
+      .set('Cookie', cookie)
+      .set('X-Marsys-Active-Role', 'SYSTEM_ADMIN')
+      .send(data);
+    expect(rejected.body.errors[0].extensions.originalError.statusCode).toBe(
+      403,
+    );
+    expect(membership).toHaveBeenCalledTimes(2);
+    expect(publications).toHaveBeenCalledTimes(1);
+
+    const canManage = jest
+      .spyOn(access, 'canManage')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const roles = jest
+      .spyOn(service, 'roles')
+      .mockResolvedValue([
+        { code: 'ACADEMIC_SECRETARY', name: 'Secretario docente' },
+      ]);
+    const options = { query: '{ editorialRoleOptions { code name } }' };
+    const denied = await reader
+      .post('/api/graphql')
+      .set('Cookie', cookie)
+      .send(options);
+    expect(denied.body.errors[0].extensions.originalError.statusCode).toBe(403);
+    const managed = await reader
+      .post('/api/graphql')
+      .set('Cookie', ctx.cookieFor('admin'))
+      .send(options);
+    expect(managed.body).toEqual({
+      data: {
+        editorialRoleOptions: [
+          { code: 'ACADEMIC_SECRETARY', name: 'Secretario docente' },
+        ],
+      },
+    });
+    expect(roles).toHaveBeenCalledTimes(1);
+    expect(canManage).toHaveBeenCalledTimes(2);
   });
 
   it('expone una respuesta parcial para cápsulas y devuelve 416 para un rango inválido', async () => {

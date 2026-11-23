@@ -38,7 +38,12 @@ describe('EditorialFilesService', () => {
     };
   };
   let storage: { uploadStream: jest.Mock; downloadFile: jest.Mock };
-  let guard: { canManage: jest.Mock };
+  let guard: {
+    canManage: jest.Mock;
+    requestedRole: jest.Mock;
+    readerRole: jest.Mock;
+    assertAssignedRole: jest.Mock;
+  };
   let service: EditorialFilesService;
 
   beforeEach(() => {
@@ -50,7 +55,12 @@ describe('EditorialFilesService', () => {
       },
     };
     storage = { uploadStream: jest.fn(), downloadFile: jest.fn() };
-    guard = { canManage: jest.fn().mockResolvedValue(false) };
+    guard = {
+      canManage: jest.fn().mockResolvedValue(false),
+      requestedRole: jest.fn().mockReturnValue(reader.roles[0]),
+      readerRole: jest.fn().mockResolvedValue(reader.roles[0]),
+      assertAssignedRole: jest.fn().mockResolvedValue(undefined),
+    };
     service = new EditorialFilesService(
       prisma as unknown as PrismaService,
       storage as unknown as StorageService,
@@ -162,9 +172,51 @@ describe('EditorialFilesService', () => {
       where: {
         id: video.id,
         status: 'READY',
-        revisions: { some: { publishedOf: { is: { status: 'PUBLISHED' } } } },
+        revisions: {
+          some: {
+            OR: [
+              { audienceRoles: { none: {} } },
+              {
+                audienceRoles: {
+                  some: { role: { code: 'ACADEMIC_SECRETARY' } },
+                },
+              },
+            ],
+            publishedOf: { is: { status: 'PUBLISHED' } },
+          },
+        },
       },
     });
+    expect(storage.downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects a previously issued reading ticket when its role is removed', async () => {
+    prisma.editorialFile.findFirst.mockResolvedValue(video);
+    const { url } = await service.issueAccess(
+      video.id,
+      reader,
+      false,
+      reader.roles[0],
+    );
+    const token =
+      new URL(url, 'http://localhost').searchParams.get('token') ?? undefined;
+    guard.assertAssignedRole.mockRejectedValueOnce(
+      new Error('assignment revoked'),
+    );
+    await expect(
+      service.download(
+        video.id,
+        reader.id,
+        token,
+        'bytes=0-1',
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('assignment revoked');
+    expect(guard.assertAssignedRole).toHaveBeenCalledWith(
+      reader.id,
+      reader.roles[0],
+    );
+    expect(guard.canManage).not.toHaveBeenCalled();
     expect(storage.downloadFile).not.toHaveBeenCalled();
   });
 

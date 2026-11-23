@@ -423,6 +423,7 @@ type EditorialRevisionView {
   destination: EditorialDestination
   guideId: ID
   files: [EditorialFileView!]!
+  roleCodes: [String!]!
 }
 
 enum EditorialTopic {
@@ -455,6 +456,11 @@ enum EditorialDestination {
   REPORTS
   CHARTS
   SETTINGS
+}
+
+type EditorialRoleOption {
+  code: String!
+  name: String!
 }
 
 type EditorialPublication {
@@ -523,6 +529,7 @@ type Query {
   editorialPublications(filters: EditorialFilters): EditorialPage!
   editorialPublication(id: ID!): EditorialPublication!
   editorialFeaturedPublication: EditorialPublication
+  editorialRoleOptions: [EditorialRoleOption!]!
   editorialManagedEntries(filters: EditorialFilters): EditorialManagedPage!
   editorialManagedEntry(id: ID!): EditorialManagedEntry!
 }
@@ -581,6 +588,7 @@ input ResearchOutputListFilters {
 }
 
 input EditorialFilters {
+  publishedOnly: Boolean
   kind: EditorialKind
   topic: EditorialTopic
   format: EditorialFormat
@@ -654,6 +662,7 @@ input EditorialDraftInput {
   destination: EditorialDestination
   guideId: ID
   fileIds: [ID!]!
+  roleCodes: [String!]
 }
 
 input EditorialVersionInput {

@@ -4,7 +4,10 @@ import { StorageModule } from '../storage/storage.module';
 import { EditorialAccessGuard } from './editorial-access.guard';
 import { EditorialFilesController } from './editorial-files.controller';
 import { EditorialFilesService } from './editorial-files.service';
-import { EditorialResolver } from './editorial.resolver';
+import {
+  EditorialResolver,
+  EditorialRevisionResolver,
+} from './editorial.resolver';
 import { EditorialService } from './editorial.service';
 
 @Module({
@@ -14,6 +17,7 @@ import { EditorialService } from './editorial.service';
     EditorialAccessGuard,
     EditorialFilesService,
     EditorialResolver,
+    EditorialRevisionResolver,
     EditorialService,
   ],
 })

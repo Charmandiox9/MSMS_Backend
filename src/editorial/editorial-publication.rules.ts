@@ -8,7 +8,7 @@ import type { EditorialRevisionView } from './editorial.graphql';
 
 export function validatePublication(
   kind: EditorialKind,
-  revision: EditorialRevisionView,
+  revision: Omit<EditorialRevisionView, 'roleCodes'>,
 ) {
   if (!revision.topic || !revision.titleEs || !revision.summaryEs) {
     throw new BadRequestException(

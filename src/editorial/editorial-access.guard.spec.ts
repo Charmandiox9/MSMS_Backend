@@ -61,4 +61,31 @@ describe('editorial authorizations', () => {
       select: { id: true },
     });
   });
+
+  it('uses only the assigned role requested for reading and falls back to global content for a multi-role account without a selection', async () => {
+    const reader = {
+      id: 'reader',
+      email: '',
+      displayName: '',
+      roles: ['ACADEMIC_SECRETARY', 'TEACHING_SUPPORT_COORDINATOR'],
+    };
+    await expect(guard.readerRole(reader)).resolves.toBeUndefined();
+    findFirst
+      .mockResolvedValueOnce({ id: 'reader' })
+      .mockResolvedValueOnce(null);
+    await expect(guard.readerRole(reader, reader.roles[1])).resolves.toBe(
+      reader.roles[1],
+    );
+    await expect(
+      guard.readerRole(reader, 'SYSTEM_ADMIN'),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: {
+        id: 'reader',
+        isActive: true,
+        userRoles: { some: { role: { code: 'SYSTEM_ADMIN' } } },
+      },
+      select: { id: true },
+    });
+  });
 });

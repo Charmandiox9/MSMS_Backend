@@ -6,6 +6,7 @@ import type {
 import { validatePublication } from './editorial-publication.rules';
 
 const revision: EditorialRevisionView = {
+  roleCodes: [],
   number: 1,
   topic: EditorialTopic.STUDENTS,
   titleEs: 'Una guía',

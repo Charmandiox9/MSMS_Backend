@@ -86,6 +86,7 @@ model EditorialEntry {
   firstPublishedAt DateTime?
   publishedAt      DateTime?
   featured         Boolean             @default(false)
+  featuredAt       DateTime?
   draftId          String?             @unique
   publishedId      String?             @unique
   draft            EditorialRevision?  @relation("EditorialDraft", fields: [draftId], references: [id], onDelete: SetNull)
@@ -116,11 +117,22 @@ model EditorialRevision {
   guideId     String?
   guide       EditorialEntry?       @relation("EditorialGuide", fields: [guideId], references: [id], onDelete: Restrict)
   files       EditorialFile[]
+  audienceRoles EditorialRevisionRole[]
   draftOf     EditorialEntry?       @relation("EditorialDraft")
   publishedOf EditorialEntry?       @relation("EditorialPublished")
 
   @@unique([entryId, number])
   @@index([guideId])
+}
+
+model EditorialRevisionRole {
+  revisionId String
+  roleId     String
+  revision   EditorialRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  role       Role              @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([revisionId, roleId])
+  @@index([roleId, revisionId])
 }
 
 model EditorialFile {
@@ -973,6 +985,7 @@ model Role {
   preloads              PreloadedUserRole[]
   permissions           RolePermission[]
   budgetAlertThresholds SemesterBudgetThresholdRole[]
+  editorialAudiences    EditorialRevisionRole[]
   createdAt             DateTime                      @default(now())
   updatedAt             DateTime                      @updatedAt
 }

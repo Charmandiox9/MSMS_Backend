@@ -14,7 +14,7 @@ import {
   ResearchOutputListRecordResolver,
 } from '../src/academic-repository/repository.resolver';
 import { AppResolver } from '../src/app.resolver';
-import { EditorialResolver } from '../src/editorial/editorial.resolver';
+import { EditorialResolver, EditorialRevisionResolver } from '../src/editorial/editorial.resolver';
 
 async function generate() {
   const app = await NestFactory.createApplicationContext(
@@ -32,6 +32,7 @@ async function generate() {
         RepositoryListRecordResolver,
         ResearchOutputListRecordResolver,
         EditorialResolver,
+        EditorialRevisionResolver,
       ]);
     writeFileSync(
       'src/schema.gql',
