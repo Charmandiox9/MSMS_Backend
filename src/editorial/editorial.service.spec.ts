@@ -2,8 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { EditorialKind, EditorialStatus, EditorialTopic } from '@prisma/client';
+import {
+  EditorialKind,
+  EditorialStatus,
+  EditorialTopic,
+  Prisma,
+} from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import { EditorialFilters } from './editorial.graphql';
 import { EditorialService } from './editorial.service';
@@ -69,6 +75,10 @@ describe('EditorialService', () => {
 
   it('publishes the new revision atomically and retains the original date', async () => {
     await service.publish({ id, version: 4 }, actorId);
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 15_000,
+    });
     expect(db.editorialEntry.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id, version: 4 },
@@ -84,6 +94,21 @@ describe('EditorialService', () => {
     expect(db.editorialEvent.create).toHaveBeenCalledWith({
       data: { entryId: id, actorId, action: 'PUBLISHED', version: 5 },
     });
+  });
+
+  it('reports an expired editorial transaction as temporarily unavailable', async () => {
+    db.editorialEvent.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Transaction expired', {
+        code: 'P2028',
+        clientVersion: 'test',
+        meta: { timeout: 15_000, timeTaken: 15_100 },
+      }),
+    );
+
+    await expect(
+      service.publish({ id, version: 4 }, actorId),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an obsolete version without modifying the publication', async () => {

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   EditorialAction,
@@ -21,6 +22,8 @@ import {
 } from './editorial.graphql';
 import { validatePublication } from './editorial-publication.rules';
 import { visibleEditorialPublication } from './editorial-visibility';
+
+const editorialTransactionTimeoutMs = 15_000;
 
 const audienceInclude = {
   select: { roleId: true, role: { select: { code: true } } },
@@ -466,13 +469,19 @@ export class EditorialService {
     try {
       return await this.prisma.$transaction(operation, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: editorialTransactionTimeoutMs,
       });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        ['P2034', 'P2002', 'P2025'].includes(error.code)
-      ) {
-        throw this.editConflict();
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (['P2034', 'P2002', 'P2025'].includes(error.code)) {
+          throw this.editConflict();
+        }
+        if (error.code === 'P2028') {
+          throw new ServiceUnavailableException(
+            'La operación editorial no pudo completarse. Recarga la entrada y vuelve a intentarlo',
+            { cause: error },
+          );
+        }
       }
       throw error;
     }
