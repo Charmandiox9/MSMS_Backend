@@ -208,6 +208,28 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+enum SystemAuditAction {
+  PRELOAD_CREATED
+  PRELOAD_CANCELLED
+  ROLE_ASSIGNED
+  ROLE_REVOKED
+  ACCOUNT_ACTIVATED
+  ACCOUNT_DEACTIVATED
+  ACCOUNT_DELETED
+}
+
+model SystemAuditEvent {
+  id        String            @id @default(uuid())
+  action    SystemAuditAction
+  actorId   String
+  targetId  String
+  roleCodes String[]          @default([])
+  createdAt DateTime          @default(now())
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([action, createdAt(sort: Desc), id(sort: Desc)])
+}
+
 enum AcademicImportType {
   PROJECTS
   RESEARCH

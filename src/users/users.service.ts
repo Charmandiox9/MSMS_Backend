@@ -85,7 +85,7 @@ export class UsersService {
     };
   }
 
-  async preloadUser(email: string, roleIds: string[]) {
+  async preloadUser(email: string, roleIds: string[], actorId: string) {
     const normalizedEmail = email.trim().toLowerCase();
     const uniqueRoleIds = [...new Set(roleIds)];
 
@@ -116,7 +116,7 @@ export class UsersService {
           }),
           transaction.role.findMany({
             where: { id: { in: uniqueRoleIds } },
-            select: { id: true },
+            select: { code: true },
           }),
         ]);
 
@@ -129,7 +129,7 @@ export class UsersService {
           throw new NotFoundException('Uno o más roles no existen');
         }
 
-        return transaction.preloadedUser.create({
+        const preload = await transaction.preloadedUser.create({
           data: {
             email: normalizedEmail,
             roles: {
@@ -149,6 +149,15 @@ export class UsersService {
             },
           },
         });
+        await transaction.systemAuditEvent.create({
+          data: {
+            action: 'PRELOAD_CREATED',
+            actorId,
+            targetId: preload.id,
+            roleCodes: roles.map(({ code }) => code).sort(),
+          },
+        });
+        return preload;
       });
     } catch (error) {
       if (
@@ -163,16 +172,18 @@ export class UsersService {
     }
   }
 
-  async cancelPreload(id: string) {
-    const result = await this.prisma.preloadedUser.deleteMany({
-      where: { id },
+  async cancelPreload(id: string, actorId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.preloadedUser.deleteMany({ where: { id } });
+      if (!result.count) throw new NotFoundException('Precarga no encontrada');
+      await tx.systemAuditEvent.create({
+        data: { action: 'PRELOAD_CANCELLED', actorId, targetId: id },
+      });
     });
-    if (result.count === 0)
-      throw new NotFoundException('Precarga no encontrada');
     return { success: true };
   }
 
-  async assignRole(userId: string, roleId: string) {
+  async assignRole(userId: string, roleId: string, actorId: string) {
     const [user, role] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -180,21 +191,31 @@ export class UsersService {
       }),
       this.prisma.role.findUnique({
         where: { id: roleId },
-        select: { id: true },
+        select: { code: true },
       }),
     ]);
     if (!user || !role)
       throw new NotFoundException('Usuario o rol no encontrado');
-    await this.prisma.userRole.upsert({
-      where: { userId_roleId: { userId, roleId } },
-      create: { userId, roleId },
-      update: {},
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.userRole.createMany({
+        data: { userId, roleId },
+        skipDuplicates: true,
+      });
+      if (result.count)
+        await tx.systemAuditEvent.create({
+          data: {
+            action: 'ROLE_ASSIGNED',
+            actorId,
+            targetId: userId,
+            roleCodes: [role.code],
+          },
+        });
     });
     await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true };
   }
 
-  async revokeRole(userId: string, roleId: string) {
+  async revokeRole(userId: string, roleId: string, actorId: string) {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { code: true },
@@ -219,7 +240,20 @@ export class UsersService {
           'No se puede revocar el último rol de administrador activo',
         );
     }
-    await this.prisma.userRole.deleteMany({ where: { userId, roleId } });
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.userRole.deleteMany({
+        where: { userId, roleId },
+      });
+      if (result.count)
+        await tx.systemAuditEvent.create({
+          data: {
+            action: 'ROLE_REVOKED',
+            actorId,
+            targetId: userId,
+            roleCodes: [role.code],
+          },
+        });
+    });
     await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true };
   }
@@ -256,9 +290,19 @@ export class UsersService {
         );
     }
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { isActive },
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.user.updateMany({
+        where: { id: userId, isActive: !isActive },
+        data: { isActive },
+      });
+      if (result.count)
+        await tx.systemAuditEvent.create({
+          data: {
+            action: isActive ? 'ACCOUNT_ACTIVATED' : 'ACCOUNT_DEACTIVATED',
+            actorId,
+            targetId: userId,
+          },
+        });
     });
     await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true, isActive };
@@ -310,7 +354,12 @@ export class UsersService {
       );
     }
 
-    await this.prisma.user.delete({ where: { id: userId } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.delete({ where: { id: userId } });
+      await tx.systemAuditEvent.create({
+        data: { action: 'ACCOUNT_DELETED', actorId, targetId: userId },
+      });
+    });
     await this.cache.del(`user:pii:v1:${userId}`);
     return { success: true };
   }

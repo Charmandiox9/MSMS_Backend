@@ -14,6 +14,7 @@ describe('UsersService preloaded users', () => {
       deleteMany: jest.Mock;
     };
     role: { findMany: jest.Mock };
+    systemAuditEvent: { create: jest.Mock };
   };
   let prisma: {
     $transaction: jest.Mock;
@@ -30,6 +31,7 @@ describe('UsersService preloaded users', () => {
         deleteMany: jest.fn(),
       },
       role: { findMany: jest.fn() },
+      systemAuditEvent: { create: jest.fn() },
     };
     prisma = {
       $transaction: jest.fn(
@@ -42,6 +44,7 @@ describe('UsersService preloaded users', () => {
     service = new UsersService(
       prisma as unknown as PrismaService,
       whitelist as unknown as WhitelistService,
+      { del: jest.fn() } as unknown as Cache,
     );
   });
 
@@ -49,12 +52,16 @@ describe('UsersService preloaded users', () => {
     transaction.user.findUnique.mockResolvedValue(null);
     transaction.preloadedUser.findUnique.mockResolvedValue(null);
     transaction.role.findMany.mockResolvedValue([
-      { id: 'role-1' },
-      { id: 'role-2' },
+      { code: 'ACADEMIC_SECRETARY' },
+      { code: 'SYSTEM_ADMIN' },
     ]);
     transaction.preloadedUser.create.mockResolvedValue({ id: 'preload-1' });
 
-    await service.preloadUser('  NEW.USER@UCN.CL ', ['role-1', 'role-2']);
+    await service.preloadUser(
+      '  NEW.USER@UCN.CL ',
+      ['role-1', 'role-2'],
+      'admin-1',
+    );
 
     expect(transaction.user.findUnique).toHaveBeenCalledWith({
       where: { email: 'new.user@ucn.cl' },
@@ -73,6 +80,14 @@ describe('UsersService preloaded users', () => {
         },
       }),
     );
+    expect(transaction.systemAuditEvent.create).toHaveBeenCalledWith({
+      data: {
+        action: 'PRELOAD_CREATED',
+        actorId: 'admin-1',
+        targetId: 'preload-1',
+        roleCodes: ['ACADEMIC_SECRETARY', 'SYSTEM_ADMIN'],
+      },
+    });
   });
 
   it('rejects an email that already belongs to a user', async () => {
@@ -81,7 +96,7 @@ describe('UsersService preloaded users', () => {
     transaction.role.findMany.mockResolvedValue([{ id: 'role-1' }]);
 
     await expect(
-      service.preloadUser('existing@ucn.cl', ['role-1']),
+      service.preloadUser('existing@ucn.cl', ['role-1'], 'admin-1'),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(transaction.preloadedUser.create).not.toHaveBeenCalled();
   });
@@ -92,7 +107,7 @@ describe('UsersService preloaded users', () => {
     transaction.role.findMany.mockResolvedValue([]);
 
     await expect(
-      service.preloadUser('new@ucn.cl', ['unknown-role']),
+      service.preloadUser('new@ucn.cl', ['unknown-role'], 'admin-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(transaction.preloadedUser.create).not.toHaveBeenCalled();
   });
@@ -101,27 +116,49 @@ describe('UsersService preloaded users', () => {
     whitelist.isEmailAllowed.mockReturnValue(false);
 
     await expect(
-      service.preloadUser('outside@example.com', ['role-1']),
+      service.preloadUser('outside@example.com', ['role-1'], 'admin-1'),
     ).rejects.toThrow(
       'El correo no está autorizado para iniciar sesión en la plataforma',
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('audits a successful preload cancellation and skips a missing preload', async () => {
+    transaction.preloadedUser.deleteMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    await expect(
+      service.cancelPreload('preload-1', 'admin-1'),
+    ).resolves.toEqual({ success: true });
+    await expect(
+      service.cancelPreload('missing', 'admin-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(transaction.systemAuditEvent.create).toHaveBeenCalledTimes(1);
+    expect(transaction.systemAuditEvent.create).toHaveBeenCalledWith({
+      data: {
+        action: 'PRELOAD_CANCELLED',
+        actorId: 'admin-1',
+        targetId: 'preload-1',
+      },
+    });
   });
 });
 
 describe('UsersService account administration', () => {
   let service: UsersService;
   let prisma: {
-    user: { findUnique: jest.Mock; update: jest.Mock; delete: jest.Mock };
+    $transaction: jest.Mock;
+    user: { findUnique: jest.Mock; updateMany: jest.Mock; delete: jest.Mock };
     role: { findUnique: jest.Mock };
     userRole: {
       count: jest.Mock;
       findFirst: jest.Mock;
-      upsert: jest.Mock;
+      createMany: jest.Mock;
       deleteMany: jest.Mock;
     };
     justification: { count: jest.Mock };
     justificationStatusHistory: { count: jest.Mock };
+    systemAuditEvent: { create: jest.Mock };
   };
   const cache = { del: jest.fn() };
   const admin = {
@@ -133,16 +170,25 @@ describe('UsersService account administration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma = {
-      user: { findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      $transaction: jest.fn(
+        (operation: (tx: typeof prisma) => Promise<unknown>) =>
+          operation(prisma),
+      ),
+      user: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        delete: jest.fn(),
+      },
       role: { findUnique: jest.fn() },
       userRole: {
         count: jest.fn(),
         findFirst: jest.fn(),
-        upsert: jest.fn(),
-        deleteMany: jest.fn(),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       justification: { count: jest.fn().mockResolvedValue(0) },
       justificationStatusHistory: { count: jest.fn().mockResolvedValue(0) },
+      systemAuditEvent: { create: jest.fn() },
     };
     service = new UsersService(
       prisma as unknown as PrismaService,
@@ -154,29 +200,48 @@ describe('UsersService account administration', () => {
   describe('assignRole', () => {
     it('invalidates the active session profile after granting a role', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
-      prisma.role.findUnique.mockResolvedValue({ id: 'role-1' });
-      await service.assignRole('user-1', 'role-1');
+      prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
+      await service.assignRole('user-1', 'role-1', 'admin-1');
       expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+      expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
+        data: {
+          action: 'ROLE_ASSIGNED',
+          actorId: 'admin-1',
+          targetId: 'user-1',
+          roleCodes: ['ACADEMIC_SECRETARY'],
+        },
+      });
     });
 
     it('invalidates the active session profile after revoking a role', async () => {
       prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
-      await service.revokeRole('user-1', 'role-1');
+      await service.revokeRole('user-1', 'role-1', 'admin-1');
       expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+      expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
+        data: {
+          action: 'ROLE_REVOKED',
+          actorId: 'admin-1',
+          targetId: 'user-1',
+          roleCodes: ['ACADEMIC_SECRETARY'],
+        },
+      });
     });
 
     it('asigna el rol de forma idempotente', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
-      prisma.role.findUnique.mockResolvedValue({ id: 'role-1' });
+      prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
+      prisma.userRole.createMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.assignRole('user-1', 'role-1')).resolves.toEqual({
+      await expect(
+        service.assignRole('user-1', 'role-1', 'admin-1'),
+      ).resolves.toEqual({
         success: true,
       });
-      expect(prisma.userRole.upsert).toHaveBeenCalledWith({
-        where: { userId_roleId: { userId: 'user-1', roleId: 'role-1' } },
-        create: { userId: 'user-1', roleId: 'role-1' },
-        update: {},
+      expect(prisma.userRole.createMany).toHaveBeenCalledWith({
+        data: { userId: 'user-1', roleId: 'role-1' },
+        skipDuplicates: true,
       });
+      expect(prisma.systemAuditEvent.create).not.toHaveBeenCalled();
     });
 
     it('rechaza usuarios o roles inexistentes', async () => {
@@ -184,9 +249,9 @@ describe('UsersService account administration', () => {
       prisma.role.findUnique.mockResolvedValue({ id: 'role-1' });
 
       await expect(
-        service.assignRole('ghost', 'role-1'),
+        service.assignRole('ghost', 'role-1', 'admin-1'),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(prisma.userRole.upsert).not.toHaveBeenCalled();
+      expect(prisma.userRole.createMany).not.toHaveBeenCalled();
     });
   });
 
@@ -196,7 +261,9 @@ describe('UsersService account administration', () => {
       prisma.userRole.count.mockResolvedValue(1);
       prisma.userRole.findFirst.mockResolvedValue({ userId: 'admin-1' });
 
-      await expect(service.revokeRole('admin-1', 'admin-role')).rejects.toThrow(
+      await expect(
+        service.revokeRole('admin-1', 'admin-role', 'admin-1'),
+      ).rejects.toThrow(
         'No se puede revocar el último rol de administrador activo',
       );
       expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
@@ -208,7 +275,7 @@ describe('UsersService account administration', () => {
       prisma.userRole.findFirst.mockResolvedValue({ userId: 'admin-1' });
 
       await expect(
-        service.revokeRole('admin-1', 'admin-role'),
+        service.revokeRole('admin-1', 'admin-role', 'admin-1'),
       ).resolves.toEqual({ success: true });
       expect(prisma.userRole.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'admin-1', roleId: 'admin-role' },
@@ -218,9 +285,9 @@ describe('UsersService account administration', () => {
     it('rechaza un rol inexistente', async () => {
       prisma.role.findUnique.mockResolvedValue(null);
 
-      await expect(service.revokeRole('user-1', 'missing')).rejects.toThrow(
-        'Rol no encontrado',
-      );
+      await expect(
+        service.revokeRole('user-1', 'missing', 'admin-1'),
+      ).rejects.toThrow('Rol no encontrado');
     });
   });
 
@@ -229,7 +296,7 @@ describe('UsersService account administration', () => {
       await expect(
         service.setActive('admin-1', false, 'admin-1'),
       ).rejects.toThrow('No puedes desactivar tu propia cuenta');
-      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('impide desactivar al último administrador activo', async () => {
@@ -249,9 +316,16 @@ describe('UsersService account administration', () => {
       await expect(
         service.setActive('user-9', false, 'admin-1'),
       ).resolves.toEqual({ success: true, isActive: false });
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'user-9' },
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user-9', isActive: true },
         data: { isActive: false },
+      });
+      expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
+        data: {
+          action: 'ACCOUNT_DEACTIVATED',
+          actorId: 'admin-1',
+          targetId: 'user-9',
+        },
       });
       expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-9');
     });
@@ -300,6 +374,13 @@ describe('UsersService account administration', () => {
       ).resolves.toEqual({ success: true });
       expect(prisma.user.delete).toHaveBeenCalledWith({
         where: { id: 'user-9' },
+      });
+      expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
+        data: {
+          action: 'ACCOUNT_DELETED',
+          actorId: 'admin-1',
+          targetId: 'user-9',
+        },
       });
       expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-9');
     });

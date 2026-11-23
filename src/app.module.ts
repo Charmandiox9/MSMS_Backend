@@ -33,6 +33,7 @@ import { CareersModule } from './careers/careers.module';
 import { SemesterBudgetsModule } from './semester-budgets/semester-budgets.module';
 import { TitulationsModule } from './titulations/titulations.module';
 import { EditorialModule } from './editorial/editorial.module';
+import { SystemAuditModule } from './system-audit/system-audit.module';
 
 const devProviders =
   process.env.NODE_ENV !== 'production'
@@ -81,6 +82,7 @@ const devProviders =
     SemesterBudgetsModule,
     TitulationsModule,
     EditorialModule,
+    SystemAuditModule,
     HealthModule,
   ],
   controllers: [AppController],

@@ -68,13 +68,16 @@ export class UsersController {
   }
 
   @Post('preloads')
-  preload(@Body() body: PreloadUserDto) {
-    return this.users.preloadUser(body.email, body.roleIds);
+  preload(@Body() body: PreloadUserDto, @CurrentUser() actor: { id: string }) {
+    return this.users.preloadUser(body.email, body.roleIds, actor.id);
   }
 
   @Delete('preloads/:id')
-  cancelPreload(@Param('id', ParseUUIDPipe) id: string) {
-    return this.users.cancelPreload(id);
+  cancelPreload(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.users.cancelPreload(id, actor.id);
   }
 
   @Get()
@@ -96,16 +99,18 @@ export class UsersController {
   assign(
     @Param('id', ParseUUIDPipe) userId: string,
     @Body() body: AssignRoleDto,
+    @CurrentUser() actor: { id: string },
   ) {
-    return this.users.assignRole(userId, body.roleId);
+    return this.users.assignRole(userId, body.roleId, actor.id);
   }
 
   @Delete(':id/roles/:roleId')
   revoke(
     @Param('id', ParseUUIDPipe) userId: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
+    @CurrentUser() actor: { id: string },
   ) {
-    return this.users.revokeRole(userId, roleId);
+    return this.users.revokeRole(userId, roleId, actor.id);
   }
 
   @Patch(':id/status')
