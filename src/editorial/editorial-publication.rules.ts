@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import {
   EditorialFileKind,
   EditorialFileStatus,
@@ -36,22 +36,6 @@ export function validatePublication(
       'Incluye la cápsula asociada a cada archivo de subtítulos',
     );
   }
-  if (
-    videos.some(
-      (video) =>
-        !captions.some(
-          (caption) =>
-            caption.videoId === video.id && caption.language === video.language,
-        ),
-    )
-  ) {
-    throw new BadRequestException({
-      statusCode: HttpStatus.BAD_REQUEST,
-      code: 'EDITORIAL_CAPTIONS_REQUIRED',
-      message: 'Cada cápsula necesita subtítulos en su idioma',
-    });
-  }
-
   if (kind === EditorialKind.NEWS && !revision.bodyEs) {
     throw new BadRequestException(
       'Explica el cambio en el cuerpo de la novedad',
@@ -64,7 +48,7 @@ export function validatePublication(
     !files.some((file) => file.kind === EditorialFileKind.PDF)
   ) {
     throw new BadRequestException(
-      'Agrega instrucciones, un PDF o una cápsula con subtítulos',
+      'Agrega instrucciones, un PDF o una cápsula',
     );
   }
 

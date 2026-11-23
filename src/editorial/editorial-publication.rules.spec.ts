@@ -61,13 +61,28 @@ describe('editorial publication requirements', () => {
     ).not.toThrow();
   });
 
-  it('requires validated captions in the language of each video', () => {
+  it('accepts videos with optional captions, including captions in another language', () => {
+    expect(() =>
+      validatePublication(EditorialKind.GUIDE, {
+        ...revision,
+        files: [video],
+      }),
+    ).not.toThrow();
     expect(() =>
       validatePublication(EditorialKind.GUIDE, {
         ...revision,
         files: [video, { ...caption, language: 'EN' }],
       }),
-    ).toThrow('subtítulos en su idioma');
+    ).not.toThrow();
+    expect(() =>
+      validatePublication(EditorialKind.GUIDE, {
+        ...revision,
+        files: [video, caption],
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires attached captions to be validated and linked to an included video', () => {
     expect(() =>
       validatePublication(EditorialKind.GUIDE, {
         ...revision,
@@ -77,9 +92,9 @@ describe('editorial publication requirements', () => {
     expect(() =>
       validatePublication(EditorialKind.GUIDE, {
         ...revision,
-        files: [video, caption],
+        files: [video, { ...caption, videoId: 'other-video' }],
       }),
-    ).not.toThrow();
+    ).toThrow('Incluye la cápsula asociada');
   });
 
   it('accepts Spanish alone or a complete English translation', () => {

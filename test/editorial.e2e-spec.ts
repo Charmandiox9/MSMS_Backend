@@ -63,7 +63,7 @@ describe('Novedades y guías (HTTP y GraphQL)', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it('identifica en GraphQL una cápsula sin subtítulos al publicar', async () => {
+  it('publica una guía que solo contiene una cápsula sin subtítulos', async () => {
     jest
       .spyOn(ctx.app.get(EditorialAccessGuard), 'canManage')
       .mockResolvedValue(true);
@@ -79,13 +79,19 @@ describe('Novedades y guías (HTTP y GraphQL)', () => {
               topic: EditorialTopic.TEACHERS,
               titleEs: 'Gestión de profesores',
               summaryEs: 'Aprende a gestionar profesores',
-              bodyEs: 'Abre el módulo Profesores.',
+              bodyEs: '',
               files: [
                 { id: fileId, kind: 'VIDEO', status: 'READY', language: 'ES' },
               ],
             },
           }),
+          update: jest.fn().mockResolvedValue({
+            id: fileId,
+            version: 3,
+            status: EditorialStatus.PUBLISHED,
+          }),
         },
+        editorialEvent: { create: jest.fn() },
       }),
     );
 
@@ -93,14 +99,18 @@ describe('Novedades y guías (HTTP y GraphQL)', () => {
       .post('/api/graphql')
       .set('Cookie', ctx.cookieFor('admin'))
       .send({
-        query: `mutation { publishEditorialEntry(input: { id: "${fileId}", version: 2 }) { id } }`,
+        query: `mutation { publishEditorialEntry(input: { id: "${fileId}", version: 2 }) { id version status } }`,
       });
 
-    expect(result.body.errors[0].extensions.originalError).toMatchObject({
-      statusCode: 400,
-      code: 'EDITORIAL_CAPTIONS_REQUIRED',
+    expect(result.body).toEqual({
+      data: {
+        publishEditorialEntry: {
+          id: fileId,
+          version: 3,
+          status: EditorialStatus.PUBLISHED,
+        },
+      },
     });
-    expect(result.body.data).toBeNull();
   });
 
   it('valida el rol activo del lector antes de consultar el catálogo y protege las opciones editoriales', async () => {
