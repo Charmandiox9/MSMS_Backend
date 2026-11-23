@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpStatus } from '@nestjs/common';
 import {
   EditorialFileKind,
   EditorialFileStatus,
@@ -45,9 +45,11 @@ export function validatePublication(
         ),
     )
   ) {
-    throw new BadRequestException(
-      'Cada cápsula necesita subtítulos en su idioma',
-    );
+    throw new BadRequestException({
+      statusCode: HttpStatus.BAD_REQUEST,
+      code: 'EDITORIAL_CAPTIONS_REQUIRED',
+      message: 'Cada cápsula necesita subtítulos en su idioma',
+    });
   }
 
   if (kind === EditorialKind.NEWS && !revision.bodyEs) {
