@@ -60,7 +60,8 @@ Prisma sin esta extensión y conexiones externas no deben usarse para datos
 personales, excepto la herramienta explícita de conversión. Los campos nuevos
 requieren actualizar el inventario y sus pruebas.
 
-Los cachés de sesiones y usuarios contienen sobres autenticados. Los JWT
+Los cachés de sesiones y usuarios contienen sobres autenticados con
+`AUTH_SESSION_ENCRYPTION_KEY`, independiente de las claves PII. Los JWT
 contienen solo `sub`, además de los metadatos propios de firma/expiración.
 `/api/auth/session` reconstruye correo, roles y avatar desde la cuenta activa
 mediante ActiveUserService, con su caché cifrada de 60 segundos. No devuelve

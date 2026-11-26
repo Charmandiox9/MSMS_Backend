@@ -1,3 +1,4 @@
+import { AuthCryptoService } from '../auth-crypto.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -5,11 +6,13 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ActiveUserService } from '../active-user.service';
-import { PiiCryptoService } from '../../privacy/pii-crypto.service';
-import { testPiiCrypto } from '../../privacy/pii-test-config';
 
 describe('JwtStrategy', () => {
-  const crypto = testPiiCrypto();
+  const crypto = new AuthCryptoService(
+    new ConfigService({
+      AUTH_SESSION_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+    }),
+  );
   let strategy: JwtStrategy;
   let prisma: { user: { findUnique: jest.Mock } };
   let cache: { get: jest.Mock; set: jest.Mock };
@@ -31,7 +34,7 @@ describe('JwtStrategy', () => {
       providers: [
         JwtStrategy,
         ActiveUserService,
-        { provide: PiiCryptoService, useValue: crypto },
+        { provide: AuthCryptoService, useValue: crypto },
         { provide: ConfigService, useValue: { get: () => 'secret' } },
         { provide: PrismaService, useValue: prisma },
         { provide: CACHE_MANAGER, useValue: cache },
@@ -58,14 +61,14 @@ describe('JwtStrategy', () => {
       include: { userRoles: { include: { role: true } } },
     });
     expect(cache.set).toHaveBeenCalledWith(
-      `user:pii:v1:${mockUser.id}`,
-      expect.stringMatching(/^pii:v1:/),
+      `auth:user:v2:${mockUser.id}`,
+      expect.stringMatching(/^auth:v1:/),
       60 * 1000,
     );
     expect(
       crypto.decrypt(
         cache.set.mock.calls[0][1] as string,
-        `user:pii:v1:${mockUser.id}`,
+        `auth:user:v2:${mockUser.id}`,
       ),
     ).toBe(JSON.stringify(result));
   });
@@ -78,7 +81,7 @@ describe('JwtStrategy', () => {
       roles: ['ACADEMIC_SECRETARY'],
     };
     cache.get.mockResolvedValue(
-      crypto.encrypt(JSON.stringify(cachedUser), `user:pii:v1:${mockUser.id}`),
+      crypto.encrypt(JSON.stringify(cachedUser), `auth:user:v2:${mockUser.id}`),
     );
 
     const result = await strategy.validate({ sub: mockUser.id });

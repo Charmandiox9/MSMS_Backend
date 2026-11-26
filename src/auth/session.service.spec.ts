@@ -1,9 +1,14 @@
+import { AuthCryptoService } from './auth-crypto.service';
+import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 import { SessionService } from './session.service';
-import { testPiiCrypto } from '../privacy/pii-test-config';
 
 describe('SessionService', () => {
-  const crypto = testPiiCrypto();
+  const crypto = new AuthCryptoService(
+    new ConfigService({
+      AUTH_SESSION_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+    }),
+  );
   const session = {
     sub: 'user-1',
     email: 'user@ucn.cl',
@@ -24,15 +29,15 @@ describe('SessionService', () => {
     expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
     expect(secondId).not.toBe(firstId);
     expect(cache.set).toHaveBeenCalledWith(
-      `auth:session:pii:v1:${firstId}`,
-      expect.stringMatching(/^pii:v1:/),
+      `auth:session:v2:${firstId}`,
+      expect.stringMatching(/^auth:v1:/),
       24 * 60 * 60 * 1000,
     );
     expect(
       JSON.parse(
         crypto.decrypt(
           cache.set.mock.calls[0][1] as string,
-          `auth:session:pii:v1:${firstId}`,
+          `auth:session:v2:${firstId}`,
         ),
       ),
     ).toEqual(session);
@@ -40,14 +45,14 @@ describe('SessionService', () => {
 
   it('lee y elimina sesiones usando el prefijo de clave', async () => {
     cache.get.mockResolvedValue(
-      crypto.encrypt(JSON.stringify(session), 'auth:session:pii:v1:abc'),
+      crypto.encrypt(JSON.stringify(session), 'auth:session:v2:abc'),
     );
     cache.del.mockResolvedValue(true);
 
     await expect(service.get('abc')).resolves.toEqual(session);
     await expect(service.delete('abc')).resolves.toBe(true);
 
-    expect(cache.get).toHaveBeenCalledWith('auth:session:pii:v1:abc');
-    expect(cache.del).toHaveBeenCalledWith('auth:session:pii:v1:abc');
+    expect(cache.get).toHaveBeenCalledWith('auth:session:v2:abc');
+    expect(cache.del).toHaveBeenCalledWith('auth:session:v2:abc');
   });
 });

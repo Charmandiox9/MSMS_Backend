@@ -1,3 +1,4 @@
+import { activeUserCacheKey } from '../auth/active-user.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
@@ -211,7 +212,7 @@ export class UsersService {
           },
         });
     });
-    await this.cache.del(`user:pii:v1:${userId}`);
+    await this.cache.del(activeUserCacheKey(userId));
     return { success: true };
   }
 
@@ -254,7 +255,7 @@ export class UsersService {
           },
         });
     });
-    await this.cache.del(`user:pii:v1:${userId}`);
+    await this.cache.del(activeUserCacheKey(userId));
     return { success: true };
   }
 
@@ -304,7 +305,7 @@ export class UsersService {
           },
         });
     });
-    await this.cache.del(`user:pii:v1:${userId}`);
+    await this.cache.del(activeUserCacheKey(userId));
     return { success: true, isActive };
   }
 
@@ -360,7 +361,7 @@ export class UsersService {
         data: { action: 'ACCOUNT_DELETED', actorId, targetId: userId },
       });
     });
-    await this.cache.del(`user:pii:v1:${userId}`);
+    await this.cache.del(activeUserCacheKey(userId));
     return { success: true };
   }
 }

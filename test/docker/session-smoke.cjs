@@ -34,12 +34,12 @@ async function main() {
   try {
     assert.equal((await second.get(SessionService).get(sessionId)).email, 'admin@example.test');
     await redis.connect();
-    const keys = (await redis.keys('*auth:session:pii:v1:*')).filter((key) => key.endsWith(sessionId));
+    const keys = (await redis.keys('*auth:session:v2:*')).filter((key) => key.endsWith(sessionId));
     assert.equal(keys.length, 1);
     assert.ok((await redis.pTTL(keys[0])) > 86_000_000, 'Session TTL is measured in milliseconds');
     const stored = await redis.get(keys[0]);
     assert.ok(!stored.includes('admin@example.test'));
-    assert.ok(stored.includes('pii:v1:'));
+    assert.ok(stored.includes('auth:v1:'));
     const s3 = new S3Client({ endpoint: process.env.S3_ENDPOINT, region: process.env.S3_REGION, forcePathStyle: true, credentials: { accessKeyId: process.env.S3_ACCESS_KEY, secretAccessKey: process.env.S3_SECRET_KEY } });
     try { await s3.send(new PutObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: 'uploads/docker-roundtrip.pdf', Body: 'MARSYS disposable evidence roundtrip', ContentType: 'application/pdf' })); } finally { s3.destroy(); }
     const download = await second.get(StorageService).createPresignedDownload('uploads/docker-roundtrip.pdf');

@@ -1,11 +1,16 @@
+import { AuthCryptoService } from './auth-crypto.service';
+import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
-import { testPiiCrypto } from '../privacy/pii-test-config';
 import { ActiveUserService } from './active-user.service';
 
 describe('ActiveUserService', () => {
-  const crypto = testPiiCrypto();
-  const cacheKey = 'user:pii:v1:user-1';
+  const crypto = new AuthCryptoService(
+    new ConfigService({
+      AUTH_SESSION_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+    }),
+  );
+  const cacheKey = 'auth:user:v2:user-1';
   let cache: { get: jest.Mock; set: jest.Mock };
   let prisma: { user: { findUnique: jest.Mock } };
   let service: ActiveUserService;
@@ -40,7 +45,7 @@ describe('ActiveUserService', () => {
 
     expect(cache.set).toHaveBeenCalledWith(
       cacheKey,
-      expect.stringMatching(/^pii:v1:/),
+      expect.stringMatching(/^auth:v1:/),
       60 * 1000,
     );
     expect(

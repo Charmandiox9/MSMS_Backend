@@ -11,6 +11,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { SessionAuthGuard } from './guards/session-auth.guard';
+import { GoogleOAuthCallbackGuard } from './guards/google-oauth-callback.guard';
 import { Public } from './decorators/public.decorator';
 import { resolveRedirectRoute } from './role-redirect/role-redirect.util';
 import { ConfigService } from '@nestjs/config';
@@ -54,7 +55,7 @@ export class AuthController {
 
   @Public()
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleOAuthCallbackGuard)
   async googleAuthRedirect(
     @Req() req: GoogleAuthRequest,
     @Res() res: Response,

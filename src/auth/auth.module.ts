@@ -11,6 +11,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SessionService } from './session.service';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { ActiveUserService } from './active-user.service';
+import { AuthCryptoService } from './auth-crypto.service';
+import { GoogleOAuthStateStore } from './google-oauth-state.store';
+import { GoogleOAuthCallbackGuard } from './guards/google-oauth-callback.guard';
 
 @Module({
   imports: [
@@ -34,6 +37,9 @@ import { ActiveUserService } from './active-user.service';
     SessionService,
     SessionAuthGuard,
     ActiveUserService,
+    AuthCryptoService,
+    GoogleOAuthStateStore,
+    GoogleOAuthCallbackGuard,
   ],
   exports: [AuthService, SessionAuthGuard, WhitelistService],
 })

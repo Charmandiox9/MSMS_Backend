@@ -70,10 +70,12 @@ jobs:
           encryption_key="$(openssl rand -base64 32)"
           PII_ENCRYPTION_KEYS="$(printf '{"ci":"%s"}' "$encryption_key")"
           PII_BLIND_INDEX_KEY="$(openssl rand -base64 32)"
-          export JWT_SECRET PII_ENCRYPTION_KEYS PII_BLIND_INDEX_KEY
+          AUTH_SESSION_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          export JWT_SECRET PII_ENCRYPTION_KEYS PII_BLIND_INDEX_KEY AUTH_SESSION_ENCRYPTION_KEY
           container=$(docker run --detach --network host \
             --env DATABASE_URL --env REDIS_URL --env JWT_SECRET \
             --env PII_ACTIVE_KEY_ID --env PII_ENCRYPTION_KEYS --env PII_BLIND_INDEX_KEY \
+            --env AUTH_SESSION_ENCRYPTION_KEY \
             --env ALLOWED_DOMAINS --env GOOGLE_CLIENT_ID --env GOOGLE_CLIENT_SECRET \
             --env GOOGLE_CALLBACK_URL marsys-backend-ci)
           trap 'result=$?; if (( result )); then docker logs "$container"; fi; docker rm -f "$container" >/dev/null' EXIT

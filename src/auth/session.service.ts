@@ -2,7 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { randomUUID } from 'crypto';
-import { PiiCryptoService } from '../privacy/pii-crypto.service';
+import { AuthCryptoService } from './auth-crypto.service';
 
 export type AuthSession = {
   sub: string;
@@ -18,7 +18,7 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 export class SessionService {
   constructor(
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
-    private readonly crypto: PiiCryptoService,
+    private readonly crypto: AuthCryptoService,
   ) {}
 
   async create(session: AuthSession): Promise<string> {
@@ -34,9 +34,9 @@ export class SessionService {
   async get(id: string): Promise<AuthSession | undefined> {
     const value = await this.cache.get<string>(this.key(id));
     if (typeof value !== 'string') return undefined;
-    const result: unknown = JSON.parse(
-      this.crypto.decrypt(value, this.key(id)),
-    );
+    const plaintext = this.crypto.decrypt(value, this.key(id));
+    if (plaintext === undefined) return undefined;
+    const result: unknown = JSON.parse(plaintext);
     if (
       !result ||
       typeof result !== 'object' ||
@@ -58,6 +58,6 @@ export class SessionService {
   }
 
   private key(id: string): string {
-    return `auth:session:pii:v1:${id}`;
+    return `auth:session:v2:${id}`;
   }
 }

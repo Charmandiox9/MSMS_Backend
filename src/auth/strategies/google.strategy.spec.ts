@@ -1,3 +1,4 @@
+import { GoogleOAuthStateStore } from '../google-oauth-state.store';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { GoogleStrategy } from './google.strategy';
@@ -38,6 +39,7 @@ describe('GoogleStrategy', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GoogleStrategy,
+        { provide: GoogleOAuthStateStore, useValue: {} },
         { provide: AuthService, useValue: authService },
         { provide: WhitelistService, useValue: whitelistService },
       ],

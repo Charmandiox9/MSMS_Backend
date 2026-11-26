@@ -1,11 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { ValidationError } from 'class-validator';
 import { json, urlencoded } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { isSessionMutationAllowed } from './common/http-security';
+import { createApplicationValidationPipe } from './common/application-validation';
 
 // Las importaciones envían el CSV completo como texto dentro del JSON. Solo esas
 // rutas aceptan cuerpos grandes; el resto mantiene el límite por defecto (100 KB)
@@ -24,13 +23,6 @@ const EXCEL_IMPORT_ROUTES = [
   '/api/academic/imports/hourly/commit',
 ];
 const CSV_IMPORT_BODY_LIMIT = '100mb';
-
-function flattenValidationMessages(errors: ValidationError[]): string[] {
-  return errors.flatMap((error) => [
-    ...Object.values(error.constraints ?? {}),
-    ...flattenValidationMessages(error.children ?? []),
-  ]);
-}
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -104,16 +96,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      exceptionFactory: (errors) => {
-        return new BadRequestException(flattenValidationMessages(errors));
-      },
-    }),
-  );
+  app.useGlobalPipes(createApplicationValidationPipe());
 
   await app.listen(process.env.PORT ?? 3001);
 

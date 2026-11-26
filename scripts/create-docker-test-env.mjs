@@ -12,6 +12,7 @@ const env = {
   PII_ACTIVE_KEY_ID: 'docker_test',
   PII_ENCRYPTION_KEYS: JSON.stringify({ docker_test: randomBytes(32).toString('base64') }),
   PII_BLIND_INDEX_KEY: randomBytes(32).toString('base64'), JWT_SECRET: secret(),
+  AUTH_SESSION_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
   STORAGE_TRANSFER_SECRET: secret(),
   GOOGLE_CLIENT_ID: 'docker-test-not-a-real-client', GOOGLE_CLIENT_SECRET: secret(),
   GOOGLE_CALLBACK_URL: 'http://localhost:80/api/auth/google/callback',

@@ -5,6 +5,7 @@
 Object.assign(process.env, {
   NODE_ENV: 'test',
   JWT_SECRET: 'e2e-jwt-secret',
+  AUTH_SESSION_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
   PII_ACTIVE_KEY_ID: 'e2e',
   PII_ENCRYPTION_KEYS: JSON.stringify({
     e2e: Buffer.alloc(32, 1).toString('base64'),

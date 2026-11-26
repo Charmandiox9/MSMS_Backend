@@ -2,9 +2,10 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
-import { PiiCryptoService } from '../privacy/pii-crypto.service';
+import { AuthCryptoService } from './auth-crypto.service';
 
 const USER_CACHE_TTL_MS = 60 * 1000;
+export const activeUserCacheKey = (id: string) => `auth:user:v2:${id}`;
 
 export type AuthenticatedUser = {
   id: string;
@@ -16,23 +17,25 @@ export type AuthenticatedUser = {
 
 /**
  * Resuelve un usuario activo con sus roles, cacheado por 60 s. La clave
- * `user:pii:v1:<id>` se invalida al activar, desactivar o eliminar la cuenta.
+ * La clave se invalida cuando cambian el estado o los roles de la cuenta.
  */
 @Injectable()
 export class ActiveUserService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
-    private readonly crypto: PiiCryptoService,
+    private readonly crypto: AuthCryptoService,
   ) {}
 
   async findActive(id: string): Promise<AuthenticatedUser | null> {
-    const cacheKey = `user:pii:v1:${id}`;
+    const cacheKey = activeUserCacheKey(id);
     const cachedUser = await this.cache.get<string>(cacheKey);
-    if (typeof cachedUser === 'string') {
-      const result: unknown = JSON.parse(
-        this.crypto.decrypt(cachedUser, cacheKey),
-      );
+    const plaintext =
+      typeof cachedUser === 'string'
+        ? this.crypto.decrypt(cachedUser, cacheKey)
+        : undefined;
+    if (plaintext !== undefined) {
+      const result: unknown = JSON.parse(plaintext);
       if (
         result &&
         typeof result === 'object' &&

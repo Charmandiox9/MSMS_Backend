@@ -135,7 +135,7 @@ La prueba crea una base y red aisladas, aplica desde cero, repite el arranque, s
 ## 6. Backend y primer administrador
 
 1. Crear Application backend desde su repo con Dockerfile/contexto raíz. Para la automatización de una sola réplica usar destino `dokploy` (sección 5.1); para migraciones separadas usar `runtime`, o seleccionar la imagen de release del registry.
-2. Cargar variables privadas de `.env.example`: `NODE_ENV=production`, `PORT=3001`, URLs PostgreSQL/Redis, claves PII, `JWT_SECRET`, OAuth, whitelist, secreto Forms, storage y correo.
+2. Cargar variables privadas de `.env.example`: `NODE_ENV=production`, `PORT=3001`, URLs PostgreSQL/Redis, claves PII, `JWT_SECRET`, `AUTH_SESSION_ENCRYPTION_KEY`, OAuth, whitelist, secretos Forms, storage y correo.
 3. Establecer `FRONTEND_URL=https://DOMINIO_APP` sin barra final y `GOOGLE_CALLBACK_URL=https://DOMINIO_APP/api/auth/google/callback`. Configurar exactamente ese callback en Google Cloud.
 4. Al menos una de `ALLOWED_DOMAINS`/`ALLOWED_EMAILS` debe contener valores reales autorizados. El OAuth no promueve automáticamente al primer visitante.
 5. `NO_ACCESS_ROUTE=/no-access`. Configurar `ACADEMIC_TIME_ZONE=America/Santiago` y los datos reales de Resend para notificaciones.
@@ -152,6 +152,10 @@ El comando lee `BOOTSTRAP_ADMIN_EMAIL`, valida el correo contra la whitelist y c
 En Compose, `api` espera a que `migrate` termine antes de ejecutar este paso; funciona también con varias réplicas. En Dokploy con Applications independientes, ejecutar primero la tarea de migraciones y luego desplegar el backend conservando el entrypoint del Dockerfile. No configurar una orden de arranque que evite el entrypoint. Sin `BOOTSTRAP_ADMIN_EMAIL`, el bootstrap automático no ejecuta ninguna operación. Después de asignar un rol a una cuenta que ya tenía sesión, cerrar sesión y volver a entrar con Google para renovar sus permisos.
 
 Para ejecutarlo antes de publicar la Application también se puede usar un contenedor runner de mantenimiento con su red y variables reales. Nunca ejecutar este comando en el host confiando accidentalmente en el `.env` de Neon/desarrollo.
+
+Genera `AUTH_SESSION_ENCRYPTION_KEY` con `openssl rand -base64 32` e inyecta el mismo valor en todas las réplicas desde el gestor de secretos. La clave cifra las sesiones y los perfiles de autorización en Redis y debe ser independiente de `JWT_SECRET` y las claves PII. Al desplegar este cambio por primera vez o rotar la clave, coordina el reinicio de todas las réplicas. La sesión anterior queda inválida y cada persona tendrá que iniciar sesión de nuevo. Las entradas antiguas expiran por su TTL. El desarrollo con caché en memoria puede omitir la variable y usa una clave temporal del proceso.
+
+El inicio de sesión de Google guarda una autorización de cinco minutos en Redis y una cookie temporal vinculada al host del callback público. Comprueba el flujo desde la URL pública y, con varias réplicas, verifica que el inicio y el retorno funcionen aunque lleguen a instancias distintas. Si el intento expira, vuelve a iniciar el flujo desde MARSYS.
 
 ## 7. Frontend y dominios Dokploy
 

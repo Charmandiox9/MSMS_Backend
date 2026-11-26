@@ -1,11 +1,9 @@
-import {
-  BadRequestException,
-  INestApplication,
-  ValidationPipe,
-} from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { ValidationError } from 'class-validator';
+import { createApplicationValidationPipe } from '../../src/common/application-validation';
+import { AssistantshipsService } from '../../src/assistantships/assistantships.service';
+import { AssistantshipsGuard } from '../../src/assistantships/assistantships.guard';
 import { AppModule } from '../../src/app.module';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -48,13 +46,6 @@ export const USERS = {
 
 export type UserKey = keyof typeof USERS;
 
-function flattenValidationMessages(errors: ValidationError[]): string[] {
-  return errors.flatMap((error) => [
-    ...Object.values(error.constraints ?? {}),
-    ...flattenValidationMessages(error.children ?? []),
-  ]);
-}
-
 export interface TestApp {
   app: INestApplication;
   prisma: InMemoryPrisma;
@@ -68,13 +59,16 @@ export interface TestApp {
  * ValidationPipe; mantener sincronizado) y dependencias externas reemplazadas.
  */
 export async function createTestApp(
-  options: { storage?: StorageService } = {},
+  options: {
+    storage?: StorageService;
+    assistantships?: Partial<AssistantshipsService>;
+  } = {},
 ): Promise<TestApp> {
   const prisma = createInMemoryPrisma();
   Object.values(USERS).forEach((user) => prisma.seedUser(user));
   const notifications = { send: jest.fn().mockResolvedValue(undefined) };
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(prisma)
     .overrideProvider(NotificationsService)
@@ -95,20 +89,20 @@ export async function createTestApp(
         createPresignedDownload: jest.fn(),
         requireFormsEvidence: jest.fn().mockResolvedValue('application/pdf'),
       },
-    )
-    .compile();
+    );
+  if (options.assistantships) {
+    builder
+      .overrideProvider(AssistantshipsService)
+      .useValue(options.assistantships);
+    builder
+      .overrideGuard(AssistantshipsGuard)
+      .useValue({ canActivate: () => true });
+  }
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication({ logger: false });
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      exceptionFactory: (errors) =>
-        new BadRequestException(flattenValidationMessages(errors)),
-    }),
-  );
+  app.useGlobalPipes(createApplicationValidationPipe());
   await app.init();
 
   const jwt = new JwtService({ secret: process.env.JWT_SECRET });

@@ -202,7 +202,7 @@ describe('UsersService account administration', () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
       prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
       await service.assignRole('user-1', 'role-1', 'admin-1');
-      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+      expect(cache.del).toHaveBeenCalledWith('auth:user:v2:user-1');
       expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
         data: {
           action: 'ROLE_ASSIGNED',
@@ -216,7 +216,7 @@ describe('UsersService account administration', () => {
     it('invalidates the active session profile after revoking a role', async () => {
       prisma.role.findUnique.mockResolvedValue({ code: 'ACADEMIC_SECRETARY' });
       await service.revokeRole('user-1', 'role-1', 'admin-1');
-      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-1');
+      expect(cache.del).toHaveBeenCalledWith('auth:user:v2:user-1');
       expect(prisma.systemAuditEvent.create).toHaveBeenCalledWith({
         data: {
           action: 'ROLE_REVOKED',
@@ -327,7 +327,7 @@ describe('UsersService account administration', () => {
           targetId: 'user-9',
         },
       });
-      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-9');
+      expect(cache.del).toHaveBeenCalledWith('auth:user:v2:user-9');
     });
 
     it('rechaza usuarios inexistentes', async () => {
@@ -382,7 +382,7 @@ describe('UsersService account administration', () => {
           targetId: 'user-9',
         },
       });
-      expect(cache.del).toHaveBeenCalledWith('user:pii:v1:user-9');
+      expect(cache.del).toHaveBeenCalledWith('auth:user:v2:user-9');
     });
   });
 });
