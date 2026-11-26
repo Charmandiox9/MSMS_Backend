@@ -65,7 +65,7 @@ pnpm run test:stress      # estrés, contra un backend ya levantado (ver secció
   - `test-app.ts` levanta `AppModule` completo con el prefijo `/api` y el mismo `ValidationPipe` que `main.ts` (hay que mantenerlos sincronizados).
   - `PrismaService` se reemplaza por una base en memoria (`in-memory-prisma.ts`), y `NotificationsService` y `StorageService` por dobles de prueba.
   - La autenticación usa una cookie JWT firmada en el test.
-  - `e2e-env.ts` (configurado en `test/jest-e2e.json`) fija todas las variables de entorno. Como `ConfigModule` no sobrescribe variables ya definidas, así los tests no leen las credenciales de `.env.development`.
+  - `e2e-env.ts` (configurado en `test/jest-e2e.json`) inyecta los valores de prueba. Con `NODE_ENV=test` el backend omite `.env.development`.
   - El `app.e2e-spec.ts` original se conectaba a la base de datos real; ahora usa este arnés.
 - **Estrés** (`test/stress/`): `run.ts` es el runner, `scenarios.ts` define los escenarios y `autocannon.d.ts` tiene tipos mínimos, porque autocannon no publica los suyos.
 

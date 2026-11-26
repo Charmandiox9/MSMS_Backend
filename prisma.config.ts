@@ -4,8 +4,14 @@ import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
 import { defineConfig } from 'prisma/config';
 
-if (existsSync('.env.local')) loadEnvFile('.env.local');
-if (existsSync('.env')) loadEnvFile('.env');
+// This config is also copied into Docker build and migration images without src/.
+if (
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NODE_ENV !== 'test' &&
+  existsSync('.env.development')
+) {
+  loadEnvFile('.env.development');
+}
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

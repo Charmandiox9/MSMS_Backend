@@ -5,13 +5,17 @@ import { NestFactory } from '@nestjs/core';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WhitelistService } from '../auth/whitelist/whitelist.service';
 import { InitialAdminService } from './initial-admin.service';
+import {
+  developmentEnvironmentFile,
+  ignoreDevelopmentEnvironmentFile,
+} from '../config/development-environment';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      ignoreEnvFile: process.env.NODE_ENV === 'production',
-      envFilePath: ['.env.local', '.env.pii', '.env.development', '.env'],
+      ignoreEnvFile: ignoreDevelopmentEnvironmentFile(),
+      envFilePath: developmentEnvironmentFile,
     }),
     PrismaModule,
   ],

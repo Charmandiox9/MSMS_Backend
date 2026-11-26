@@ -91,8 +91,10 @@ sin convertir. No desplegar esta versión antes de completar el procedimiento.
    RUT y códigos. Las coincidencias se rechazan; no se fusionan automáticamente.
 2. Configurar claves en el gestor de secretos. En local,
    `node scripts/create-pii-keys.mjs` crea `.env.pii` sin imprimir secretos ni
-   sobrescribir un archivo existente. El archivo está excluido de Git; debe
-   restringirse mediante permisos del sistema y respaldarse por separado.
+   sobrescribir un archivo existente. Para configurar una base local nueva,
+   incorpora esas variables a `.env.development`. Conserva las claves existentes
+   cuando la base ya contenga datos cifrados. Respalda las claves por separado
+   y restringe el acceso mediante permisos del sistema.
 3. En la base autorizada y con la aplicación en mantenimiento, aplicar las
    migraciones pendientes con `prisma migrate deploy`.
 4. Ejecutar `ts-node --transpile-only scripts/backfill-pii.ts --apply`. La opción

@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import {
+  developmentEnvironmentFile,
+  ignoreDevelopmentEnvironmentFile,
+} from './config/development-environment';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'node:path';
@@ -44,8 +48,8 @@ const devProviders =
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      ignoreEnvFile: process.env.NODE_ENV === 'production',
-      envFilePath: ['.env.local', '.env.pii', '.env.development', '.env'],
+      ignoreEnvFile: ignoreDevelopmentEnvironmentFile(),
+      envFilePath: developmentEnvironmentFile,
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,

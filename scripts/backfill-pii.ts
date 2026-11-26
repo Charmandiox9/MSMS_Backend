@@ -1,11 +1,10 @@
-import { existsSync } from 'node:fs';
-import { loadEnvFile } from 'node:process';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PiiCryptoService } from '../src/privacy/pii-crypto.service';
 import { PiiStorageCodec } from '../src/privacy/pii-storage-codec';
 import { normalizePiiLookup, piiPolicies } from '../src/privacy/pii-policy';
+import { loadDevelopmentEnvironment } from '../src/config/development-environment';
 
 const apply = process.argv.includes('--apply');
 const diagnose = process.argv.includes('--diagnose');
@@ -17,8 +16,7 @@ if (!apply && !diagnose) {
 }
 
 // Explicit maintenance tool. Never run automatically at application startup.
-for (const file of ['.env.pii', '.env.development', '.env'])
-  if (existsSync(file)) loadEnvFile(file);
+loadDevelopmentEnvironment();
 const crypto = new PiiCryptoService(new ConfigService());
 const codec = new PiiStorageCodec(crypto);
 const client = new PrismaClient({

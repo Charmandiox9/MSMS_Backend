@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadEnvFile } from 'node:process';
 import { NestFactory } from '@nestjs/core';
 import MDBReader, { type Value } from 'mdb-reader';
 import { LegacyAccessImportModule } from './legacy-access-import.module';
@@ -16,12 +15,10 @@ import {
   parseEnvironmentValue,
 } from './legacy-access-import-target.util';
 import { readLegacyAccessImportArguments } from './legacy-access-import-arguments.util';
-
-function loadBackendEnvironment(): void {
-  for (const file of ['.env.local', '.env.pii', '.env.development', '.env']) {
-    if (existsSync(file)) loadEnvFile(file);
-  }
-}
+import {
+  developmentEnvironmentFile,
+  loadDevelopmentEnvironment,
+} from '../config/development-environment';
 
 function readSourceRows(filePath: string) {
   const reader = new MDBReader(readFileSync(filePath));
@@ -62,7 +59,7 @@ async function main(): Promise<void> {
     }
     if (!args.apply) return;
 
-    loadBackendEnvironment();
+    loadDevelopmentEnvironment();
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString)
       throw new Error('No se encontró DATABASE_URL en la configuración local.');
@@ -72,7 +69,7 @@ async function main(): Promise<void> {
       );
     if (args.target === 'development') {
       const developmentEnvironment = readFileSync(
-        resolve(process.cwd(), '.env.development'),
+        resolve(process.cwd(), developmentEnvironmentFile),
         'utf8',
       );
       const developmentUrl = parseEnvironmentValue(

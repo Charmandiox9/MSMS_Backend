@@ -1,7 +1,5 @@
-// Se ejecuta antes de cargar AppModule: fija un entorno aislado para que los
-// tests E2E no dependan de .env.development ni se conecten a servicios reales.
-// ConfigModule no sobrescribe variables ya definidas, por eso se fijan todas
-// las que .env.development podría aportar.
+// Se ejecuta antes de cargar AppModule. Con NODE_ENV=test se omite
+// .env.development y las pruebas reciben sus propios valores.
 Object.assign(process.env, {
   NODE_ENV: 'test',
   JWT_SECRET: 'e2e-jwt-secret',

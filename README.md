@@ -18,7 +18,7 @@ pnpm install --frozen-lockfile
 
 Al agregar o actualizar una dependencia con `pnpm add` o `pnpm update`, registra juntos `package.json` y `pnpm-lock.yaml`. Si editas el manifiesto a mano, sincroniza con `pnpm install --lockfile-only` y verifica con `pnpm install --frozen-lockfile`. Jenkins y Dokploy usan el mismo lockfile.
 
-Copia `.env.example` como `.env.development` y completa las variables necesarias. Como mínimo, configura `DATABASE_URL`, `JWT_SECRET`, al menos uno entre `ALLOWED_DOMAINS` y `ALLOWED_EMAILS`, y `FRONTEND_URL`. Para migraciones Prisma, configura también `DIRECT_URL` (si no existe, Prisma usa `DATABASE_URL`). Las demás variables de OAuth, almacenamiento, correo, caché y Google Forms dependen de las funciones que vayas a utilizar. No guardes secretos en el repositorio.
+Copia `.env.example` como `.env.development` y completa las variables del entorno de desarrollo, incluidas las claves PII compatibles con la base elegida. Nest, Prisma y las herramientas de mantenimiento locales leen este archivo. Las variables ya exportadas tienen prioridad. Prisma usa `DIRECT_URL` para migraciones cuando está definida y, en su defecto, usa `DATABASE_URL`. Producción y las pruebas reciben sus variables desde el entorno del proceso. Guarda los secretos fuera de Git.
 
 Genera el cliente Prisma y aplica las migraciones existentes:
 
@@ -45,12 +45,12 @@ pnpm start:prod
 
 `start:dev:swc` es una alternativa de arranque en modo watch que usa el builder SWC para acelerar la compilación. El script `start:dev` estándar se mantiene disponible. La API escucha en el puerto `3001` por defecto; puedes cambiarlo con `PORT`.
 
-## Docker con configuración de producción
+## Docker local
 
-Para levantar localmente el stack completo con la configuración de `.env.production`, ejecuta desde `backend/`:
+Usa `.env.docker-test` para Docker local. Si el archivo aún no existe, créalo con `node scripts/create-docker-test-env.mjs`. Para levantar solo PostgreSQL, Redis, MinIO y la inicialización del bucket, ejecuta desde `backend/`:
 
 ```powershell
-docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.docker-test -p marsys-validation up -d db redis minio storage-init
 ```
 
 La guía de [simulación local de producción con Docker](docs/docker-local.md) incluye también los comandos para revisar el estado y los logs, y para detener los servicios conservando los datos.
