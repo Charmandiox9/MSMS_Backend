@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import {
   JustificationInboxStatus,
@@ -16,6 +17,7 @@ import {
   NotificationsService,
 } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
+import { isEvidencePreviewType } from '../storage/evidence-response';
 import { academicScheduleBlocks } from '../academic/schedule-blocks';
 import { decisionEmail, DecisionEmailDetails } from './decision-email';
 
@@ -30,6 +32,11 @@ export interface FormJustificationInput {
   reason?: string;
   evidenceKey: string;
   evidenceContentType?: string;
+}
+
+export enum EvidenceAccessMode {
+  PREVIEW = 'preview',
+  DOWNLOAD = 'download',
 }
 
 const WEEKDAYS = [
@@ -222,12 +229,22 @@ export class JustificationsService {
     return withContext;
   }
 
-  async getEvidenceUrl(id: string) {
+  async getEvidenceUrl(id: string, mode = EvidenceAccessMode.DOWNLOAD) {
     const justification = await this.prisma.justification.findUnique({
       where: { id },
     });
     if (!justification)
       throw new NotFoundException('Justificación no encontrada');
+    if (mode === EvidenceAccessMode.PREVIEW) {
+      if (!isEvidencePreviewType(justification.evidenceContentType))
+        throw new UnsupportedMediaTypeException(
+          'Este formato solo se puede descargar',
+        );
+      return this.storage.createPresignedDownload(
+        justification.evidenceKey,
+        justification.evidenceContentType,
+      );
+    }
     return this.storage.createPresignedDownload(justification.evidenceKey);
   }
 

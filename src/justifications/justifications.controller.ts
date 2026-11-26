@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   Param,
   ParseEnumPipe,
@@ -31,6 +32,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JustificationStatus } from '@prisma/client';
 import {
   JustificationsService,
+  EvidenceAccessMode,
   type FormJustificationInput,
 } from './justifications.service';
 
@@ -150,7 +152,14 @@ export class JustificationsController {
 
   @Get(':id/evidence-url')
   @Roles('TEACHING_SUPPORT_COORDINATOR', 'ACADEMIC_SECRETARY')
-  evidenceUrl(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.getEvidenceUrl(id);
+  @Header('Cache-Control', 'private, no-store')
+  evidenceUrl(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('mode', new ParseEnumPipe(EvidenceAccessMode, { optional: true }))
+    mode?: EvidenceAccessMode,
+  ) {
+    return mode
+      ? this.service.getEvidenceUrl(id, mode)
+      : this.service.getEvidenceUrl(id);
   }
 }

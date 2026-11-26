@@ -1,8 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
 import { JustificationInboxStatus, JustificationStatus } from '@prisma/client';
-import { JustificationsService } from './justifications.service';
+import {
+  EvidenceAccessMode,
+  JustificationsService,
+} from './justifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
@@ -170,6 +177,22 @@ describe('JustificationsService', () => {
       });
       expect(mockStorage.createPresignedDownload).toHaveBeenCalledWith(
         'uploads/evidence.pdf',
+      );
+    });
+
+    it('only issues preview URLs for a supported stored evidence type', async () => {
+      mockPrisma.justification.findUnique.mockResolvedValue({
+        id: 'just-1',
+        evidenceKey: 'uploads/evidence.html',
+        evidenceContentType: 'text/html',
+      });
+      await expect(
+        service.getEvidenceUrl('just-1', EvidenceAccessMode.PREVIEW),
+      ).rejects.toThrow(UnsupportedMediaTypeException);
+      expect(mockStorage.createPresignedDownload).not.toHaveBeenCalled();
+      await service.getEvidenceUrl('just-1');
+      expect(mockStorage.createPresignedDownload).toHaveBeenCalledWith(
+        'uploads/evidence.html',
       );
     });
   });

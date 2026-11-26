@@ -301,6 +301,31 @@ describe('Carga de archivos (e2e)', () => {
       },
     );
 
+    it('firma el modo de vista previa y conserva los permisos de evidencia', async () => {
+      const path = `/api/justifications/${justificationId}/evidence-url?mode=preview`;
+      const { body } = await http()
+        .get(path)
+        .set('Cookie', ctx.cookieFor('secretary'))
+        .expect('Cache-Control', 'private, no-store')
+        .expect(200);
+      const url = new URL(body.downloadUrl);
+      expect(url.searchParams.get('response-content-type')).toBe(
+        'application/pdf',
+      );
+      expect(url.searchParams.get('response-content-disposition')).toBe(
+        'inline; filename="evidence.pdf"',
+      );
+      await http().get(path).expect(401);
+      await http()
+        .get(path)
+        .set('Cookie', ctx.cookieFor('analyst'))
+        .expect(403);
+      await http()
+        .get(`/api/justifications/${justificationId}/evidence-url?mode=invalid`)
+        .set('Cookie', ctx.cookieFor('secretary'))
+        .expect(400);
+    });
+
     it('responde 404 para una justificación inexistente', async () => {
       await http()
         .get(

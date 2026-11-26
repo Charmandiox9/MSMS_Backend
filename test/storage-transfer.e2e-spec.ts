@@ -258,6 +258,29 @@ describe('private storage through backend (e2e)', () => {
     expect(result.headers.location).toBeUndefined();
     expect(result.headers['x-content-type-options']).toBe('nosniff');
   });
+
+  it('serves an authorized PDF preview inline without changing the download link', async () => {
+    const preview = await storage.createPresignedDownload(
+      'uploads/private.pdf',
+      'application/pdf',
+    );
+    const download = await storage.createPresignedDownload(
+      'uploads/private.pdf',
+    );
+
+    await http()
+      .get(localPath(preview.downloadUrl))
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/)
+      .expect('Content-Disposition', 'inline; filename="evidence.pdf"')
+      .expect('Cache-Control', 'private, no-store')
+      .expect('Referrer-Policy', 'no-referrer')
+      .expect('X-Content-Type-Options', 'nosniff');
+    await http()
+      .get(localPath(download.downloadUrl))
+      .expect(200)
+      .expect('Content-Disposition', 'attachment; filename="evidence.pdf"');
+  });
   it('supports a public API below an existing reverse proxy prefix', async () => {
     const nested = new StorageService(
       new ConfigService({

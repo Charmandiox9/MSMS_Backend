@@ -11,11 +11,14 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { Public } from '../auth/decorators/public.decorator';
 import { StorageService } from './storage.service';
 import { MAX_STORAGE_UPLOAD_BYTES } from './storage-transfer-token';
+import {
+  evidenceDisposition,
+  isEvidencePreviewType,
+} from './evidence-response';
 
 @Controller('storage/files')
 export class StorageTransferController {
@@ -96,6 +99,9 @@ export class StorageTransferController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const claims = await this.storage.verifyTransfer(token, 'download');
+    const previewType = isEvidencePreviewType(claims.contentType)
+      ? claims.contentType
+      : undefined;
     const abort = new AbortController();
     let stream: Readable | undefined;
     const onClose = () => {
@@ -114,14 +120,13 @@ export class StorageTransferController {
       response.setHeader('X-Content-Type-Options', 'nosniff');
       response.setHeader(
         'Content-Security-Policy',
-        "sandbox; default-src 'none'",
+        previewType
+          ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+          : "sandbox; default-src 'none'",
       );
-      const extension = extname(claims.key)
-        .replace(/[^a-zA-Z0-9.]/g, '')
-        .slice(0, 16);
       return new StreamableFile(file.body, {
-        type: 'application/octet-stream',
-        disposition: `attachment; filename="evidence${extension}"`,
+        type: previewType ?? 'application/octet-stream',
+        disposition: evidenceDisposition(claims.key, previewType),
         length: file.length,
       })
         .setErrorHandler(() => {

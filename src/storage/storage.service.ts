@@ -28,6 +28,11 @@ import {
   MAX_STORAGE_UPLOAD_BYTES,
   type StorageTransfer,
 } from './storage-transfer-token';
+import {
+  evidenceDisposition,
+  isEvidencePreviewType,
+  type EvidencePreviewType,
+} from './evidence-response';
 
 const MAX_TRANSFER_TTL_SECONDS = 300;
 const FORMS_REGISTRATION_WINDOW_MS = 10 * 60 * 1000;
@@ -155,7 +160,7 @@ export class StorageService implements OnModuleDestroy {
     const backend = this.usesBackendTransfer();
     if (
       (backend || externalResponseId) &&
-      !['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)
+      !isEvidencePreviewType(contentType)
     ) {
       throw new BadRequestException('El archivo debe ser PDF, JPG o PNG');
     }
@@ -227,7 +232,10 @@ export class StorageService implements OnModuleDestroy {
     return `storage:forms-evidence:v1:${key}`;
   }
 
-  async createPresignedDownload(key: string): Promise<PresignedDownload> {
+  async createPresignedDownload(
+    key: string,
+    previewType?: EvidencePreviewType,
+  ): Promise<PresignedDownload> {
     if (!this.signingClient || !this.bucketName) {
       throw new ServiceUnavailableException(
         'El almacenamiento de objetos no está habilitado en este entorno',
@@ -235,20 +243,27 @@ export class StorageService implements OnModuleDestroy {
     }
 
     if (
-      this.usesBackendTransfer() &&
+      (this.usesBackendTransfer() || previewType) &&
       !this.isEvidenceKey(key.replace(/^\//, ''))
     )
       throw new NotFoundException('Archivo no encontrado');
     const resolvedKey = await this.resolveExistingKey(key);
     if (this.usesBackendTransfer()) {
       return {
-        downloadUrl: await this.createTransferUrl('download', resolvedKey),
+        downloadUrl: await this.createTransferUrl(
+          'download',
+          resolvedKey,
+          previewType,
+        ),
         expiresIn: this.presignedUrlExpiresIn,
       };
     }
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: resolvedKey,
+      ResponseContentDisposition: evidenceDisposition(resolvedKey, previewType),
+      ResponseContentType: previewType ?? 'application/octet-stream',
+      ResponseCacheControl: 'private, no-store',
     });
     const downloadUrl = await getSignedUrl(this.signingClient, command, {
       expiresIn: this.presignedUrlExpiresIn,
