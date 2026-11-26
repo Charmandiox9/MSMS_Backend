@@ -5,12 +5,10 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { Readable } from 'node:stream';
+import { createCache } from 'cache-manager';
 import request from 'supertest';
 import { StorageService } from '../src/storage/storage.service';
-import {
-  MAX_STORAGE_UPLOAD_BYTES,
-  signStorageTransfer,
-} from '../src/storage/storage-transfer-token';
+import { MAX_STORAGE_UPLOAD_BYTES } from '../src/storage/storage-transfer-token';
 import { createTestApp, FORMS_SECRET, TestApp } from './support/test-app';
 
 describe('private storage through backend (e2e)', () => {
@@ -26,7 +24,7 @@ describe('private storage through backend (e2e)', () => {
     S3_BUCKET_NAME: 'private-evidence',
     S3_ACCESS_KEY: 'test-app',
     S3_SECRET_KEY: 'test-secret',
-    JWT_SECRET: secret,
+    STORAGE_TRANSFER_SECRET: secret,
     PUBLIC_API_URL: 'https://marsys.example.test/api',
   };
   const localPath = (url: string) =>
@@ -41,7 +39,7 @@ describe('private storage through backend (e2e)', () => {
     return result.body as { key: string; uploadUrl: string };
   }
   beforeAll(async () => {
-    storage = new StorageService(new ConfigService(config));
+    storage = new StorageService(new ConfigService(config), createCache());
     send = jest
       .spyOn(S3Client.prototype, 'send')
       .mockImplementation((command: unknown) =>
@@ -97,22 +95,15 @@ describe('private storage through backend (e2e)', () => {
       .send({ fileName: 'a.pdf', contentType: 'application/pdf' })
       .expect(201);
   });
-  it('rejects missing, tampered, expired and wrong-operation tokens before S3', async () => {
+  it('rejects missing, unissued and wrong-operation tokens before S3', async () => {
     const issued = await uploadUrl();
-    const expired = signStorageTransfer(
-      {
-        action: 'upload',
-        key: issued.key,
-        contentType: 'application/pdf',
-        expiresAt: Date.now() - 1,
-      },
-      secret,
-    );
+    const token = new URL(issued.uploadUrl).searchParams.get('token');
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const before = send.mock.calls.length;
     for (const path of [
       '/api/storage/files/upload',
       '/api/storage/files/upload?token=invalid',
-      `/api/storage/files/upload?token=${expired}`,
+      `/api/storage/files/upload?token=${'A'.repeat(43)}`,
     ])
       await http()
         .put(path)
@@ -123,6 +114,44 @@ describe('private storage through backend (e2e)', () => {
       .get(localPath(issued.uploadUrl).replace('/upload?', '/download?'))
       .expect(401);
     expect(send.mock.calls).toHaveLength(before);
+  });
+
+  it.each([
+    'titulation-attachments/private.pdf',
+    'uploads/../titulation-attachments/private.pdf',
+  ])('rejects out-of-scope evidence keys before S3 (%s)', async (key) => {
+    const before = send.mock.calls.length;
+    await expect(storage.createPresignedDownload(key)).rejects.toThrow(
+      'Archivo no encontrado',
+    );
+    expect(send.mock.calls).toHaveLength(before);
+  });
+
+  it('accepts a historical evidence key with the legacy bucket prefix', async () => {
+    const { downloadUrl } = await storage.createPresignedDownload(
+      '/private-evidence/uploads/historical.pdf',
+    );
+    await http().get(localPath(downloadUrl)).expect(200);
+    const call = send.mock.calls.findLast(
+      ([command]: [unknown]) => command instanceof GetObjectCommand,
+    );
+    expect(call?.[0].input.Key).toBe('private-evidence/uploads/historical.pdf');
+  });
+
+  it('rejects expired grants before S3', async () => {
+    const issued = await uploadUrl();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 301_000);
+    const before = send.mock.calls.length;
+    try {
+      await http()
+        .put(localPath(issued.uploadUrl))
+        .set('Content-Type', 'application/pdf')
+        .send(bytes)
+        .expect(401);
+      expect(send.mock.calls).toHaveLength(before);
+    } finally {
+      clock.mockRestore();
+    }
   });
   it('rejects MIME mismatch, empty, oversized and active content uploads', async () => {
     const issued = await uploadUrl();
@@ -163,6 +192,7 @@ describe('private storage through backend (e2e)', () => {
         ...config,
         PUBLIC_API_URL: 'https://eic.example.test/marsys/api',
       }),
+      createCache(),
     );
     try {
       const url = await nested.createPresignedUpload(
@@ -172,6 +202,7 @@ describe('private storage through backend (e2e)', () => {
       expect(new URL(url.uploadUrl).pathname).toBe(
         '/marsys/api/storage/files/upload',
       );
+      expect(url.expiresIn).toBe(300);
     } finally {
       nested.onModuleDestroy();
     }

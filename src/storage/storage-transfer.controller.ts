@@ -21,7 +21,7 @@ import { MAX_STORAGE_UPLOAD_BYTES } from './storage-transfer-token';
 export class StorageTransferController {
   constructor(private readonly storage: StorageService) {}
 
-  // Public means no session is required: the short-lived, signed capability
+  // Public means no session is required: the short-lived, server-issued grant
   // authorizes exactly one key and operation, including the Forms integration.
   @Public()
   @Put('upload')
@@ -31,7 +31,7 @@ export class StorageTransferController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
-    const claims = this.storage.verifyTransfer(token, 'upload');
+    const claims = await this.storage.verifyTransfer(token, 'upload');
     const contentType = request
       .get('content-type')
       ?.split(';')[0]
@@ -84,7 +84,7 @@ export class StorageTransferController {
     @Query('token') token: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
-    const claims = this.storage.verifyTransfer(token, 'download');
+    const claims = await this.storage.verifyTransfer(token, 'download');
     const abort = new AbortController();
     let stream: Readable | undefined;
     const onClose = () => {

@@ -55,17 +55,20 @@ Para S3/MinIO:
 | `S3_ENDPOINT` | Endpoint interno para HeadBucket/HeadObject y operaciones del servidor |
 | `PUBLIC_API_URL` | Base pública del backend, incluyendo `/api` y el prefijo del proxy si existe. Por defecto `FRONTEND_URL` + `/api` |
 | `STORAGE_TRANSFER_MODE` | `backend` predeterminado; `direct` conserva el flujo S3 anterior |
+| `STORAGE_TRANSFER_SECRET` | Obligatoria en modo `backend` con almacenamiento activo. Generar 32 bytes aleatorios independientes de `JWT_SECRET` (por ejemplo, `openssl rand -hex 32`) e inyectar el mismo valor en todas las réplicas desde el gestor de secretos |
 | `S3_PUBLIC_ENDPOINT` | Solo modo `direct`: endpoint S3 público para firmar URLs |
 | `S3_REGION` | Región esperada por el proveedor; por defecto `us-east-1` |
 | `S3_BUCKET_NAME` | Bucket privado |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Credencial de aplicación, diferente de la administrativa |
-| `S3_PRESIGNED_URL_EXPIRES_IN` | 1–3600 segundos; valor predeterminado 900 |
+| `S3_PRESIGNED_URL_EXPIRES_IN` | En modo `backend`, máximo efectivo de 300 segundos. En modo `direct`, 1–3600 segundos con valor predeterminado de 900 |
 
 1. Elegir una distribución/servicio mantenido, fijar imagen/digest, revisar licencia y procedimiento de actualización. **MinIO Community está archivado y declara que ya no se mantiene**; la imagen histórica seleccionada explícitamente en el generador local es solo para pruebas de compatibilidad. [Repositorio oficial](https://github.com/minio/minio).
 2. Si se autoaloja, crear recurso Compose separado con volumen persistente y configuración de la edición mantenida elegida. Seguir sus instrucciones de instalación, credenciales y licenciamiento; no asumir que el ejemplo Community sirve para AIStor.
 3. En modo `backend`, mantener API S3 (9000) y consola (9001) internas; administrar por SSH/VPN. El servicio backend debe alcanzar el hostname interno de MinIO en la misma red Docker. Solo el modo `direct` requiere endpoint S3 público HTTPS.
 4. Crear bucket privado y cuenta con lectura/escritura de objetos, listado y consulta de bucket necesarios. No usar las credenciales root en la Application.
 5. En modo `backend`, las cargas y descargas usan URLs del backend y no requieren CORS de MinIO. Mantener el CORS habitual del backend para el origen de MARSYS. Solo en modo `direct` configurar CORS del bucket para el frontend.
+
+Al publicar el cambio, todas las réplicas deben compartir Redis y el mismo secreto de transferencia. Retirar las réplicas antiguas antes de habilitar las rutas públicas. Los enlaces anteriores al despliegue caducan de inmediato y deben solicitarse otra vez. Antes de publicar, verificar que las evidencias históricas estén bajo `uploads/` o el prefijo legado `<bucket>/uploads/`, y que el proxy omita el query string de estas rutas en sus logs.
 6. En modo `backend`, configurar `PUBLIC_API_URL` con la base pública real (por ejemplo `https://HOST/marsys/api`). Las capacidades firmadas autorizan solo una clave, operación y tipo MIME, y caducan en 1–3600 s (900 s predeterminado). No registrar query strings ni cachear estas rutas en ningún proxy. En modo `direct`, mantener host y ruta de `S3_PUBLIC_ENDPOINT` al usar SigV4.
 7. Probar carga y descarga mediante backend, expiración, rechazo de tokens alterados y acceso S3 anónimo. El límite de carga es 10 MiB (PDF/JPEG/PNG); configurar ese límite y timeout suficiente en el proxy de entrada y Traefik. Las descargas se transmiten como attachment por streaming; las cargas usan memoria acotada por petición. Configurar respaldo externo y cifrado en reposo. Un volumen local no es un backup.
 

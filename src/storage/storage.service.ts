@@ -4,7 +4,11 @@ import {
   ServiceUnavailableException,
   NotFoundException,
   BadRequestException,
+  Inject,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
@@ -15,13 +19,12 @@ import {
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { randomUUID } from 'crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { extname } from 'path';
 import { Readable } from 'node:stream';
-import {
-  signStorageTransfer,
-  verifyStorageTransfer,
-} from './storage-transfer-token';
+import type { StorageTransfer } from './storage-transfer-token';
+
+const MAX_TRANSFER_TTL_SECONDS = 300;
 
 export interface PresignedUpload {
   key: string;
@@ -43,7 +46,10 @@ export class StorageService implements OnModuleDestroy {
   private readonly signingClient: S3Client | undefined;
   private readonly streamClient: S3Client | undefined;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {
     if (
       !['backend', 'direct'].includes(
         configService.get<string>('STORAGE_TRANSFER_MODE', 'backend'),
@@ -85,6 +91,7 @@ export class StorageService implements OnModuleDestroy {
         `https://${accountId}.r2.cloudflarestorage.com`
       : this.configService.get<string>('S3_ENDPOINT');
     if (!endpoint) throw new Error('S3_ENDPOINT es obligatorio');
+    if (this.usesBackendTransfer()) this.transferSecret();
     const publicEndpoint =
       (this.usesBackendTransfer()
         ? endpoint
@@ -143,7 +150,7 @@ export class StorageService implements OnModuleDestroy {
         throw new BadRequestException('El archivo debe ser PDF, JPG o PNG');
       return {
         key,
-        uploadUrl: this.createTransferUrl('upload', key, contentType),
+        uploadUrl: await this.createTransferUrl('upload', key, contentType),
         expiresIn: this.presignedUrlExpiresIn,
       };
     }
@@ -166,10 +173,15 @@ export class StorageService implements OnModuleDestroy {
       );
     }
 
+    if (
+      this.usesBackendTransfer() &&
+      !this.isEvidenceKey(key.replace(/^\//, ''))
+    )
+      throw new NotFoundException('Archivo no encontrado');
     const resolvedKey = await this.resolveExistingKey(key);
     if (this.usesBackendTransfer()) {
       return {
-        downloadUrl: this.createTransferUrl('download', resolvedKey),
+        downloadUrl: await this.createTransferUrl('download', resolvedKey),
         expiresIn: this.presignedUrlExpiresIn,
       };
     }
@@ -184,12 +196,27 @@ export class StorageService implements OnModuleDestroy {
     return { downloadUrl, expiresIn: this.presignedUrlExpiresIn };
   }
 
-  verifyTransfer(token: string | undefined, action: 'upload' | 'download') {
+  async verifyTransfer(
+    token: string | undefined,
+    action: StorageTransfer['action'],
+  ) {
     if (!this.usesBackendTransfer())
       throw new ServiceUnavailableException(
         'Transferencia backend deshabilitada',
       );
-    return verifyStorageTransfer(token, action, this.transferSecret());
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token))
+      throw new UnauthorizedException('URL de archivo inválida o caducada');
+    const grant = await this.cache.get<StorageTransfer>(
+      this.transferCacheKey(token),
+    );
+    if (
+      !grant ||
+      grant.action !== action ||
+      grant.expiresAt <= Date.now() ||
+      !this.isEvidenceKey(grant.key)
+    )
+      throw new UnauthorizedException('URL de archivo inválida o caducada');
+    return grant;
   }
 
   async uploadFile(
@@ -300,19 +327,46 @@ export class StorageService implements OnModuleDestroy {
   }
 
   private transferSecret() {
-    const secret = this.configService.get<string>('JWT_SECRET');
-    if (!secret || secret.length < 32)
-      throw new ServiceUnavailableException(
-        'Configura JWT_SECRET con al menos 32 caracteres',
+    const secret = this.configService.get<string>('STORAGE_TRANSFER_SECRET');
+    if (
+      !secret ||
+      secret.trim().length < 32 ||
+      secret === this.configService.get<string>('JWT_SECRET')
+    )
+      throw new Error(
+        'Configura STORAGE_TRANSFER_SECRET con al menos 32 caracteres y distinto de JWT_SECRET',
       );
     return secret;
   }
 
-  private createTransferUrl(
+  private transferCacheKey(token: string): string {
+    const digest = createHmac('sha256', this.transferSecret())
+      .update(token)
+      .digest('hex');
+    return `storage:evidence:v2:${digest}`;
+  }
+
+  private isEvidenceKey(key: string): boolean {
+    return ['uploads/', `${this.bucketName}/uploads/`].some(
+      (prefix) =>
+        key.startsWith(prefix) &&
+        !key
+          .slice(prefix.length)
+          .split('/')
+          .some(
+            (part) =>
+              !part || part === '.' || part === '..' || part.includes('\\'),
+          ),
+    );
+  }
+
+  private async createTransferUrl(
     action: 'upload' | 'download',
     key: string,
     contentType?: string,
   ) {
+    if (!this.isEvidenceKey(key))
+      throw new NotFoundException('Archivo no encontrado');
     const frontend = this.configService.get<string>('FRONTEND_URL');
     const base =
       this.configService.get<string>('PUBLIC_API_URL')?.trim() ||
@@ -330,18 +384,19 @@ export class StorageService implements OnModuleDestroy {
     )
       throw new ServiceUnavailableException('PUBLIC_API_URL inválida');
     url.search = '';
-    url.searchParams.set(
-      'token',
-      signStorageTransfer(
-        {
-          action,
-          key,
-          ...(contentType ? { contentType } : {}),
-          expiresAt: Date.now() + this.presignedUrlExpiresIn * 1000,
-        },
-        this.transferSecret(),
-      ),
+    const token = randomBytes(32).toString('base64url');
+    const ttl = this.presignedUrlExpiresIn * 1000;
+    await this.cache.set<StorageTransfer>(
+      this.transferCacheKey(token),
+      {
+        action,
+        key,
+        ...(contentType ? { contentType } : {}),
+        expiresAt: Date.now() + ttl,
+      },
+      ttl,
     );
+    url.searchParams.set('token', token);
     return url.toString();
   }
 
@@ -405,8 +460,12 @@ export class StorageService implements OnModuleDestroy {
         '900',
       ),
     );
-    return Number.isInteger(configured) && configured > 0 && configured <= 3600
-      ? configured
-      : 900;
+    const expiresIn =
+      Number.isInteger(configured) && configured > 0 && configured <= 3600
+        ? configured
+        : 900;
+    return this.usesBackendTransfer()
+      ? Math.min(expiresIn, MAX_TRANSFER_TTL_SECONDS)
+      : expiresIn;
   }
 }

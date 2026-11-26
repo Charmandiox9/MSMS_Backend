@@ -8,6 +8,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createCache } from 'cache-manager';
 import { StorageService } from './storage.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -43,7 +44,10 @@ describe('StorageService', () => {
   });
 
   function createService(overrides: Record<string, string> = {}) {
-    return new StorageService(new ConfigService({ ...r2Config, ...overrides }));
+    return new StorageService(
+      new ConfigService({ ...r2Config, ...overrides }),
+      createCache(),
+    );
   }
 
   it('rechaza una configuración R2 incompleta', () => {
@@ -54,14 +58,14 @@ describe('StorageService', () => {
       R2_SECRET_ACCESS_KEY: 'secret',
     });
 
-    expect(() => new StorageService(config)).toThrow(
+    expect(() => new StorageService(config, createCache())).toThrow(
       'R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y R2_BUCKET_NAME',
     );
   });
 
   it('indica que R2 no está habilitado cuando el proveedor no es R2', async () => {
     const config = new ConfigService({ STORAGE_PROVIDER: 'none' });
-    const service = new StorageService(config);
+    const service = new StorageService(config, createCache());
 
     await expect(
       service.createPresignedUpload('evidence.pdf', 'application/pdf'),
@@ -72,6 +76,18 @@ describe('StorageService', () => {
   });
 
   describe('createPresignedUpload', () => {
+    it.each(['', 'too-short', 'a'.repeat(64)])(
+      'requires an independent storage secret in backend mode (%#)',
+      (secret) => {
+        expect(() =>
+          createService({
+            STORAGE_TRANSFER_MODE: 'backend',
+            JWT_SECRET: 'a'.repeat(64),
+            STORAGE_TRANSFER_SECRET: secret,
+          }),
+        ).toThrow('STORAGE_TRANSFER_SECRET');
+      },
+    );
     it('supports MinIO with separate internal and public endpoints', async () => {
       const service = createService({
         STORAGE_PROVIDER: 'minio',

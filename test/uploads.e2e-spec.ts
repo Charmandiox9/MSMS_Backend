@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { S3Client } from '@aws-sdk/client-s3';
+import { createCache } from 'cache-manager';
 import request from 'supertest';
 import { StorageService } from '../src/storage/storage.service';
 import { createTestApp, FORMS_SECRET, TestApp } from './support/test-app';
@@ -17,6 +18,7 @@ function createR2Storage() {
       R2_BUCKET_NAME: 'e2e-bucket',
       R2_PRESIGNED_URL_EXPIRES_IN: '300',
     }),
+    createCache(),
   );
 }
 
@@ -281,6 +283,7 @@ describe('Carga de archivos sin almacenamiento configurado (e2e)', () => {
     ctx = await createTestApp({
       storage: new StorageService(
         new ConfigService({ STORAGE_PROVIDER: 'none' }),
+        createCache(),
       ),
     });
   });
