@@ -17,6 +17,7 @@ const env = {
   GOOGLE_CALLBACK_URL: 'http://localhost:80/api/auth/google/callback',
   FRONTEND_URL: 'http://localhost', ALLOWED_DOMAINS: 'example.test',
   GOOGLE_FORMS_WEBHOOK_SECRET: secret(), BOOTSTRAP_ADMIN_EMAIL: 'admin@example.test',
+  GOOGLE_FORMS_UPLOAD_SECRET: secret(),
   STORAGE_PROVIDER: 's3', S3_ENDPOINT: 'http://minio:9000',
   S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_REGION: 'us-east-1',
   S3_BUCKET_NAME: 'marsys-test-evidence', S3_ACCESS_KEY: `app${secret().slice(0, 16)}`, S3_SECRET_KEY: secret(),

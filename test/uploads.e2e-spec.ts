@@ -1,9 +1,14 @@
 import { ConfigService } from '@nestjs/config';
-import { S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createCache } from 'cache-manager';
 import request from 'supertest';
 import { StorageService } from '../src/storage/storage.service';
-import { createTestApp, FORMS_SECRET, TestApp } from './support/test-app';
+import {
+  createTestApp,
+  FORMS_SECRET,
+  FORMS_UPLOAD_SECRET,
+  TestApp,
+} from './support/test-app';
 
 // StorageService real con credenciales ficticias: la firma de URLs es local y
 // las verificaciones HeadObject contra R2 se simulan.
@@ -29,8 +34,24 @@ describe('Carga de archivos (e2e)', () => {
   beforeAll(async () => {
     headObject = jest
       .spyOn(S3Client.prototype, 'send')
-      .mockResolvedValue({} as never);
+      .mockImplementation((command: unknown) =>
+        Promise.resolve(
+          command instanceof HeadObjectCommand
+            ? { ContentLength: 42, ContentType: 'application/pdf' }
+            : {},
+        ),
+      );
     ctx = await createTestApp({ storage: createR2Storage() });
+    ctx.prisma.seedAssignment({
+      nrc: '20002',
+      activeSemester: true,
+      course: { name: 'Química', code: 'QUI101' },
+      teacher: {
+        id: 'teacher',
+        name: 'Docente',
+        email: 'docente@example.test',
+      },
+    });
   });
 
   afterAll(async () => {
@@ -123,22 +144,31 @@ describe('Carga de archivos (e2e)', () => {
   });
 
   describe('POST /api/storage/presigned-upload/forms', () => {
-    const body = { fileName: 'justificativo.jpg', contentType: 'image/jpeg' };
+    const body = {
+      fileName: 'justificativo.jpg',
+      contentType: 'image/jpeg',
+      externalResponseId: 'response-1',
+    };
 
     it('entrega una URL firmada al puente de Google Forms con el secreto', async () => {
       const response = await http()
         .post('/api/storage/presigned-upload/forms')
-        .set('x-marsys-forms-secret', FORMS_SECRET)
+        .set('x-marsys-forms-secret', FORMS_UPLOAD_SECRET)
         .send(body)
         .expect(201);
 
       expect(response.body.key).toMatch(/^uploads\/[0-9a-f-]{36}\.jpg$/);
+      expect(
+        new URL(response.body.uploadUrl).searchParams
+          .get('X-Amz-SignedHeaders')
+          ?.split(';'),
+      ).toContain('if-none-match');
     });
 
     it('acepta el header legado', async () => {
       await http()
         .post('/api/storage/presigned-upload/forms')
-        .set('x-google-forms-secret', FORMS_SECRET)
+        .set('x-google-forms-secret', FORMS_UPLOAD_SECRET)
         .send(body)
         .expect(201);
     });
@@ -182,8 +212,8 @@ describe('Carga de archivos (e2e)', () => {
       [{ studentEmail: 'no-es-correo' }, 'studentEmail must be an email'],
       [{ evidenceKey: '' }, 'evidenceKey should not be empty'],
       [
-        { evidenceContentType: undefined },
-        'evidenceContentType should not be empty',
+        { evidenceContentType: 'x'.repeat(151) },
+        'evidenceContentType must be shorter than or equal to 150 characters',
       ],
       [
         { nrc: '1'.repeat(51) },
@@ -219,9 +249,20 @@ describe('Carga de archivos (e2e)', () => {
 
   describe('GET /api/justifications/:id/evidence-url', () => {
     let justificationId: string;
+    let evidenceKey: string;
 
     beforeAll(async () => {
-      const inbox = await http()
+      const evidence = await http()
+        .post('/api/storage/presigned-upload/forms')
+        .set('x-marsys-forms-secret', FORMS_UPLOAD_SECRET)
+        .send({
+          externalResponseId: 'evidence-response-1',
+          fileName: 'evidencia.pdf',
+          contentType: 'application/pdf',
+        })
+        .expect(201);
+      evidenceKey = evidence.body.key;
+      await http()
         .post('/api/justifications/inbox')
         .set('x-marsys-forms-secret', FORMS_SECRET)
         .send({
@@ -230,12 +271,14 @@ describe('Carga de archivos (e2e)', () => {
           absenceDate: '2026-09-23',
           subjectName: 'Química',
           nrc: '20002',
-          evidenceKey: 'uploads/evidencia.pdf',
+          evidenceKey: evidence.body.key,
           evidenceContentType: 'application/pdf',
         })
         .expect(201);
       const opened = await http()
-        .post(`/api/justifications/inbox/${inbox.body.id}/open`)
+        .post(
+          `/api/justifications/inbox/${[...ctx.prisma.tables.inbox.keys()].at(-1)}/open`,
+        )
         .set('Cookie', ctx.cookieFor('coordinator'))
         .expect(201);
       justificationId = opened.body.id;
@@ -250,7 +293,7 @@ describe('Carga de archivos (e2e)', () => {
           .expect(200);
 
         const url = new URL(response.body.downloadUrl);
-        expect(url.pathname).toBe('/e2e-bucket/uploads/evidencia.pdf');
+        expect(url.pathname).toBe(`/e2e-bucket/${evidenceKey}`);
         expect(url.searchParams.get('X-Amz-Signature')).toMatch(
           /^[0-9a-f]{64}$/,
         );

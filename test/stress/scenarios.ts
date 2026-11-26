@@ -5,7 +5,7 @@ export interface StressConfig {
   baseUrl: string;
   authCookie?: string;
   formsSecret?: string;
-  allowWrites: boolean;
+  formsUploadSecret?: string;
   nrc: string;
 }
 
@@ -28,7 +28,9 @@ export function buildScenarios(config: StressConfig): Scenario[] {
     ? { 'x-marsys-forms-secret': config.formsSecret }
     : undefined;
   const needsForms = forms ? undefined : 'define STRESS_FORMS_SECRET';
-  const runId = randomUUID().slice(0, 8);
+  const formsUpload = config.formsUploadSecret
+    ? { 'x-marsys-forms-secret': config.formsUploadSecret }
+    : undefined;
 
   return [
     {
@@ -103,15 +105,16 @@ export function buildScenarios(config: StressConfig): Scenario[] {
       description:
         'POST /storage/presigned-upload/forms con el secreto del webhook',
       expectedStatus: [201],
-      skipReason: needsForms,
+      skipReason: formsUpload ? undefined : 'define STRESS_FORMS_UPLOAD_SECRET',
       requests: [
         {
           method: 'POST',
           path: '/storage/presigned-upload/forms',
-          headers: { ...json, ...forms },
+          headers: { ...json, ...formsUpload },
           body: JSON.stringify({
             fileName: 'justificativo.jpg',
             contentType: 'image/jpeg',
+            externalResponseId: 'stress-upload',
           }),
         },
       ],
@@ -134,14 +137,10 @@ export function buildScenarios(config: StressConfig): Scenario[] {
       ],
     },
     {
-      name: 'forms-inbox-write',
-      description: `POST /justifications/inbox con respuestas únicas (externalResponseId stress-${runId}-*)`,
-      expectedStatus: [201],
-      skipReason:
-        needsForms ??
-        (config.allowWrites
-          ? undefined
-          : 'crea registros; define STRESS_ALLOW_WRITES=true'),
+      name: 'forms-inbox-unissued-evidence',
+      description: 'POST /justifications/inbox sin evidencia autorizada',
+      expectedStatus: [400],
+      skipReason: needsForms,
       requests: [
         {
           method: 'POST',
@@ -150,7 +149,7 @@ export function buildScenarios(config: StressConfig): Scenario[] {
           setupRequest: (request) => ({
             ...request,
             body: JSON.stringify(
-              inboxPayload(`stress-${runId}-${randomUUID()}`, config.nrc),
+              inboxPayload(`stress-${randomUUID()}`, config.nrc),
             ),
           }),
         },

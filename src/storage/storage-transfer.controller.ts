@@ -66,12 +66,23 @@ export class StorageTransferController {
         chunks.push(chunk);
       }
       if (!size) throw new BadRequestException('El archivo está vacío');
-      await this.storage.uploadFile(
-        claims.key,
-        contentType,
-        Buffer.concat(chunks, size),
-        abort.signal,
-      );
+      const body = Buffer.concat(chunks, size);
+      if (claims.createOnly) {
+        await this.storage.uploadFile(
+          claims.key,
+          contentType,
+          body,
+          abort.signal,
+          true,
+        );
+      } else {
+        await this.storage.uploadFile(
+          claims.key,
+          contentType,
+          body,
+          abort.signal,
+        );
+      }
       response.setHeader('Cache-Control', 'private, no-store');
     } finally {
       response.off('close', onClose);

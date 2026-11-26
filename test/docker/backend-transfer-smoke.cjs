@@ -3,13 +3,15 @@ const { createRequire } = require('node:module');
 const appRequire = createRequire('/app/package.json');
 appRequire('reflect-metadata');
 const { Module } = appRequire('@nestjs/common');
-const { ConfigModule } = appRequire('@nestjs/config');
+const { CacheModule } = appRequire('@nestjs/cache-manager');
+const { createCacheOptions } = appRequire('./dist/cache/cache-options');
+const { ConfigService, ConfigModule } = appRequire('@nestjs/config');
 const { NestFactory } = appRequire('@nestjs/core');
 const { StorageModule } = appRequire('./dist/storage/storage.module');
 const { StorageService } = appRequire('./dist/storage/storage.service');
 
 class StorageSmokeModule {}
-Module({ imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), StorageModule] })(StorageSmokeModule);
+Module({ imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), CacheModule.registerAsync({ isGlobal: true, inject: [ConfigService], useFactory: createCacheOptions }), StorageModule] })(StorageSmokeModule);
 
 async function main() {
   assert.equal(new URL(process.env.DATABASE_URL).pathname, '/marsys_docker_test');
@@ -26,8 +28,8 @@ async function main() {
     const storage = app.get(StorageService);
     const issuedResponse = await fetch('http://nginx/api/storage/presigned-upload/forms', {
       method: 'POST', headers: { 'Content-Type': 'application/json',
-        'x-marsys-forms-secret': process.env.GOOGLE_FORMS_WEBHOOK_SECRET },
-      body: JSON.stringify({ fileName: 'proxy-smoke.pdf', contentType: 'application/pdf' }),
+        'x-marsys-forms-secret': process.env.GOOGLE_FORMS_UPLOAD_SECRET },
+      body: JSON.stringify({ externalResponseId: 'backend-proxy-smoke', fileName: 'proxy-smoke.pdf', contentType: 'application/pdf' }),
     });
     assert.equal(issuedResponse.status, 201);
     const issued = await issuedResponse.json();
@@ -36,6 +38,11 @@ async function main() {
       method: 'PUT', headers: { 'Content-Type': 'application/pdf', Origin: origin }, body: bytes,
     });
     assert.equal(upload.status, 204);
+    const replay = await fetch(throughProxy(issued.uploadUrl), {
+      method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: bytes,
+    });
+    assert.equal(replay.status, 409);
+    assert.equal(await storage.requireFormsEvidence('backend-proxy-smoke', issued.key), 'application/pdf');
     const signed = await storage.createPresignedDownload(issued.key);
     const download = await fetch(throughProxy(signed.downloadUrl));
     assert.equal(download.status, 200);

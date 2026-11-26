@@ -229,7 +229,7 @@ describe('Matriz de permisos por endpoint', () => {
       /@Public\(\)\s*@Post\('inbox'\)[\s\S]*?GOOGLE_FORMS_WEBHOOK_SECRET/,
     );
     expect(source('storage/storage.controller.ts')).toMatch(
-      /@Public\(\)\s*@Post\('presigned-upload\/forms'\)[\s\S]*?GOOGLE_FORMS_WEBHOOK_SECRET/,
+      /@Public\(\)\s*@Post\('presigned-upload\/forms'\)[\s\S]*?GOOGLE_FORMS_UPLOAD_SECRET/,
     );
   });
 });

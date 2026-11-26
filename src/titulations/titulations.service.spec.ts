@@ -55,6 +55,7 @@ function createService(
   },
 ) {
   const prisma = {
+    user: { findFirst: jest.fn().mockResolvedValue(null) },
     findPiiIds: jest.fn().mockResolvedValue(['titulation-1']),
     $queryRaw: jest.fn().mockResolvedValue([{ year: 2026, semester: 2 }]),
     $transaction: jest.fn(
@@ -147,6 +148,8 @@ describe('TitulationsService', () => {
     expect(prisma.findPiiIds).toHaveBeenCalledWith(
       'TitulationProcess',
       'maria',
+      undefined,
+      'exclude',
     );
     expect(prisma.titulationProcess.findMany).toHaveBeenCalled();
     expect(prisma.titulationProcess.findMany.mock.calls[0]?.[0]).toMatchObject({
@@ -377,6 +380,39 @@ describe('TitulationsService', () => {
     expect(result).not.toHaveProperty('piiVersion');
     expect(result).not.toHaveProperty('createdById');
     expect(result).not.toHaveProperty('updatedById');
+  });
+
+  it('masks both RUT fields unless the user has the management permission', async () => {
+    const { service, prisma } = createService();
+    const allowed = await service.canViewRut('reader');
+    expect(allowed).toBe(false);
+    expect(await service.get(record.id, allowed)).toMatchObject({
+      studentRut: null,
+      student: { rut: null },
+    });
+    prisma.user.findFirst.mockResolvedValue({ id: 'manager' });
+    const canManage = await service.canViewRut('manager');
+    expect(canManage).toBe(true);
+    expect(prisma.user.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        id: 'manager',
+        isActive: true,
+        userRoles: {
+          some: {
+            role: {
+              permissions: {
+                some: { permission: { code: 'TITULATION_MANAGE' } },
+              },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    expect(await service.get(record.id, canManage)).toMatchObject({
+      studentRut: record.studentRut,
+      student: { rut: record.student.rut },
+    });
   });
 
   it('rejects an empty update', async () => {

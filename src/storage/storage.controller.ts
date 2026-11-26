@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Headers,
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -22,9 +24,19 @@ class CreatePresignedUploadDto {
   contentType!: string;
 }
 
+class CreateFormsPresignedUploadDto extends CreatePresignedUploadDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  externalResponseId!: string;
+}
+
 @Controller('storage')
 export class StorageController {
-  constructor(private readonly storageService: StorageService) {}
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly config: ConfigService,
+  ) {}
 
   // JUSTIFICATIONS_CREATE (matriz RBAC): solo quien registra justificaciones
   // sube evidencias.
@@ -42,20 +54,34 @@ export class StorageController {
   createFormsPresignedUpload(
     @Headers('x-marsys-forms-secret') secret: string | undefined,
     @Headers('x-google-forms-secret') legacySecret: string | undefined,
-    @Body() dto: CreatePresignedUploadDto,
+    @Body() dto: CreateFormsPresignedUploadDto,
   ) {
-    const expected = process.env.GOOGLE_FORMS_WEBHOOK_SECRET?.trim();
+    const expected = this.config
+      .get<string>('GOOGLE_FORMS_UPLOAD_SECRET')
+      ?.trim();
+    const inboxSecret = this.config
+      .get<string>('GOOGLE_FORMS_WEBHOOK_SECRET')
+      ?.trim();
+    const assistantshipSecret = this.config
+      .get<string>('ASSISTANTSHIP_FORMS_WEBHOOK_SECRET')
+      ?.trim();
     const receivedSecret = (secret ?? legacySecret)?.trim();
-    if (!expected || receivedSecret !== expected) {
-      console.warn(
-        `[FormsWebhook] storage unauthorized expectedLength=${expected?.length ?? 0} receivedLength=${receivedSecret?.length ?? 0}`,
-      );
+    if (
+      !expected ||
+      expected === inboxSecret ||
+      expected === assistantshipSecret ||
+      receivedSecret !== expected
+    ) {
       throw new UnauthorizedException('Webhook no autorizado');
     }
+    const externalResponseId = dto.externalResponseId.trim();
+    if (!externalResponseId)
+      throw new BadRequestException('Falta el identificador de respuesta');
 
     return this.storageService.createPresignedUpload(
       dto.fileName,
       dto.contentType,
+      externalResponseId,
     );
   }
 }

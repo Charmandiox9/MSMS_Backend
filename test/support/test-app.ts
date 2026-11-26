@@ -17,6 +17,7 @@ import {
   SeedUser,
 } from './in-memory-prisma';
 
+export const FORMS_UPLOAD_SECRET = 'e2e-forms-upload-secret';
 export const FORMS_SECRET = 'e2e-forms-secret';
 
 export const USERS = {
@@ -92,6 +93,7 @@ export async function createTestApp(
       options.storage ?? {
         createPresignedUpload: jest.fn(),
         createPresignedDownload: jest.fn(),
+        requireFormsEvidence: jest.fn().mockResolvedValue('application/pdf'),
       },
     )
     .compile();

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import {
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -9,7 +10,12 @@ import { createCache } from 'cache-manager';
 import request from 'supertest';
 import { StorageService } from '../src/storage/storage.service';
 import { MAX_STORAGE_UPLOAD_BYTES } from '../src/storage/storage-transfer-token';
-import { createTestApp, FORMS_SECRET, TestApp } from './support/test-app';
+import {
+  createTestApp,
+  FORMS_SECRET,
+  FORMS_UPLOAD_SECRET,
+  TestApp,
+} from './support/test-app';
 
 describe('private storage through backend (e2e)', () => {
   const secret = 'transfer-test-secret-at-least-thirty-two-characters';
@@ -33,8 +39,12 @@ describe('private storage through backend (e2e)', () => {
   async function uploadUrl() {
     const result = await http()
       .post('/api/storage/presigned-upload/forms')
-      .set('x-marsys-forms-secret', FORMS_SECRET)
-      .send({ fileName: 'private.pdf', contentType: 'application/pdf' })
+      .set('x-marsys-forms-secret', FORMS_UPLOAD_SECRET)
+      .send({
+        fileName: 'private.pdf',
+        contentType: 'application/pdf',
+        externalResponseId: 'response-1',
+      })
       .expect(201);
     return result.body as { key: string; uploadUrl: string };
   }
@@ -76,13 +86,71 @@ describe('private storage through backend (e2e)', () => {
       Bucket: 'private-evidence',
       ContentType: 'application/pdf',
       Body: bytes,
+      IfNoneMatch: '*',
       ContentLength: bytes.length,
     });
+  });
+
+  it('registers only an uploaded evidence authorized for the same Forms response', async () => {
+    ctx.prisma.seedAssignment({
+      nrc: '40001',
+      activeSemester: true,
+      course: { name: 'Asignatura', code: 'TEST' },
+      teacher: {
+        id: 'teacher',
+        name: 'Docente',
+        email: 'docente@example.test',
+      },
+    });
+    const issued = await uploadUrl();
+    const submission = {
+      externalResponseId: 'response-1',
+      studentEmail: 'student@example.test',
+      absenceDate: '2026-09-23',
+      nrc: '40001',
+      evidenceKey: issued.key,
+    };
+    const register = (body = submission, secret = FORMS_SECRET) =>
+      http()
+        .post('/api/justifications/inbox')
+        .set('x-marsys-forms-secret', secret)
+        .send(body);
+
+    await register(submission, FORMS_UPLOAD_SECRET).expect(401);
+    await register({
+      ...submission,
+      externalResponseId: 'other-response',
+    }).expect(400);
+    await register().expect(400);
+    await http()
+      .put(localPath(issued.uploadUrl))
+      .set('Content-Type', 'application/pdf')
+      .send(bytes)
+      .expect(204);
+    send.mockImplementationOnce((command: unknown) => {
+      expect(command).toBeInstanceOf(HeadObjectCommand);
+      return Promise.resolve({
+        ContentLength: bytes.length,
+        ContentType: 'application/pdf',
+      });
+    });
+    await register().expect(201, { received: true, duplicate: false });
+    await register({
+      ...submission,
+      evidenceKey: 'uploads/different.pdf',
+    }).expect(201, { received: true, duplicate: true });
+    expect([...ctx.prisma.tables.inbox.values()]).toEqual([
+      expect.objectContaining({ evidenceKey: issued.key }),
+    ]);
   });
   it('keeps issuance protected by session roles or Forms secret', async () => {
     await http()
       .post('/api/storage/presigned-upload/forms')
-      .send({ fileName: 'a.pdf', contentType: 'application/pdf' })
+      .send({
+        fileName: 'a.pdf',
+        contentType: 'application/pdf',
+        externalResponseId: 'response-1',
+      })
       .expect(401);
     await http()
       .post('/api/storage/presigned-upload')
@@ -173,8 +241,12 @@ describe('private storage through backend (e2e)', () => {
       .expect(413);
     await http()
       .post('/api/storage/presigned-upload/forms')
-      .set('x-marsys-forms-secret', FORMS_SECRET)
-      .send({ fileName: 'script.html', contentType: 'text/html' })
+      .set('x-marsys-forms-secret', FORMS_UPLOAD_SECRET)
+      .send({
+        fileName: 'script.html',
+        contentType: 'text/html',
+        externalResponseId: 'response-1',
+      })
       .expect(400);
   });
   it('streams private downloads without redirecting and prevents caching or inline execution', async () => {

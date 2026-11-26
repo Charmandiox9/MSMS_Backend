@@ -145,8 +145,8 @@ Herramienta: [autocannon](https://github.com/mcollina/autocannon) 8 (devDependen
 | `STRESS_BASE_URL`       | `http://localhost:3001/api` | Backend objetivo                                                                                  |
 | `STRESS_ALLOW_REMOTE`   | —                           | Obligatoria (`true`) para un host distinto de localhost. **Nunca contra producción.**             |
 | `STRESS_AUTH_COOKIE`    | —                           | Cookie de sesión (`token=<jwt>` o `session=<id>`); sin ella se omiten los escenarios autenticados |
-| `STRESS_FORMS_SECRET`   | —                           | Secreto del webhook; sin él se omiten los escenarios de Forms                                     |
-| `STRESS_ALLOW_WRITES`   | —                           | `true` para ejecutar el escenario que **crea registros** en la bandeja                            |
+| `STRESS_FORMS_SECRET` | — | Secreto de registro de Justificaciones |
+| `STRESS_FORMS_UPLOAD_SECRET` | — | Secreto para solicitar enlaces de subida de Justificaciones |
 | `STRESS_NRC`            | `STRESS-NRC`                | NRC de los envíos de prueba                                                                       |
 | `STRESS_SCENARIOS`      | todos                       | Lista separada por comas                                                                          |
 | `STRESS_DURATION`       | `20`                        | Segundos por escenario                                                                            |
@@ -159,7 +159,8 @@ Ejemplo:
 ```bash
 STRESS_BASE_URL=http://localhost:3001/api \
 STRESS_AUTH_COOKIE="token=<jwt>" \
-STRESS_FORMS_SECRET=<secreto> \
+STRESS_FORMS_SECRET=<secreto-registro> \
+STRESS_FORMS_UPLOAD_SECRET=<secreto-subida> \
 pnpm run test:stress
 ```
 
@@ -176,7 +177,7 @@ pnpm run test:stress
 | `presigned-upload`        | `POST /storage/presigned-upload`                                                | 201             | cookie                               |
 | `forms-presigned-upload`  | `POST /storage/presigned-upload/forms`                                          | 201             | secreto                              |
 | `forms-webhook-rejection` | `POST /justifications/inbox` con secreto incorrecto                             | 401             | —                                    |
-| `forms-inbox-write`       | `POST /justifications/inbox` con `externalResponseId` únicos `stress-<runId>-*` | 201             | secreto + `STRESS_ALLOW_WRITES=true` |
+| `forms-inbox-unissued-evidence` | `POST /justifications/inbox` sin evidencia autorizada | 400 | secreto de registro |
 
 Los registros que crea `forms-inbox-write` quedan en la bandeja como no leídos, con `studentEmail = stress-test@alumnos.ucn.cl`, y se pueden identificar por el prefijo `stress-` para limpiarlos.
 

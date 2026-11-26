@@ -70,11 +70,14 @@ export class PrismaService
     model: string,
     search: string,
     fields?: readonly string[],
+    rutMatch?: 'exact' | 'exclude',
   ): Promise<string[]> {
     const policy = piiPolicies[model];
     if (!policy?.searchable.length)
       throw new Error('El modelo no permite búsqueda PII');
-    const searchableFields = fields ?? policy.searchable;
+    const searchableFields = (fields ?? policy.searchable).filter(
+      (field) => rutMatch !== 'exclude' || !field.toLowerCase().includes('rut'),
+    );
     if (
       !searchableFields.length ||
       searchableFields.some((field) => !policy.searchable.includes(field))
@@ -97,7 +100,13 @@ export class PrismaService
               ? normalizePiiLookup(field, value)
               : normalizePiiSearch(value);
           };
-          return normalize(row[field]).includes(normalize(search));
+          const term = normalize(search);
+          if (!term) return false;
+          if (rutMatch === 'exact' && field.toLowerCase().includes('rut'))
+            return (
+              /^\d{7,8}[\dK]$/i.test(term) && normalize(row[field]) === term
+            );
+          return normalize(row[field]).includes(term);
         }),
       )
       .map((row) => String(row.id));

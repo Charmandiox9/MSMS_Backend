@@ -61,8 +61,8 @@ export class FormSubmissionDto implements FormJustificationInput {
   @IsOptional() @IsString() subjectCode?: string;
   @IsString() @IsNotEmpty() @MaxLength(50) nrc!: string;
   @IsOptional() @IsString() @MaxLength(2000) reason?: string;
-  @IsString() @IsNotEmpty() evidenceKey!: string;
-  @IsString() @IsNotEmpty() evidenceContentType!: string;
+  @IsString() @IsNotEmpty() @MaxLength(512) evidenceKey!: string;
+  @IsOptional() @IsString() @MaxLength(150) evidenceContentType?: string;
 }
 
 class DecisionDto {

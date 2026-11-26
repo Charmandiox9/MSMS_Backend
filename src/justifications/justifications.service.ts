@@ -4,7 +4,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { JustificationInboxStatus, JustificationStatus } from '@prisma/client';
+import {
+  JustificationInboxStatus,
+  JustificationStatus,
+  Prisma,
+} from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -25,7 +29,7 @@ export interface FormJustificationInput {
   nrc: string;
   reason?: string;
   evidenceKey: string;
-  evidenceContentType: string;
+  evidenceContentType?: string;
 }
 
 const WEEKDAYS = [
@@ -59,6 +63,15 @@ export class JustificationsService {
   ) {}
 
   async receiveFormSubmission(input: FormJustificationInput) {
+    const externalResponseId = input.externalResponseId.trim();
+    if (!externalResponseId)
+      throw new BadRequestException('Falta el identificador de respuesta');
+    const existing = await this.prisma.justificationInbox.findUnique({
+      where: { externalResponseId },
+      select: { id: true },
+    });
+    if (existing) return { received: true, duplicate: true };
+
     const absenceDate = this.parseDate(input.absenceDate);
     const nrc = input.nrc.trim();
     if (
@@ -71,39 +84,50 @@ export class JustificationsService {
       where: { nrc, semester: { isActive: true } },
       include: { course: true },
     });
-    const subjectName = assignment?.course.name ?? input.subjectName?.trim();
-    if (!subjectName)
+    if (!assignment)
       throw new BadRequestException(
         'El NRC no corresponde a una asignatura activa',
       );
 
+    const evidenceContentType = await this.storage.requireFormsEvidence(
+      externalResponseId,
+      input.evidenceKey,
+    );
     const studentEmail = input.studentEmail.trim().toLowerCase();
     const student = await this.prisma.student.findUnique({
       where: { email: studentEmail },
       select: { id: true },
     });
-    return this.prisma.justificationInbox.upsert({
-      where: { externalResponseId: input.externalResponseId },
-      update: {
-        ...input,
-        studentEmail,
-        studentId: student?.id ?? null,
-        nrc,
-        subjectName,
-        subjectCode: assignment?.course.code ?? input.subjectCode,
-        absenceDate,
-      },
-      create: {
-        ...input,
-        studentEmail,
-        studentId: student?.id ?? null,
-        nrc,
-        subjectName,
-        subjectCode: assignment?.course.code ?? input.subjectCode,
-        absenceDate,
-      },
-      include: studentContext,
-    });
+    try {
+      await this.prisma.justificationInbox.create({
+        data: {
+          externalResponseId,
+          studentEmail,
+          studentId: student?.id ?? null,
+          nrc,
+          subjectName: assignment.course.name,
+          subjectCode: assignment.course.code,
+          absenceDate,
+          absenceBlocks: input.absenceBlocks,
+          reason: input.reason,
+          evidenceKey: input.evidenceKey,
+          evidenceContentType,
+        },
+        select: { id: true },
+      });
+      return { received: true, duplicate: false };
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        (await this.prisma.justificationInbox.findUnique({
+          where: { externalResponseId },
+          select: { id: true },
+        }))
+      )
+        return { received: true, duplicate: true };
+      throw error;
+    }
   }
 
   async listInbox() {

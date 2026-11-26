@@ -44,6 +44,8 @@ Preparar **claves nuevas de este entorno**, independientes de JWT y entre sí. `
 
 Conservar por separado y cifrados `PII_ACTIVE_KEY_ID`, todo el anillo `PII_ENCRYPTION_KEYS` y `PII_BLIND_INDEX_KEY`. Respaldar también configuración y credenciales de recuperación. Aunque la base comience vacía, las claves pasan a ser imprescindibles al crear el primer registro. No regenerarlas al redeploy.
 
+Para Justificaciones, configura `GOOGLE_FORMS_UPLOAD_SECRET` y `GOOGLE_FORMS_WEBHOOK_SECRET` y sincroniza sus propiedades de Apps Script. En el proxy público limita las solicitudes por IP de origen y ruta a **2 por segundo** con una ráfaga de **10** y respuesta **429**, como en [la configuración Nginx del repositorio](../nginx/conf.d/default.conf). Aplica la regla a las tres rutas de webhook y al PUT de evidencias. Usa las rutas públicas con su prefijo real y configura la IP real únicamente desde proxies de confianza. Mantén el acceso directo a la API restringido para que las solicitudes externas pasen por ese proxy.
+
 ## 4. Almacenamiento privado
 
 El backend admite `STORAGE_PROVIDER=r2`, `s3` o `minio`. `none` permite desarrollo sin storage, pero readiness no estará disponible. El modo predeterminado `STORAGE_TRANSFER_MODE=backend` mantiene MinIO interno: el backend emite URLs temporales bajo su propia dirección pública y transfiere los archivos. No hace falta dominio público S3 ni CORS de MinIO para este modo.

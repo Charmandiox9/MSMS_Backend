@@ -185,30 +185,17 @@ export function createInMemoryPrisma() {
     },
 
     justificationInbox: {
-      upsert: ({
-        where,
-        create,
-        update,
-      }: {
-        where: { externalResponseId: string };
-        create: Row;
-        update: Row;
-      }) => {
-        const existing = [...inbox.values()].find(
-          (row) => row.externalResponseId === where.externalResponseId,
-        );
+      create: ({ data }: { data: Row }) => {
         const now = new Date();
-        const row: Row = existing
-          ? { ...existing, ...update, updatedAt: now }
-          : {
-              status: 'UNREAD',
-              readAt: null,
-              justificationId: null,
-              createdAt: now,
-              updatedAt: now,
-              ...create,
-              id: randomUUID(),
-            };
+        const row: Row = {
+          status: 'UNREAD',
+          readAt: null,
+          justificationId: null,
+          createdAt: now,
+          updatedAt: now,
+          ...data,
+          id: randomUUID(),
+        };
         inbox.set(row.id, row);
         return Promise.resolve(pick(row));
       },
@@ -218,8 +205,16 @@ export function createInMemoryPrisma() {
             .filter((row) => row.status === where.status)
             .map(pick),
         ),
-      findUnique: ({ where }: { where: { id: string } }) => {
-        const row = inbox.get(where.id);
+      findUnique: ({
+        where,
+      }: {
+        where: { id?: string; externalResponseId?: string };
+      }) => {
+        const row = where.id
+          ? inbox.get(where.id)
+          : [...inbox.values()].find(
+              (entry) => entry.externalResponseId === where.externalResponseId,
+            );
         return Promise.resolve(row ? pick(row) : null);
       },
       update: ({ where, data }: { where: { id: string }; data: Row }) => {

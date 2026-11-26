@@ -59,8 +59,11 @@ export class TitulationsController {
 
   @Post('search')
   @Roles(...TITULATION_READ_ROLES)
-  search(@Body() query: ListTitulationsDto) {
-    return this.service.list(query);
+  async search(
+    @Body() query: ListTitulationsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.list(query, await this.service.canViewRut(user.id));
   }
 
   @Get('filters')
@@ -73,14 +76,23 @@ export class TitulationsController {
   @Post('students/search')
   @Roles(...TITULATION_MANAGE_ROLES)
   @Header('Cache-Control', 'private, no-store')
-  findStudents(@Body() query: FindTitulationStudentsDto) {
-    return this.service.findStudents(query.search);
+  async findStudents(
+    @Body() query: FindTitulationStudentsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.findStudents(
+      query.search,
+      await this.service.canViewRut(user.id),
+    );
   }
 
   @Get(':id')
   @Roles(...TITULATION_READ_ROLES)
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.get(id);
+  async get(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.get(id, await this.service.canViewRut(user.id));
   }
 
   @Get(':id/documents/:kind')

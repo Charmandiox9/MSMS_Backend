@@ -141,7 +141,7 @@ export class AssistantshipsService {
       ? await this.prisma.findPiiIds('Teacher', search)
       : [];
     const studentIds = search
-      ? await this.prisma.findPiiIds('Student', search)
+      ? await this.prisma.findPiiIds('Student', search, undefined, 'exclude')
       : [];
     const where: Prisma.AssistantshipWhereInput = {
       ...(filters.semesterId ? { semesterId: filters.semesterId } : {}),
@@ -377,15 +377,20 @@ export class AssistantshipsService {
   async students(search: string) {
     const term = search.trim();
     if (term.length < 2) return [];
-    const ids = await this.prisma.findPiiIds('Student', term, [
-      'name',
-      'givenNames',
-      'paternalSurname',
-      'maternalSurname',
-      'email',
-      'personalEmail',
-      'rut',
-    ]);
+    const ids = await this.prisma.findPiiIds(
+      'Student',
+      term,
+      [
+        'name',
+        'givenNames',
+        'paternalSurname',
+        'maternalSurname',
+        'email',
+        'personalEmail',
+        'rut',
+      ],
+      'exact',
+    );
     if (!ids.length) return [];
     const students = await this.prisma.student.findMany({
       where: { id: { in: ids } },

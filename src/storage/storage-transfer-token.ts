@@ -7,6 +7,7 @@ export type StorageTransfer = {
   action: 'upload' | 'download';
   key: string;
   contentType?: string;
+  createOnly?: boolean;
   expiresAt: number;
 };
 

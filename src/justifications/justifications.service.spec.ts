@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { JustificationInboxStatus, JustificationStatus } from '@prisma/client';
@@ -246,7 +247,7 @@ describe('JustificationsService flujo completo', () => {
     teachingAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
     courseSchedule: { findMany: jest.fn() },
     justificationInbox: {
-      upsert: jest.fn(),
+      create: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -264,6 +265,7 @@ describe('JustificationsService flujo completo', () => {
     ),
   };
   const notifications = { send: jest.fn() };
+  const storage = { requireFormsEvidence: jest.fn() };
   const teacher = (
     nrc: string,
     id: string,
@@ -307,6 +309,11 @@ describe('JustificationsService flujo completo', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.student.findUnique.mockResolvedValue(null);
+    prisma.justificationInbox.findUnique.mockResolvedValue(null);
+    prisma.teachingAssignment.findFirst.mockResolvedValue({
+      course: { name: 'Biología', code: 'BIO101' },
+    });
+    storage.requireFormsEvidence.mockResolvedValue('application/pdf');
     prisma.assistantship.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(
       (operation: (client: unknown) => Promise<unknown>) => operation(prisma),
@@ -328,97 +335,89 @@ describe('JustificationsService flujo completo', () => {
     service = new JustificationsService(
       prisma as unknown as PrismaService,
       notifications as unknown as NotificationsService,
-      {} as StorageService,
+      storage as unknown as StorageService,
     );
   });
 
   describe('receiveFormSubmission', () => {
-    it('vincula por correo normalizado y devuelve los datos del estudiante registrado', async () => {
-      const student = {
-        id: 'student-1',
-        name: 'Ana Soto',
-        email: submission.studentEmail,
-      };
-      prisma.student.findUnique.mockResolvedValue({ id: student.id });
-      prisma.justificationInbox.upsert.mockResolvedValue({
-        id: 'inbox-1',
-        student,
-      });
-      const result = await service.receiveFormSubmission({
-        ...submission,
-        studentEmail: ' STUDENT@ALUMNOS.UCN.CL ',
-      });
+    it('derives the student, course and MIME type from trusted data', async () => {
+      prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+      await expect(
+        service.receiveFormSubmission({
+          ...submission,
+          studentEmail: ' STUDENT@ALUMNOS.UCN.CL ',
+          subjectCode: 'ignored',
+          evidenceContentType: 'image/png',
+        }),
+      ).resolves.toEqual({ received: true, duplicate: false });
       expect(prisma.student.findUnique).toHaveBeenCalledWith({
         where: { email: submission.studentEmail },
         select: { id: true },
       });
-      const call = prisma.justificationInbox.upsert.mock.calls[0][0];
-      expect(call.create).toEqual(
-        expect.objectContaining({
-          studentId: student.id,
-          studentEmail: submission.studentEmail,
-        }),
-      );
-      expect(call.update).toEqual(call.create);
-      expect(result.student).toEqual(student);
-    });
-
-    it('acepta correos no registrados sin crear estudiantes ni asociar otra identidad', async () => {
-      await service.receiveFormSubmission(submission);
-      expect(
-        prisma.justificationInbox.upsert.mock.calls[0][0].create.studentId,
-      ).toBeNull();
-    });
-    it('usa la asignatura del semestre activo según el NRC y es idempotente por respuesta', async () => {
-      prisma.teachingAssignment.findFirst.mockResolvedValue({
-        course: { name: 'Biología', code: 'BIO101' },
-      });
-      prisma.justificationInbox.upsert.mockResolvedValue({ id: 'inbox-1' });
-
-      await service.receiveFormSubmission(submission);
-
       expect(prisma.teachingAssignment.findFirst).toHaveBeenCalledWith({
         where: { nrc: '10001', semester: { isActive: true } },
         include: { course: true },
       });
-      const call = prisma.justificationInbox.upsert.mock.calls[0][0];
-      expect(call.where).toEqual({ externalResponseId: 'resp-1' });
-      expect(call.create).toEqual(
-        expect.objectContaining({
+      expect(storage.requireFormsEvidence).toHaveBeenCalledWith(
+        'resp-1',
+        submission.evidenceKey,
+      );
+      expect(prisma.justificationInbox.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          externalResponseId: 'resp-1',
+          studentEmail: submission.studentEmail,
+          studentId: 'student-1',
           nrc: '10001',
           subjectName: 'Biología',
           subjectCode: 'BIO101',
-          absenceDate: new Date('2026-09-23T00:00:00.000Z'),
-          evidenceKey: 'uploads/evidence.pdf',
+          evidenceContentType: 'application/pdf',
+          evidenceKey: submission.evidenceKey,
+          absenceDate: new Date('2026-09-23T00:00:00Z'),
+        }),
+        select: { id: true },
+      });
+    });
+
+    it('accepts an unlinked student and preserves existing submissions on retry', async () => {
+      await service.receiveFormSubmission(submission);
+      expect(
+        prisma.justificationInbox.create.mock.calls[0][0].data.studentId,
+      ).toBeNull();
+      prisma.justificationInbox.findUnique.mockResolvedValue({ id: 'inbox-1' });
+      await expect(
+        service.receiveFormSubmission({ ...submission, reason: 'changed' }),
+      ).resolves.toEqual({ received: true, duplicate: true });
+      expect(prisma.justificationInbox.create).toHaveBeenCalledTimes(1);
+      expect(storage.requireFormsEvidence).toHaveBeenCalledTimes(1);
+      expect(prisma.justificationInbox.update).not.toHaveBeenCalled();
+    });
+
+    it('handles a concurrent duplicate through the unique database constraint', async () => {
+      prisma.justificationInbox.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'inbox-1' });
+      prisma.justificationInbox.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('duplicate', {
+          code: 'P2002',
+          clientVersion: 'test',
         }),
       );
-      expect(call.update).toEqual(call.create);
-    });
-
-    it('usa el nombre enviado por el formulario si el NRC no está en el semestre activo', async () => {
-      prisma.teachingAssignment.findFirst.mockResolvedValue(null);
-
-      await service.receiveFormSubmission({
-        ...submission,
-        subjectName: '  Química  ',
-        subjectCode: 'QUI',
+      await expect(service.receiveFormSubmission(submission)).resolves.toEqual({
+        received: true,
+        duplicate: true,
       });
-
-      expect(prisma.justificationInbox.upsert.mock.calls[0][0].create).toEqual(
-        expect.objectContaining({ subjectName: 'Química', subjectCode: 'QUI' }),
-      );
     });
 
-    it('rechaza un NRC desconocido sin nombre de asignatura', async () => {
+    it('rejects an inactive or unknown NRC even if the form supplies a course name', async () => {
       prisma.teachingAssignment.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.receiveFormSubmission({ ...submission, subjectName: '   ' }),
-      ).rejects.toThrow('El NRC no corresponde a una asignatura activa');
-      expect(prisma.justificationInbox.upsert).not.toHaveBeenCalled();
+      await expect(service.receiveFormSubmission(submission)).rejects.toThrow(
+        'El NRC no corresponde a una asignatura activa',
+      );
+      expect(storage.requireFormsEvidence).not.toHaveBeenCalled();
+      expect(prisma.justificationInbox.create).not.toHaveBeenCalled();
     });
 
-    it('rechaza una fecha de inasistencia inválida', async () => {
+    it('rejects an invalid absence date', async () => {
       await expect(
         service.receiveFormSubmission({
           ...submission,

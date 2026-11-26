@@ -25,18 +25,19 @@ con el horario de la ayudantía. Los rechazos no notifican al ayudante.
 ```text
 Google Form → hoja de respuestas → Apps Script
                                   ├─ solicita URL firmada al backend
-                                  ├─ sube el archivo directamente a R2
+                                  ├─ sube el archivo por la URL autorizada
                                   └─ registra la respuesta en el inbox
 ```
 
-El backend expone `POST /api/storage/presigned-upload/forms` y `POST /api/justifications/inbox`. Ambas rutas requieren el secreto configurado en `GOOGLE_FORMS_WEBHOOK_SECRET`. El script usa el encabezado `x-marsys-forms-secret`.
+El backend usa `GOOGLE_FORMS_UPLOAD_SECRET` para emitir el enlace de subida y `GOOGLE_FORMS_WEBHOOK_SECRET` para registrar la respuesta en la bandeja. Ambas llamadas envían su secreto en el encabezado `x-marsys-forms-secret`. El backend vincula el enlace al identificador de respuesta, verifica que el archivo ya se subió y conserva la primera entrada si el formulario reenvía esa respuesta.
 
 ## 1. Configurar el backend
 
 1. Despliega el backend en una URL HTTPS pública. Apps Script no puede acceder a `localhost` ni a una red privada.
 2. Configura las variables R2 documentadas en `backend/.env.example`: `STORAGE_PROVIDER="r2"`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y `R2_BUCKET_NAME`. El endpoint y la expiración de URL firmada son configurables allí también.
-3. Genera un secreto largo y aleatorio y configúralo como `GOOGLE_FORMS_WEBHOOK_SECRET` en el entorno del backend. No reutilices una contraseña personal.
-4. Asegúrate de que el backend tenga la base de datos y migraciones vigentes.
+3. Genera dos secretos independientes (por ejemplo, ejecuta `openssl rand -hex 32` dos veces). Guarda uno en `GOOGLE_FORMS_UPLOAD_SECRET` y el otro en `GOOGLE_FORMS_WEBHOOK_SECRET` en el entorno del backend. El secreto de Ayudantías, `ASSISTANTSHIP_FORMS_WEBHOOK_SECRET`, pertenece al otro proyecto de Apps Script.
+4. Para migrar una instalación existente, coordina una ventana breve. Configura los secretos nuevos en el backend y en las propiedades de Apps Script, despliega el backend y actualiza el script en la misma ventana. Comprueba una respuesta con un NRC activo antes de reanudar el flujo. Si una ejecución quedó pendiente, reprocesa la fila original para conservar su identificador.
+5. Asegúrate de que el backend tenga la base de datos y migraciones vigentes.
 
 ## 2. Crear el formulario
 
@@ -48,7 +49,7 @@ Agrega estas preguntas. Los títulos deben coincidir con los encabezados de la h
 | --- | --- | --- |
 | Dirección de correo electrónico | Recopilación automática de correo verificado | Identifica a la persona; no agregues una pregunta de texto para este dato. |
 | Día que faltó | Fecha | Se guarda como `absenceDate`. |
-| Clase que faltó | Lista desplegable, opciones con formato `NRC - Nombre de asignatura` | El NRC identifica la clase y el nombre permite asociarla si no se encuentra una asignación activa. |
+| Clase que faltó | Lista desplegable, opciones con formato `NRC - Nombre de asignatura` | El NRC debe corresponder a una asignación del semestre activo. MARSYS obtiene el nombre y el código de esa asignación. |
 | Adjunte el justificante | Subir archivo; PDF, JPG o PNG; un archivo | El archivo se copia desde Drive a R2. |
 | Motivo o comentario | Párrafo, opcional | Se guarda como `reason`. |
 
@@ -67,7 +68,8 @@ En Apps Script, abre **Configuración del proyecto → Propiedades del script** 
 | Propiedad | Valor |
 | --- | --- |
 | `MARSYS_API_BASE_URL` | URL HTTPS del backend, incluyendo `/api` y sin `/` final; por ejemplo `https://api.ejemplo.cl/api`. |
-| `GOOGLE_FORMS_WEBHOOK_SECRET` | El mismo secreto que `GOOGLE_FORMS_WEBHOOK_SECRET` del backend. |
+| `GOOGLE_FORMS_WEBHOOK_SECRET` | El mismo secreto de registro que tiene el backend. |
+| `GOOGLE_FORMS_UPLOAD_SECRET` | El mismo secreto de subida que tiene el backend. |
 
 Guarda el proyecto y establece su zona horaria en **Configuración del proyecto → Zona horaria → (GMT-04:00) Santiago** (o la zona institucional vigente). El secreto debe quedar solo en las propiedades protegidas del proyecto y en el gestor de secretos del backend; no lo escribas en el código, la hoja, el formulario ni los logs. Limita el acceso de edición al proyecto a sus operadores.
 
@@ -100,8 +102,9 @@ function handleFormSubmit(event) {
   const properties = PropertiesService.getScriptProperties();
   const baseUrl = (properties.getProperty('MARSYS_API_BASE_URL') || '').replace(/\/+$/, '');
   const secret = properties.getProperty('GOOGLE_FORMS_WEBHOOK_SECRET');
-  if (!baseUrl || !secret) {
-    throw new Error('Configura MARSYS_API_BASE_URL y GOOGLE_FORMS_WEBHOOK_SECRET en las propiedades del script.');
+  const uploadSecret = properties.getProperty('GOOGLE_FORMS_UPLOAD_SECRET');
+  if (!baseUrl || !secret || !uploadSecret) {
+    throw new Error('Configura MARSYS_API_BASE_URL y ambos secretos de Justificaciones en las propiedades del script.');
   }
 
   const studentEmail = requiredText_(answers[CONFIG.emailHeader], CONFIG.emailHeader);
@@ -118,7 +121,6 @@ function handleFormSubmit(event) {
   const subjectValue = requiredText_(answers[CONFIG.subjectHeader], CONFIG.subjectHeader);
   const separatorIndex = subjectValue.indexOf(' - ');
   const nrc = (separatorIndex < 0 ? subjectValue : subjectValue.slice(0, separatorIndex)).trim();
-  const subjectName = separatorIndex < 0 ? '' : subjectValue.slice(separatorIndex + 3).trim();
   if (!nrc) throw new Error('La opción de clase debe comenzar con el NRC.');
 
   const evidenceLink = requiredText_(answers[CONFIG.evidenceHeader], CONFIG.evidenceHeader);
@@ -131,10 +133,16 @@ function handleFormSubmit(event) {
     throw new Error('El archivo debe ser PDF, JPG o PNG.');
   }
 
+  const externalResponseId = [
+    SpreadsheetApp.getActive().getId(),
+    sheet.getSheetId(),
+    rowNumber,
+  ].join('-');
+
   const presigned = postJson_(
     baseUrl + '/storage/presigned-upload/forms',
-    secret,
-    { fileName: file.getName(), contentType: contentType }
+    uploadSecret,
+    { externalResponseId: externalResponseId, fileName: file.getName(), contentType: contentType }
   );
   if (!presigned.key || !presigned.uploadUrl) {
     throw new Error('El backend no devolvió la clave y URL firmada para el archivo.');
@@ -143,16 +151,11 @@ function handleFormSubmit(event) {
   const uploadResponse = UrlFetchApp.fetch(presigned.uploadUrl, {
     method: 'put',
     contentType: contentType,
+    headers: { 'If-None-Match': '*' },
     payload: file.getBlob().getBytes(),
     muteHttpExceptions: true,
   });
   assertSuccess_(uploadResponse, 'subida del archivo mediante backend');
-
-  const externalResponseId = [
-    SpreadsheetApp.getActive().getId(),
-    sheet.getSheetId(),
-    rowNumber,
-  ].join('-');
 
   postJson_(baseUrl + '/justifications/inbox', secret, {
     externalResponseId: externalResponseId,
@@ -160,11 +163,9 @@ function handleFormSubmit(event) {
     absenceDate: absenceDate,
     absenceBlocks: (optionalText_(answers[CONFIG.absenceBlocksHeader]) || '')
       .split(/[,;]/).map((block) => block.trim().toUpperCase()).filter(Boolean),
-    subjectName: subjectName || undefined,
     nrc: nrc,
     reason: optionalText_(answers[CONFIG.reasonHeader]),
     evidenceKey: presigned.key,
-    evidenceContentType: contentType,
   });
 }
 
@@ -224,7 +225,7 @@ Guarda y autoriza los permisos que Google solicite para leer los archivos de Dri
 | Síntoma | Revisión |
 | --- | --- |
 | HTTP 401/403 | Comprueba que el secreto del backend y la propiedad del script coincidan y que el encabezado se envíe como `x-marsys-forms-secret`. |
-| HTTP 400 al registrar | Revisa encabezados en `CONFIG`, correo, fecha, NRC y que se haya enviado `evidenceKey`/`evidenceContentType`. El backend requiere fecha y correo válidos, NRC, clave y tipo de contenido. |
+| HTTP 400 al registrar | Revisa encabezados en `CONFIG`, correo, fecha, NRC y que la evidencia haya sido subida con el enlace emitido para esa misma respuesta. El NRC debe existir en el semestre activo. |
 | HTTP 400 por clase/asignatura | Confirma que el NRC sea correcto y que `subjectName` venga de una opción `NRC - Nombre`; verifica la carga académica activa. |
 | HTTP 503 al pedir URL | Verifica `STORAGE_PROVIDER="r2"` y las credenciales/nombre del bucket R2 en el entorno del backend. |
 | Error al subir a R2 | Confirma que el enlace firmado no expiró y que el `Content-Type` del `PUT` es idéntico al solicitado al backend. El límite de vigencia se configura con `R2_PRESIGNED_URL_EXPIRES_IN`. |

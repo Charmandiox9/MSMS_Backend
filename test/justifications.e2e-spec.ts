@@ -60,14 +60,8 @@ describe('Flujo de justificaciones (e2e)', () => {
       .send(submission)
       .expect(201);
 
-    inboxId = response.body.id;
-    expect(response.body).toEqual(
-      expect.objectContaining({
-        status: 'UNREAD',
-        subjectName: 'Biología Marina',
-        subjectCode: 'BIO101',
-      }),
-    );
+    inboxId = [...ctx.prisma.tables.inbox.keys()][0];
+    expect(response.body).toEqual({ received: true, duplicate: false });
   });
 
   it('no duplica la entrada si el formulario reenvía la misma respuesta', async () => {
@@ -90,7 +84,7 @@ describe('Flujo de justificaciones (e2e)', () => {
     expect(response.body[0]).toEqual(
       expect.objectContaining({
         id: inboxId,
-        reason: 'Control médico (reenviado)',
+        reason: 'Control médico',
         blocks: ['C', 'D'],
       }),
     );
@@ -266,13 +260,15 @@ describe('Flujo de justificaciones (e2e)', () => {
 
   describe('decisiones sobre una nueva entrada', () => {
     async function openNewJustification(responseId: string): Promise<string> {
-      const inbox = await http()
+      await http()
         .post('/api/justifications/inbox')
         .set('x-marsys-forms-secret', FORMS_SECRET)
         .send({ ...submission, externalResponseId: responseId })
         .expect(201);
       const opened = await http()
-        .post(`/api/justifications/inbox/${inbox.body.id}/open`)
+        .post(
+          `/api/justifications/inbox/${[...ctx.prisma.tables.inbox.keys()].at(-1)}/open`,
+        )
         .set('Cookie', asCoordinator())
         .expect(201);
       return opened.body.id as string;

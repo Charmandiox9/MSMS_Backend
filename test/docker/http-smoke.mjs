@@ -23,8 +23,8 @@ for (let i = 0; i < 8; i++) {
   assert.deepEqual((await response.json()).roles, ['SYSTEM_ADMIN']);
 }
 await expectStatus('/api/academic/teachers', 401);
-await expectStatus('/api/storage/presigned-upload/forms', 401, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: 'a.pdf', contentType: 'application/pdf' }) });
-const uploadResponse = await expectStatus('/api/storage/presigned-upload/forms', 201, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-marsys-forms-secret': process.env.GOOGLE_FORMS_WEBHOOK_SECRET }, body: JSON.stringify({ fileName: 'test.pdf', contentType: 'application/pdf' }) });
+await expectStatus('/api/storage/presigned-upload/forms', 401, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalResponseId: 'http-smoke', fileName: 'a.pdf', contentType: 'application/pdf' }) });
+const uploadResponse = await expectStatus('/api/storage/presigned-upload/forms', 201, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-marsys-forms-secret': process.env.GOOGLE_FORMS_UPLOAD_SECRET }, body: JSON.stringify({ externalResponseId: 'http-smoke', fileName: 'test.pdf', contentType: 'application/pdf' }) });
 const upload = await uploadResponse.json();
 const contents = 'MARSYS disposable evidence roundtrip';
 const preflight = await fetch(upload.uploadUrl, { method: 'OPTIONS', headers: { Origin: base, 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'content-type' } });

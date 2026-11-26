@@ -12,6 +12,7 @@ Object.assign(process.env, {
   PII_BLIND_INDEX_KEY: Buffer.alloc(32, 2).toString('base64'),
   ALLOWED_DOMAINS: 'ucn.cl,alumnos.ucn.cl',
   CACHE_TYPE: 'memory',
+  GOOGLE_FORMS_UPLOAD_SECRET: 'e2e-forms-upload-secret',
   GOOGLE_FORMS_WEBHOOK_SECRET: 'e2e-forms-secret',
   GOOGLE_CLIENT_ID: 'e2e-client-id',
   GOOGLE_CLIENT_SECRET: 'e2e-client-secret',

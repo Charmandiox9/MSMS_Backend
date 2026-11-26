@@ -7,12 +7,12 @@ import { buildScenarios, Scenario, StressConfig } from './scenarios';
  *
  *   STRESS_BASE_URL=http://localhost:3001/api \
  *   STRESS_AUTH_COOKIE="token=<jwt>" \
- *   STRESS_FORMS_SECRET=<secreto> \
+ *   STRESS_FORMS_UPLOAD_SECRET=<secreto> \
  *   pnpm run test:stress
  *
  * Variables opcionales: STRESS_SCENARIOS (lista separada por comas),
  * STRESS_DURATION (segundos), STRESS_CONNECTIONS, STRESS_MAX_P99_MS,
- * STRESS_MAX_ERROR_RATE (0-1), STRESS_ALLOW_WRITES=true, STRESS_NRC y
+ * STRESS_MAX_ERROR_RATE (0-1), STRESS_FORMS_SECRET, STRESS_NRC y
  * STRESS_ALLOW_REMOTE=true para apuntar a un host distinto de localhost.
  */
 
@@ -60,7 +60,7 @@ function readConfig(): {
       baseUrl,
       authCookie: process.env.STRESS_AUTH_COOKIE || undefined,
       formsSecret: process.env.STRESS_FORMS_SECRET || undefined,
-      allowWrites: process.env.STRESS_ALLOW_WRITES === 'true',
+      formsUploadSecret: process.env.STRESS_FORMS_UPLOAD_SECRET || undefined,
       nrc: process.env.STRESS_NRC ?? 'STRESS-NRC',
     },
     thresholds: {

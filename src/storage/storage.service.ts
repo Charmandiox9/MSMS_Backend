@@ -6,6 +6,7 @@ import {
   BadRequestException,
   Inject,
   UnauthorizedException,
+  ConflictException,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -15,6 +16,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  type HeadObjectCommandOutput,
   PutObjectCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
@@ -22,9 +24,13 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { extname } from 'path';
 import { Readable } from 'node:stream';
-import type { StorageTransfer } from './storage-transfer-token';
+import {
+  MAX_STORAGE_UPLOAD_BYTES,
+  type StorageTransfer,
+} from './storage-transfer-token';
 
 const MAX_TRANSFER_TTL_SECONDS = 300;
+const FORMS_REGISTRATION_WINDOW_MS = 10 * 60 * 1000;
 
 export interface PresignedUpload {
   key: string;
@@ -137,6 +143,7 @@ export class StorageService implements OnModuleDestroy {
   async createPresignedUpload(
     fileName: string,
     contentType: string,
+    externalResponseId?: string,
   ): Promise<PresignedUpload> {
     if (!this.signingClient || !this.bucketName) {
       throw new ServiceUnavailableException(
@@ -145,25 +152,79 @@ export class StorageService implements OnModuleDestroy {
     }
 
     const key = this.buildObjectKey(fileName);
-    if (this.usesBackendTransfer()) {
-      if (!['application/pdf', 'image/jpeg', 'image/png'].includes(contentType))
-        throw new BadRequestException('El archivo debe ser PDF, JPG o PNG');
-      return {
-        key,
-        uploadUrl: await this.createTransferUrl('upload', key, contentType),
-        expiresIn: this.presignedUrlExpiresIn,
-      };
+    const backend = this.usesBackendTransfer();
+    if (
+      (backend || externalResponseId) &&
+      !['application/pdf', 'image/jpeg', 'image/png'].includes(contentType)
+    ) {
+      throw new BadRequestException('El archivo debe ser PDF, JPG o PNG');
     }
-    const command = new PutObjectCommand({
-      Bucket: this.bucketName,
-      Key: key,
-      ContentType: contentType,
-    });
-    const uploadUrl = await getSignedUrl(this.signingClient, command, {
-      expiresIn: this.presignedUrlExpiresIn,
-    });
+    const uploadUrl = backend
+      ? await this.createTransferUrl('upload', key, contentType, {
+          createOnly: Boolean(externalResponseId),
+        })
+      : await getSignedUrl(
+          this.signingClient,
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+            ContentType: contentType,
+            ...(externalResponseId ? { IfNoneMatch: '*' } : {}),
+          }),
+          { expiresIn: this.presignedUrlExpiresIn },
+        );
+    if (externalResponseId) {
+      await this.cache.set(
+        this.formsEvidenceKey(key),
+        { externalResponseId, contentType },
+        this.presignedUrlExpiresIn * 1000 + FORMS_REGISTRATION_WINDOW_MS,
+      );
+    }
 
     return { key, uploadUrl, expiresIn: this.presignedUrlExpiresIn };
+  }
+
+  async requireFormsEvidence(externalResponseId: string, key: string) {
+    const grant = await this.cache.get<{
+      externalResponseId: string;
+      contentType: string;
+    }>(this.formsEvidenceKey(key));
+    if (!grant || grant.externalResponseId !== externalResponseId)
+      throw new BadRequestException(
+        'La evidencia no está autorizada para esta respuesta',
+      );
+    if (!this.client || !this.bucketName)
+      throw new ServiceUnavailableException('Almacenamiento no configurado');
+    let object: HeadObjectCommandOutput;
+    try {
+      object = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
+      );
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        ['NotFound', 'NoSuchKey'].includes(error.name)
+      )
+        throw new BadRequestException(
+          'Sube la evidencia antes de registrar la respuesta',
+        );
+      throw new ServiceUnavailableException(
+        'No se pudo verificar la evidencia',
+      );
+    }
+    if (
+      object.ContentType !== grant.contentType ||
+      !object.ContentLength ||
+      object.ContentLength > MAX_STORAGE_UPLOAD_BYTES
+    )
+      throw new BadRequestException(
+        'La evidencia no coincide con la autorización de subida',
+      );
+    return grant.contentType;
+  }
+
+  private formsEvidenceKey(key: string) {
+    return `storage:forms-evidence:v1:${key}`;
   }
 
   async createPresignedDownload(key: string): Promise<PresignedDownload> {
@@ -224,8 +285,17 @@ export class StorageService implements OnModuleDestroy {
     contentType: string,
     body: Buffer,
     signal: AbortSignal,
+    createOnly = false,
   ) {
-    await this.putFile(key, contentType, body, body.length, signal);
+    await this.putFile(
+      key,
+      contentType,
+      body,
+      body.length,
+      signal,
+      undefined,
+      createOnly,
+    );
   }
 
   async uploadStream(
@@ -246,6 +316,7 @@ export class StorageService implements OnModuleDestroy {
     length: number,
     signal: AbortSignal,
     contentMd5?: string,
+    createOnly = false,
   ) {
     const client = contentMd5 ? this.streamClient : this.client;
     if (!client || !this.bucketName)
@@ -259,10 +330,19 @@ export class StorageService implements OnModuleDestroy {
           ContentType: contentType,
           ContentLength: length,
           ...(contentMd5 ? { ContentMD5: contentMd5 } : {}),
+          ...(createOnly ? { IfNoneMatch: '*' } : {}),
         }),
         { abortSignal: signal },
       );
-    } catch {
+    } catch (error: unknown) {
+      if (
+        createOnly &&
+        error instanceof Error &&
+        ['PreconditionFailed', 'ConditionalRequestConflict'].includes(
+          error.name,
+        )
+      )
+        throw new ConflictException('La evidencia ya fue subida');
       throw new ServiceUnavailableException('No se pudo guardar el archivo');
     }
   }
@@ -364,6 +444,7 @@ export class StorageService implements OnModuleDestroy {
     action: 'upload' | 'download',
     key: string,
     contentType?: string,
+    { createOnly = false } = {},
   ) {
     if (!this.isEvidenceKey(key))
       throw new NotFoundException('Archivo no encontrado');
@@ -392,6 +473,7 @@ export class StorageService implements OnModuleDestroy {
         action,
         key,
         ...(contentType ? { contentType } : {}),
+        ...(createOnly ? { createOnly } : {}),
         expiresAt: Date.now() + ttl,
       },
       ttl,

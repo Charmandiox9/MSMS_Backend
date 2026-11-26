@@ -68,20 +68,28 @@ export class TitulationsService {
     private readonly attachments: TitulationAttachmentsService,
   ) {}
 
-  async list({
-    page,
-    pageSize,
-    search,
-    stage,
-    careerId,
-    period,
-    view,
-    outcome,
-  }: ListTitulationsDto) {
+  async list(
+    {
+      page,
+      pageSize,
+      search,
+      stage,
+      careerId,
+      period,
+      view,
+      outcome,
+    }: ListTitulationsDto,
+    canViewRut = false,
+  ) {
     const query = search?.trim();
     const [piiIds, careerNames] = query
       ? await Promise.all([
-          this.prisma.findPiiIds('TitulationProcess', query),
+          this.prisma.findPiiIds(
+            'TitulationProcess',
+            query,
+            undefined,
+            canViewRut ? 'exact' : 'exclude',
+          ),
           this.findCareerNames(query),
         ])
       : [[], []];
@@ -226,13 +234,36 @@ export class TitulationsService {
       .filter((name) => normalizePiiSearch(name).includes(normalized));
   }
 
-  async get(id: string) {
+  async canViewRut(userId: string) {
+    return Boolean(
+      await this.prisma.user.findFirst({
+        where: {
+          id: userId,
+          isActive: true,
+          userRoles: {
+            some: {
+              role: {
+                permissions: {
+                  some: {
+                    permission: { code: 'TITULATION_MANAGE' },
+                  },
+                },
+              },
+            },
+          },
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
+  async get(id: string, canViewRut = false) {
     const process = await this.prisma.titulationProcess.findUnique({
       where: { id },
       include: PROCESS_RELATIONS,
     });
     if (!process) throw new NotFoundException('El proceso no existe');
-    return this.present(process);
+    return this.present(process, canViewRut);
   }
 
   async create(input: CreateTitulationDto, actorId: string) {
@@ -339,25 +370,37 @@ export class TitulationsService {
     return { success: true };
   }
 
-  async findStudents(search: string) {
-    const ids = await this.prisma.findPiiIds('Student', search);
+  async findStudents(search: string, canViewRut = false) {
+    const ids = await this.prisma.findPiiIds(
+      'Student',
+      search,
+      undefined,
+      canViewRut ? 'exact' : 'exclude',
+    );
     if (!ids.length) return [];
-    return this.prisma.student.findMany({
+    const students = await this.prisma.student.findMany({
       where: { id: { in: ids } },
       select: { id: true, name: true, email: true, rut: true, careerId: true },
       orderBy: { id: 'asc' },
       take: 20,
     });
+    return students.map((student) => ({
+      ...student,
+      rut: canViewRut ? student.rut : null,
+    }));
   }
 
-  private present(process: TitulationWithCareer) {
+  private present(process: TitulationWithCareer, canViewRut = true) {
     return {
       id: process.id,
       studentId: process.studentId,
-      student: process.student,
+      student: process.student && {
+        ...process.student,
+        rut: canViewRut ? process.student.rut : null,
+      },
       reference: createTitulationReference(process.id, process.createdAt),
       studentName: process.studentName,
-      studentRut: process.studentRut,
+      studentRut: canViewRut ? process.studentRut : null,
       studentEmail: process.studentEmail,
       studentPhone: process.studentPhone,
       thesisTopic: process.thesisTopic,

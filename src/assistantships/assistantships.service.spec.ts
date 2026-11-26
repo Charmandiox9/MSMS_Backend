@@ -381,15 +381,20 @@ describe('AssistantshipsService', () => {
         careerName: 'Biología Marina',
       },
     ]);
-    expect(prisma.findPiiIds).toHaveBeenCalledWith('Student', '12345678-9', [
-      'name',
-      'givenNames',
-      'paternalSurname',
-      'maternalSurname',
-      'email',
-      'personalEmail',
-      'rut',
-    ]);
+    expect(prisma.findPiiIds).toHaveBeenCalledWith(
+      'Student',
+      '12345678-9',
+      [
+        'name',
+        'givenNames',
+        'paternalSurname',
+        'maternalSurname',
+        'email',
+        'personalEmail',
+        'rut',
+      ],
+      'exact',
+    );
   });
 
   it('links an existing student, records course approval and creates the assistantship atomically', async () => {

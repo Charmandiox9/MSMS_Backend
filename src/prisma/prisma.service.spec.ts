@@ -81,6 +81,22 @@ describe('PrismaService', () => {
       await service.findPiiIds('Student', '12.345.678-9', ['rut']),
     ).toEqual(['a']);
   });
+  it('restricts an exact RUT match to a complete normalized identifier', async () => {
+    jest
+      .spyOn(service.student, 'findMany')
+      .mockResolvedValue([
+        { id: 'a', rut: '12.345.678-9' },
+      ] as unknown as Awaited<ReturnType<typeof service.student.findMany>>);
+    await expect(
+      service.findPiiIds('Student', '12345678-9', ['rut'], 'exact'),
+    ).resolves.toEqual(['a']);
+    await expect(
+      service.findPiiIds('Student', '12345678', ['rut'], 'exact'),
+    ).resolves.toEqual([]);
+    await expect(
+      service.findPiiIds('Student', '12345678-9', ['name', 'rut'], 'exclude'),
+    ).resolves.toEqual([]);
+  });
   it('busca por todas las personas del comité de titulación', async () => {
     const fields = [
       'guideName',
