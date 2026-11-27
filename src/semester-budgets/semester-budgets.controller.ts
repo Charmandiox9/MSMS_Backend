@@ -15,7 +15,7 @@ import { SemesterBudgetsService } from './semester-budgets.service';
 import { UpdateSemesterBudgetDto } from './semester-budgets.dto';
 
 @Controller('academic/semesters/:semesterId/budget')
-@Roles('ACADEMIC_SECRETARY')
+@Roles('ACADEMIC_SECRETARY', 'ACADEMIC_PROCESS_ANALYST')
 export class SemesterBudgetSettingsController {
   constructor(private readonly budgets: SemesterBudgetsService) {}
 

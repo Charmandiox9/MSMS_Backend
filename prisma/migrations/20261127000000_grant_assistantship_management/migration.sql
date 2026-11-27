@@ -1,0 +1,6 @@
+INSERT INTO "RolePermission" ("roleId", "permissionId", "assignedAt")
+SELECT r.id, p.id, CURRENT_TIMESTAMP
+FROM "Role" r CROSS JOIN "Permission" p
+WHERE r.code IN ('ACADEMIC_PROCESS_ANALYST', 'TEACHING_SUPPORT_COORDINATOR')
+  AND p.code = 'TEACHING_ASSISTANTS_MANAGE'
+ON CONFLICT DO NOTHING;

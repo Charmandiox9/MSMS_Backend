@@ -1,5 +1,8 @@
 import 'reflect-metadata';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import {
   SemesterBudgetAlertsController,
   SemesterBudgetSettingsController,
@@ -7,11 +10,32 @@ import {
 import type { SemesterBudgetsService } from './semester-budgets.service';
 
 describe('Semester budget controllers', () => {
-  it('limits budget configuration to the academic secretary role (system admin bypass is global)', () => {
-    expect(
-      Reflect.getMetadata(ROLES_KEY, SemesterBudgetSettingsController),
-    ).toEqual(['ACADEMIC_SECRETARY']);
-  });
+  it.each(['get', 'update'] as const)(
+    'authorizes budget %s for administration, secretariat, and analysis',
+    (method) => {
+      const guard = new RolesGuard(new Reflector());
+      const context = (role: string) =>
+        ({
+          getType: () => 'http',
+          getClass: () => SemesterBudgetSettingsController,
+          getHandler: () => SemesterBudgetSettingsController.prototype[method],
+          switchToHttp: () => ({
+            getRequest: () => ({ user: { roles: [role] } }),
+          }),
+        }) as unknown as ExecutionContext;
+
+      for (const role of [
+        'SYSTEM_ADMIN',
+        'ACADEMIC_SECRETARY',
+        'ACADEMIC_PROCESS_ANALYST',
+      ]) {
+        expect(guard.canActivate(context(role))).toBe(true);
+      }
+      expect(() =>
+        guard.canActivate(context('TEACHING_SUPPORT_COORDINATOR')),
+      ).toThrow(ForbiddenException);
+    },
+  );
 
   it('passes the authenticated user roles to dashboard alert filtering', async () => {
     const alerts = jest.fn().mockResolvedValue([]);

@@ -84,3 +84,21 @@ describe('Secretaría docente titulation permissions migration', () => {
     expect(migration).toContain("'TITULATION_MANAGE'");
   });
 });
+
+describe('Assistantship management permissions migration', () => {
+  it('grants the existing management permission to analysis and teaching support', () => {
+    const migration = readFileSync(
+      join(
+        process.cwd(),
+        'prisma/migrations/20261127000000_grant_assistantship_management/migration.sql',
+      ),
+      'utf8',
+    );
+
+    expect(migration).toContain(
+      "WHERE r.code IN ('ACADEMIC_PROCESS_ANALYST', 'TEACHING_SUPPORT_COORDINATOR')",
+    );
+    expect(migration).toContain("AND p.code = 'TEACHING_ASSISTANTS_MANAGE'");
+    expect(migration).toContain('ON CONFLICT DO NOTHING');
+  });
+});

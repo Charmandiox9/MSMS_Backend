@@ -58,8 +58,10 @@ integridad a excepciones NestJS.
 
 ## Gestión mediante GraphQL
 
-Todas las operaciones requieren autenticación y el permiso persistido
-`TEACHING_ASSISTANTS_MANAGE`, incluso las consultas y los datos del formulario.
+Todas las operaciones requieren autenticación. La gestión, el detalle y los
+datos del formulario requieren el permiso persistido `TEACHING_ASSISTANTS_MANAGE`.
+El historial, las opciones de filtros, las asignaciones, las tarifas y su
+resumen presupuestario también admiten `ACADEMIC_RECORDS_VIEW`.
 Se usa GraphQL para devolver el registro junto con el estudiante, profesor,
 asignatura, semestre y horarios en una consulta tipada, consumida con Apollo.
 
@@ -85,9 +87,8 @@ término. `ACADEMIC_TIME_ZONE` configura el calendario usado (por defecto,
 `America/Santiago`). Se permiten registros históricos de semestres anteriores.
 
 La vista `/dashboard/assistantships` reemplaza el historial anterior, cuya ruta
-redirige a la nueva vista. Permite buscar, filtrar y registrar desde un modal.
-Los horarios son opcionales y no se implementan edición ni eliminación de
-ayudantías en esta versión.
+redirige a la nueva vista. Permite buscar, filtrar, registrar y editar
+ayudantías. El registro requiere al menos un horario.
 
 ## Migración y verificación
 
@@ -99,8 +100,11 @@ ayudantías en esta versión.
 - `updateAssistantship` actualiza el registro y reemplaza sus horarios en una sola
   transacción, conserva la validación de aprobación y excluye el propio registro
   al comprobar cruces. Los NRC históricos sin dato propio se muestran sin inventar uno.
-- Secretaría puede gestionar ayudantías. El analista puede consultarlas mediante
-  `ACADEMIC_RECORDS_VIEW`; las mutaciones requieren `TEACHING_ASSISTANTS_MANAGE`.
+- Administración, Secretaría Docente, Apoyo Docente y Análisis de Procesos
+  pueden gestionar ayudantías. Desde **Ayudantías**, usa **Registrar ayudantía**
+  o **Editar** en un registro existente. Abre **Postulaciones de ayudantía**
+  para revisarlas o **Configurar tarifas** para gestionar las del semestre
+  seleccionado.
 - `/academic/courses` integra los horarios de ayudantías del semestre activo,
   identificados con `kind: ASSISTANTSHIP`, sus períodos, ubicaciones y ayudantes.
 - Los dashboards de todos los roles incluyen ayudantías y ayudantes del semestre activo.
